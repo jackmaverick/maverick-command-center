@@ -63,8 +63,8 @@ export async function GET(request: NextRequest) {
       funnelRows,
       revenueByTypeRows,
       leadSourceRows,
-      activityRows,
-      pipelineBySegmentRows,
+      opportunitiesBySegmentRows,
+      soldJobsBySegmentRows,
     ] = await Promise.all([
       // 1. YTD Revenue (accrual basis - uses date_invoice BIGINT)
       query<{ total: string }>(
@@ -146,15 +146,17 @@ export async function GET(request: NextRequest) {
         );
       })(),
 
-      // 7. Sales Funnel - count jobs at each major stage
+      // 7. Sales Funnel - period cohort (jobs created in period, where do they sit now)
       query<{ status_name: string; count: string }>(
         `SELECT j.status_name, COUNT(*) AS count
          FROM jobs j
          WHERE j.is_active = true
            AND j.is_archived = false
            AND j.status_name IS NOT NULL
+           AND j.jn_date_created >= $1
+           AND j.jn_date_created < $2
          GROUP BY j.status_name`,
-        []
+        [startUnix, endUnix]
       ),
 
       // 8. Revenue by Job Type (record_type_name)
@@ -186,33 +188,7 @@ export async function GET(request: NextRequest) {
         [startUnix, endUnix]
       ),
 
-      // 10. Recent Activity - last 10 by activity_date
-      query<{
-        id: string;
-        activity_type_code: string;
-        subject: string | null;
-        content: string | null;
-        contact_jnid: string | null;
-        job_jnid: string | null;
-        activity_date: string;
-        performed_by_name: string | null;
-      }>(
-        `SELECT
-           a.id,
-           a.activity_type_code,
-           a.subject,
-           a.content,
-           a.contact_jnid,
-           a.job_jnid,
-           a.activity_date,
-           a.performed_by_name
-         FROM activities a
-         ORDER BY a.activity_date DESC
-         LIMIT 10`,
-        []
-      ),
-
-      // 11. Pipeline by Segment - active jobs grouped by computed segment
+      // 10. Opportunities by Segment - pre-sale jobs created in period
       query<{ segment: string; count: string }>(
         `SELECT
            ${SEGMENT_SQL} AS segment,
@@ -220,10 +196,26 @@ export async function GET(request: NextRequest) {
          FROM jobs j
          WHERE j.is_active = true
            AND j.is_archived = false
-           AND j.is_closed = false
+           AND j.jn_date_created >= $1
+           AND j.jn_date_created < $2
+           AND j.status_name IN ('Lead', 'New', 'Cold Lead', 'Appointment Scheduled', 'Estimating', 'Estimate Sent')
          GROUP BY segment
          ORDER BY count DESC`,
-        []
+        [startUnix, endUnix]
+      ),
+
+      // 11. Sold Jobs by Segment - production jobs created in period
+      query<{ segment: string; count: string }>(
+        `SELECT
+           ${SEGMENT_SQL} AS segment,
+           COUNT(*) AS count
+         FROM jobs j
+         WHERE j.jn_date_created >= $1
+           AND j.jn_date_created < $2
+           AND j.status_name IN ('Sold Job', 'Production Ready', 'In Progress', 'Insurance Pending', 'Future Work', 'Needs Rescheduling', 'Invoiced', 'Final Invoicing', 'Pending Final Payment', 'Job Close Out')
+         GROUP BY segment
+         ORDER BY count DESC`,
+        [startUnix, endUnix]
       ),
     ]);
 
@@ -287,23 +279,16 @@ export async function GET(request: NextRequest) {
       count: parseInt(row.count, 10),
     }));
 
-    // 10. Recent activity
-    const recentActivity = activityRows.map((row) => ({
-      id: row.id,
-      type: row.activity_type_code,
-      subject: row.subject,
-      description: row.content,
-      contact_id: row.contact_jnid,
-      job_id: row.job_jnid,
-      date_created: row.activity_date,
-      performed_by: row.performed_by_name,
-      source: "jn" as const,
-    }));
+    // 10. Opportunities by segment
+    const opportunitiesBySegment: Record<string, number> = {};
+    for (const row of opportunitiesBySegmentRows) {
+      opportunitiesBySegment[row.segment] = parseInt(row.count, 10);
+    }
 
-    // 11. Pipeline by segment
-    const pipelineBySegment: Record<string, number> = {};
-    for (const row of pipelineBySegmentRows) {
-      pipelineBySegment[row.segment] = parseInt(row.count, 10);
+    // 11. Sold jobs by segment
+    const soldJobsBySegment: Record<string, number> = {};
+    for (const row of soldJobsBySegmentRows) {
+      soldJobsBySegment[row.segment] = parseInt(row.count, 10);
     }
 
     // ── Leads delta (compare to previous period if available) ───────────
@@ -345,8 +330,8 @@ export async function GET(request: NextRequest) {
       salesFunnel,
       revenueByJobType,
       topLeadSources,
-      recentActivity,
-      pipelineBySegment,
+      opportunitiesBySegment,
+      soldJobsBySegment,
     };
 
     return NextResponse.json(dashboard);

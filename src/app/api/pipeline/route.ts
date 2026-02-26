@@ -64,6 +64,7 @@ interface PipelineResponse {
   overallConversion: { rate: number; convertedJobs: number; totalJobs: number };
   keyConversions: KeyConversion[];
   lossByStage: LossByStage[];
+  lostJobsCount: number;
   avgCycleTimeDays: number | null;
   pipelineValueByStage: PipelineValueByStage[];
   segmentComparison: SegmentComparison[];
@@ -89,6 +90,7 @@ const VALID_SEGMENTS: Segment[] = [
   "retail",
   "insurance",
   "repairs",
+  "warranty",
 ];
 
 /** Index of a status in the ordered pipeline (higher = further along). */
@@ -150,6 +152,7 @@ export async function GET(request: NextRequest) {
       conversionData,
       keyConversions,
       lossByStage,
+      lostJobsCount,
       avgCycleTime,
       pipelineValue,
       segmentComparison,
@@ -160,6 +163,7 @@ export async function GET(request: NextRequest) {
       queryOverallConversion(startUnix, endUnix, segmentParam),
       queryKeyConversions(startUnix, endUnix, segmentParam),
       queryLossByStage(startUnix, endUnix, segmentParam),
+      queryLostJobsCount(startUnix, endUnix, segmentParam),
       queryAvgCycleTime(startUnix, endUnix, segmentParam),
       queryPipelineValueByStage(segmentParam),
       querySegmentComparison(startUnix, endUnix),
@@ -179,6 +183,7 @@ export async function GET(request: NextRequest) {
       overallConversion: conversionData,
       keyConversions,
       lossByStage,
+      lostJobsCount,
       avgCycleTimeDays: avgCycleTime,
       pipelineValueByStage: pipelineValue,
       segmentComparison,
@@ -204,36 +209,59 @@ async function queryStageCounts(
   endUnix: number,
   segment: Segment | null
 ): Promise<StageCount[]> {
-  const params: unknown[] = [startUnix, endUnix];
-  const segFilter = buildSegmentFilter(segment, params);
+  // Inflow/cohort approach: for each stage, count jobs created in period that have REACHED or PASSED that stage
+  const results: StageCount[] = [];
 
-  const rows = await query<{ status_name: string; cnt: string }>(
-    `SELECT j.status_name, COUNT(*)::text AS cnt
-     FROM jobs j
-     WHERE j.is_active = true
-       AND j.is_archived = false
-       AND j.jn_date_created >= $1
-       AND j.jn_date_created <= $2
-       ${segFilter}
-     GROUP BY j.status_name`,
-    params
-  );
+  // Define "at or beyond" status lists for each stage
+  const stageStatusMap: Record<string, string[]> = {
+    Lead: [...ORDERED_STATUSES], // Every job starts here
+    "Appointment Scheduled": ORDERED_STATUSES.filter(
+      (s) => STATUS_INDEX[s] >= STATUS_INDEX["Appointment Scheduled"]
+    ) as string[],
+    Estimating: ORDERED_STATUSES.filter(
+      (s) => STATUS_INDEX[s] >= STATUS_INDEX["Estimating"]
+    ) as string[],
+    Sold: ORDERED_STATUSES.filter((s) => STATUS_INDEX[s] >= SOLD_JOB_IDX) as string[],
+    Production: ORDERED_STATUSES.filter(
+      (s) => STATUS_INDEX[s] >= STATUS_INDEX["Production Ready"]
+    ) as string[],
+    Invoicing: ORDERED_STATUSES.filter(
+      (s) => STATUS_INDEX[s] >= STATUS_INDEX["Invoiced"]
+    ) as string[],
+    Completed: ORDERED_STATUSES.filter(
+      (s) => STATUS_INDEX[s] >= STATUS_INDEX["Paid & Closed"]
+    ) as string[],
+  };
 
-  // Aggregate into stages
-  const stageMap: Record<string, number> = {};
-  for (const s of STAGES) stageMap[s] = 0;
+  for (const stage of STAGES) {
+    const statuses = stageStatusMap[stage] ?? [];
+    const params: unknown[] = [startUnix, endUnix];
+    const segFilter = buildSegmentFilter(segment, params);
+    const placeholders = statuses.map((_, i) => `$${params.length + i + 1}`);
+    params.push(...statuses);
 
-  for (const row of rows) {
-    const stage = STATUS_TO_STAGE[row.status_name];
-    if (stage) {
-      stageMap[stage] += parseInt(row.cnt, 10);
-    }
+    const rows = await query<{ cnt: string }>(
+      `SELECT COUNT(DISTINCT j.id)::text AS cnt
+       FROM jobs j
+       WHERE j.jn_date_created >= $1
+         AND j.jn_date_created <= $2
+         ${segFilter}
+         AND (
+           j.status_name IN (${placeholders.join(", ")})
+           OR EXISTS (
+             SELECT 1 FROM job_stage_history h
+             WHERE h.job_id = j.id
+               AND h.to_stage_name IN (${placeholders.join(", ")})
+           )
+         )`,
+      params
+    );
+
+    const count = parseInt(rows[0]?.cnt ?? "0", 10);
+    results.push({ stage, count });
   }
 
-  return STAGES.map((stage) => ({
-    stage,
-    count: stageMap[stage] ?? 0,
-  }));
+  return results;
 }
 
 // ---------------------------------------------------------------------------
@@ -476,6 +504,36 @@ async function queryLossByStage(
 }
 
 // ---------------------------------------------------------------------------
+// Query: Lost/Cold/Dead jobs count
+// ---------------------------------------------------------------------------
+
+async function queryLostJobsCount(
+  startUnix: number,
+  endUnix: number,
+  segment: Segment | null
+): Promise<number> {
+  const params: unknown[] = [startUnix, endUnix];
+  const segFilter = buildSegmentFilter(segment, params);
+
+  const lossStatusPlaceholders = LOSS_STATUSES.map(
+    (_, i) => `$${params.length + i + 1}`
+  );
+  params.push(...LOSS_STATUSES);
+
+  const rows = await query<{ cnt: string }>(
+    `SELECT COUNT(*)::text AS cnt
+     FROM jobs j
+     WHERE j.jn_date_created >= $1
+       AND j.jn_date_created <= $2
+       AND (j.status_name IN (${lossStatusPlaceholders.join(", ")}) OR j.is_archived = true)
+       ${segFilter}`,
+    params
+  );
+
+  return parseInt(rows[0]?.cnt ?? "0", 10);
+}
+
+// ---------------------------------------------------------------------------
 // Query: Avg cycle time (job creation → Paid & Closed)
 // ---------------------------------------------------------------------------
 
@@ -656,7 +714,10 @@ async function querySegmentComparison(
     insurance: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
     repairs: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
     warranty: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
-  };
+  } as Record<
+    Segment,
+    { leadToEstimate: number; estimateToSold: number; soldToInvoiced: number }
+  >;
 
   for (let ti = 0; ti < keyConvTransitions.length; ti++) {
     const [from, to] = keyConvTransitions[ti];

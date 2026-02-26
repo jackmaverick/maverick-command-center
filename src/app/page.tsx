@@ -11,12 +11,19 @@ import {
   ResponsiveContainer,
   XAxis,
   YAxis,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   Legend,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { PeriodSelector } from "@/components/layout/period-selector";
+import { ConversionFunnel } from "@/components/ConversionFunnel";
 import { formatCurrency, formatPercent, formatDate } from "@/lib/dates";
 import { CHART_COLORS, SEGMENTS } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
@@ -41,18 +48,6 @@ interface LeadSource {
   count: number;
 }
 
-interface ActivityEntry {
-  id: string;
-  type: string;
-  subject: string | null;
-  description: string | null;
-  contact_id: string | null;
-  job_id: string | null;
-  date_created: string;
-  performed_by: string | null;
-  source: "jn" | "internal";
-}
-
 interface DashboardData {
   period: DashboardPeriod;
   revenue: number;
@@ -65,8 +60,8 @@ interface DashboardData {
   salesFunnel: FunnelEntry[];
   revenueByJobType: Record<string, number>;
   topLeadSources: LeadSource[];
-  recentActivity: ActivityEntry[];
-  pipelineBySegment: Record<string, number>;
+  opportunitiesBySegment: Record<string, number>;
+  soldJobsBySegment: Record<string, number>;
 }
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
@@ -113,32 +108,6 @@ function DeltaBadge({ value }: { value: number | null }) {
   );
 }
 
-const ACTIVITY_TYPE_LABELS: Record<string, string> = {
-  note: "Note",
-  call: "Call",
-  email: "Email",
-  sms: "SMS",
-  task: "Task",
-  appointment: "Appt",
-};
-
-function activityTypeLabel(type: string): string {
-  return ACTIVITY_TYPE_LABELS[type.toLowerCase()] ?? type;
-}
-
-function relativeTime(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diffMs = now - then;
-  const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHrs = Math.floor(diffMin / 60);
-  if (diffHrs < 24) return `${diffHrs}h ago`;
-  const diffDays = Math.floor(diffHrs / 24);
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return formatDate(dateStr, "MMM d");
-}
 
 /* ── Custom Recharts Tooltip ─────────────────────────────────────────── */
 
@@ -213,9 +182,23 @@ export default function DashboardPage() {
         {/* Revenue */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">
-              Revenue
-            </CardTitle>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2 cursor-help">
+                    <CardTitle className="text-xs font-medium text-[#8b949e]">
+                      Revenue
+                    </CardTitle>
+                    <span className="text-xs text-[#484f58] font-bold">ⓘ</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs bg-[#21262d] border-[#30363d]">
+                  <p className="text-xs text-[#e6edf3]">
+                    Sum of all invoice amounts created during this period (accrual basis — based on invoice date, not payment received)
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -234,9 +217,23 @@ export default function DashboardPage() {
         {/* Pipeline */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">
-              Pipeline Value
-            </CardTitle>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2 cursor-help">
+                    <CardTitle className="text-xs font-medium text-[#8b949e]">
+                      Pipeline Value
+                    </CardTitle>
+                    <span className="text-xs text-[#484f58] font-bold">ⓘ</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs bg-[#21262d] border-[#30363d]">
+                  <p className="text-xs text-[#e6edf3]">
+                    Total estimate value of all active jobs currently in Estimating through Invoiced stages (live snapshot, not period-filtered)
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -252,9 +249,23 @@ export default function DashboardPage() {
         {/* New Leads */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">
-              New Leads
-            </CardTitle>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2 cursor-help">
+                    <CardTitle className="text-xs font-medium text-[#8b949e]">
+                      New Leads
+                    </CardTitle>
+                    <span className="text-xs text-[#484f58] font-bold">ⓘ</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs bg-[#21262d] border-[#30363d]">
+                  <p className="text-xs text-[#e6edf3]">
+                    Jobs created in JobNimbus during the selected period. Includes archived/test leads — archive them in JobNimbus then sync to remove
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -273,9 +284,23 @@ export default function DashboardPage() {
         {/* Conversion Rate */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">
-              Conv Rate
-            </CardTitle>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2 cursor-help">
+                    <CardTitle className="text-xs font-medium text-[#8b949e]">
+                      Conv Rate
+                    </CardTitle>
+                    <span className="text-xs text-[#484f58] font-bold">ⓘ</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs bg-[#21262d] border-[#30363d]">
+                  <p className="text-xs text-[#e6edf3]">
+                    Percentage of jobs created in this period that have reached "Sold Job" status or beyond
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -291,9 +316,23 @@ export default function DashboardPage() {
         {/* Avg Ticket */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">
-              Avg Ticket
-            </CardTitle>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2 cursor-help">
+                    <CardTitle className="text-xs font-medium text-[#8b949e]">
+                      Avg Ticket
+                    </CardTitle>
+                    <span className="text-xs text-[#484f58] font-bold">ⓘ</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs bg-[#21262d] border-[#30363d]">
+                  <p className="text-xs text-[#e6edf3]">
+                    Average invoice amount for invoices created in this period
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -344,7 +383,7 @@ export default function DashboardPage() {
                     tickLine={false}
                     width={80}
                   />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(88,166,255,0.08)" }} />
+                  <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: "rgba(88,166,255,0.08)" }} />
                   <Bar dataKey="value" name="Jobs" radius={[0, 4, 4, 0]} maxBarSize={24}>
                     {(data?.salesFunnel ?? []).map((entry, i) => (
                       <Cell key={i} fill={entry.fill} />
@@ -390,7 +429,7 @@ export default function DashboardPage() {
                       <Cell key={i} fill={entry.fill} />
                     ))}
                   </Pie>
-                  <Tooltip
+                  <RechartsTooltip
                     content={({ active, payload }) => {
                       if (!active || !payload?.length) return null;
                       const item = payload[0];
@@ -421,9 +460,8 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* ── Bottom Row: Lead Sources + Recent Activity ──────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Top Lead Sources */}
+      {/* ── Top Lead Sources ──────────────────────────────────────────── */}
+      <div className="mb-8">
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader>
             <CardTitle className="text-sm font-semibold text-[#e6edf3]">
@@ -473,95 +511,91 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
-
-        {/* Recent Activity */}
-        <Card className="bg-[#161b22] border-[#30363d]">
-          <CardHeader>
-            <CardTitle className="text-sm font-semibold text-[#e6edf3]">
-              Recent Activity
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <Skeleton className="h-6 w-12 rounded bg-[#21262d] shrink-0" />
-                    <div className="flex-1 space-y-1">
-                      <Skeleton className="h-4 w-full bg-[#21262d]" />
-                      <Skeleton className="h-3 w-24 bg-[#21262d]" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (data?.recentActivity ?? []).length === 0 ? (
-              <p className="text-sm text-[#8b949e]">No recent activity</p>
-            ) : (
-              <div className="space-y-3">
-                {(data?.recentActivity ?? []).map((activity) => (
-                  <div
-                    key={activity.id}
-                    className="flex items-start gap-3 py-1"
-                  >
-                    <span className="shrink-0 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#21262d] text-[#8b949e]">
-                      {activityTypeLabel(activity.type)}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-[#e6edf3] truncate">
-                        {activity.subject ?? activity.description ?? "—"}
-                      </p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        {activity.performed_by && (
-                          <span className="text-xs text-[#8b949e]">
-                            {activity.performed_by}
-                          </span>
-                        )}
-                        <span className="text-xs text-[#484f58]">
-                          {relativeTime(activity.date_created)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
 
-      {/* ── Pipeline by Segment ─────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {(Object.entries(SEGMENTS) as [Segment, (typeof SEGMENTS)[Segment]][]).map(
-          ([key, segment]) => {
-            const count = data?.pipelineBySegment?.[key] ?? 0;
-            return (
-              <Card key={key} className="bg-[#161b22] border-[#30363d]">
-                <CardContent className="pt-6">
-                  {isLoading ? (
-                    <div>
-                      <Skeleton className="h-4 w-20 mb-2 bg-[#21262d]" />
-                      <Skeleton className="h-8 w-12 bg-[#21262d]" />
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <span
-                          className="h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: segment.color }}
-                        />
-                        <span className="text-xs font-medium text-[#8b949e]">
-                          {segment.label}
-                        </span>
+      {/* ── Conversion Funnel ─────────────────────────────────────────── */}
+      <div className="mb-8">
+        <ConversionFunnel period={period} />
+      </div>
+
+      {/* ── Opportunities by Segment ─────────────────────────────────── */}
+      <div className="mb-8">
+        <h2 className="text-sm font-semibold text-[#e6edf3] mb-4">
+          Opportunities by Segment
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {(Object.entries(SEGMENTS) as [Segment, (typeof SEGMENTS)[Segment]][]).map(
+            ([key, segment]) => {
+              const count = data?.opportunitiesBySegment?.[key] ?? 0;
+              return (
+                <Card key={key} className="bg-[#161b22] border-[#30363d]">
+                  <CardContent className="pt-6">
+                    {isLoading ? (
+                      <div>
+                        <Skeleton className="h-4 w-20 mb-2 bg-[#21262d]" />
+                        <Skeleton className="h-8 w-12 bg-[#21262d]" />
                       </div>
-                      <p className="text-2xl font-bold text-[#e6edf3]">{count}</p>
-                      <p className="text-xs text-[#484f58] mt-0.5">active jobs</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          }
-        )}
+                    ) : (
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: segment.color }}
+                          />
+                          <span className="text-xs font-medium text-[#8b949e]">
+                            {segment.label}
+                          </span>
+                        </div>
+                        <p className="text-2xl font-bold text-[#e6edf3]">{count}</p>
+                        <p className="text-xs text-[#484f58] mt-0.5">pre-sale jobs</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            }
+          )}
+        </div>
+      </div>
+
+      {/* ── Sold Jobs by Segment ──────────────────────────────────────── */}
+      <div>
+        <h2 className="text-sm font-semibold text-[#e6edf3] mb-4">
+          Sold Jobs by Segment
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {(Object.entries(SEGMENTS) as [Segment, (typeof SEGMENTS)[Segment]][]).map(
+            ([key, segment]) => {
+              const count = data?.soldJobsBySegment?.[key] ?? 0;
+              return (
+                <Card key={key} className="bg-[#161b22] border-[#30363d]">
+                  <CardContent className="pt-6">
+                    {isLoading ? (
+                      <div>
+                        <Skeleton className="h-4 w-20 mb-2 bg-[#21262d]" />
+                        <Skeleton className="h-8 w-12 bg-[#21262d]" />
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: segment.color }}
+                          />
+                          <span className="text-xs font-medium text-[#8b949e]">
+                            {segment.label}
+                          </span>
+                        </div>
+                        <p className="text-2xl font-bold text-[#e6edf3]">{count}</p>
+                        <p className="text-xs text-[#484f58] mt-0.5">production jobs</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            }
+          )}
+        </div>
       </div>
 
       {/* ── Error State ─────────────────────────────────────────────── */}

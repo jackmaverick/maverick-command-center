@@ -74,6 +74,7 @@ interface PipelineData {
   };
   keyConversions: KeyConversion[];
   lossByStage: LossByStage[];
+  lostJobsCount: number;
   avgCycleTimeDays: number | null;
   pipelineValueByStage: PipelineValueByStage[];
   segmentComparison: SegmentComparison[];
@@ -144,10 +145,13 @@ export default function PipelinePage() {
   });
 
   // Derived values
-  const totalActiveJobs =
+  const totalOpportunities =
     data?.stageCounts.reduce((sum, s) => sum + s.count, 0) ?? 0;
   const totalPipelineValue =
     data?.pipelineValueByStage.reduce((sum, s) => sum + s.value, 0) ?? 0;
+  const soldProductionCount = data?.stageCounts
+    .filter((s) => ["Sold", "Production", "Invoicing", "Completed"].includes(s.stage))
+    .reduce((sum, s) => sum + s.count, 0) ?? 0;
   const maxStageCount = data
     ? Math.max(...data.stageCounts.map((s) => s.count), 1)
     : 1;
@@ -216,11 +220,11 @@ export default function PipelinePage() {
 
       {/* ── 2. KPI Cards ───────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        {/* Total Active Jobs */}
+        {/* Opportunities (Pre-sale) */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-[#8b949e]">
-              Total Active Jobs
+              Opportunities
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -228,7 +232,25 @@ export default function PipelinePage() {
               <Skeleton className="h-8 w-16 bg-[#21262d]" />
             ) : (
               <p className="text-2xl font-bold text-[#e6edf3]">
-                {totalActiveJobs}
+                {totalOpportunities}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Sold/Production */}
+        <Card className="bg-[#161b22] border-[#30363d]">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-[#8b949e]">
+              Sold/Production
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-8 w-16 bg-[#21262d]" />
+            ) : (
+              <p className="text-2xl font-bold text-[#e6edf3]">
+                {soldProductionCount}
               </p>
             )}
           </CardContent>
@@ -297,11 +319,12 @@ export default function PipelinePage() {
         </Card>
       </div>
 
-      {/* ── 3. Stage Pipeline Visualization (Funnel) ───────────────── */}
-      <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-6 mb-8">
-        <h2 className="text-sm font-semibold text-[#e6edf3] mb-6">
-          Stage Pipeline
-        </h2>
+      {/* ── 3. Stage Pipeline Visualization (Funnel) + Lost Count ───── */}
+      <div className="mb-8">
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-6 mb-4">
+          <h2 className="text-sm font-semibold text-[#e6edf3] mb-6">
+            Stage Pipeline
+          </h2>
         {isLoading ? (
           <div className="space-y-4">
             {STAGES.map((stage, i) => (
@@ -344,6 +367,16 @@ export default function PipelinePage() {
                 </div>
               );
             })}
+          </div>
+        )}
+        </div>
+
+        {/* Lost/Cold/Dead Count */}
+        {!isLoading && (data?.lostJobsCount ?? 0) > 0 && (
+          <div className="inline-block bg-[#21262d] border border-[#30363d] rounded-lg px-4 py-2">
+            <p className="text-sm font-semibold text-[#f85149]">
+              Lost This Period: {data?.lostJobsCount ?? 0} jobs
+            </p>
           </div>
         )}
       </div>

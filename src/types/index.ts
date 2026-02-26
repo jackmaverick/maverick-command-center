@@ -12,8 +12,8 @@ export interface DashboardMetrics {
   salesFunnel: { name: string; value: number; fill: string }[];
   revenueByJobType: Record<string, number>;
   topLeadSources: { name: string; count: number }[];
-  recentActivity: Activity[];
-  pipelineByJobType: Record<string, number>;
+  opportunitiesBySegment: Record<string, number>;
+  soldJobsBySegment: Record<string, number>;
 }
 
 // JN Synced Entities
