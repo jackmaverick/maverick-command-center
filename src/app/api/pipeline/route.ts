@@ -244,6 +244,8 @@ async function queryStageCounts(
        FROM jobs j
        WHERE j.jn_date_created >= $1
          AND j.jn_date_created <= $2
+         AND j.is_active = true
+         AND j.is_archived = false
          ${segFilter}
          AND (
            j.status_name IN (${placeholders.join(", ")})
@@ -281,7 +283,7 @@ async function queryStatusCounts(
      WHERE j.is_active = true
        AND j.is_archived = false
        AND j.jn_date_created >= $1
-       AND j.jn_date_created <= $2
+       AND j.jn_date_created < $2
        ${segFilter}
      GROUP BY j.status_name
      ORDER BY COUNT(*) DESC`,
@@ -306,12 +308,14 @@ async function queryOverallConversion(
   const params: unknown[] = [startUnix, endUnix];
   const segFilter = buildSegmentFilter(segment, params);
 
-  // Total jobs created in period
+  // Total jobs created in period (active, non-archived)
   const totalRows = await query<{ cnt: string }>(
     `SELECT COUNT(*)::text AS cnt
      FROM jobs j
      WHERE j.jn_date_created >= $1
-       AND j.jn_date_created <= $2
+       AND j.jn_date_created < $2
+       AND j.is_active = true
+       AND j.is_archived = false
        ${segFilter}`,
     params
   );
@@ -524,6 +528,7 @@ async function queryLostJobsCount(
      FROM jobs j
      WHERE j.jn_date_created >= $1
        AND j.jn_date_created <= $2
+       AND j.is_active = true
        AND (j.status_name IN (${lossStatusPlaceholders.join(", ")}) OR j.is_archived = true)
        ${segFilter}`,
     params

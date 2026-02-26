@@ -94,16 +94,18 @@ export async function GET(request: NextRequest) {
         []
       ),
 
-      // 3. New Leads - jobs created in period (jn_date_created is BIGINT)
+      // 3. New Leads - jobs created in period (active, non-archived only)
       query<{ count: string }>(
         `SELECT COUNT(*) AS count
          FROM jobs j
          WHERE j.jn_date_created >= $1
-           AND j.jn_date_created < $2`,
+           AND j.jn_date_created < $2
+           AND j.is_active = true
+           AND j.is_archived = false`,
         [startUnix, endUnix]
       ),
 
-      // 4. Conversion Rate - jobs that reached 'Sold Job' or later / total in period
+      // 4. Conversion Rate - jobs that reached 'Sold Job' or later / total in period (active, non-archived)
       query<{ total: string; converted: string }>(
         `SELECT
            COUNT(*) AS total,
@@ -112,7 +114,9 @@ export async function GET(request: NextRequest) {
            ) AS converted
          FROM jobs j
          WHERE j.jn_date_created >= $1
-           AND j.jn_date_created < $2`,
+           AND j.jn_date_created < $2
+           AND j.is_active = true
+           AND j.is_archived = false`,
         [startUnix, endUnix, CONVERTED_STATUSES]
       ),
 
@@ -301,7 +305,9 @@ export async function GET(request: NextRequest) {
         `SELECT COUNT(*) AS count
          FROM jobs j
          WHERE j.jn_date_created >= $1
-           AND j.jn_date_created < $2`,
+           AND j.jn_date_created < $2
+           AND j.is_active = true
+           AND j.is_archived = false`,
         [prevStartUnix, prevEndUnix]
       );
       const prevLeads = parseInt(prevLeadsRows[0]?.count ?? "0", 10);
