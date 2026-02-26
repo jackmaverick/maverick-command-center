@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PeriodSelector } from "@/components/layout/period-selector";
+import { ConversionFunnel } from "@/components/ConversionFunnel";
 import { formatCurrency, formatPercent } from "@/lib/dates";
 import { SEGMENTS, CHART_COLORS } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
@@ -457,113 +458,9 @@ export default function SalesPage() {
         </CardContent>
       </Card>
 
-      {/* ---- Section 5: Status-by-Status Conversions -------------------- */}
-      <Card className="bg-[#161b22] border-[#30363d] mb-6">
-        <CardHeader>
-          <CardTitle className="text-sm font-semibold text-[#e6edf3]">
-            Status-to-Status Conversions
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-9 w-64 bg-[#21262d]" />
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} className="h-10 w-full bg-[#21262d]" />
-              ))}
-            </div>
-          ) : sortedReps.length === 0 ? (
-            <div className="flex items-center justify-center h-32">
-              <p className="text-sm text-[#8b949e]">No data available</p>
-            </div>
-          ) : (
-            <Tabs
-              defaultValue={selectedRep?.repId ?? sortedReps[0]?.repId}
-              value={selectedRep?.repId ?? undefined}
-              onValueChange={(val) => setSelectedRepId(val)}
-            >
-              <TabsList className="bg-[#21262d] mb-4">
-                {sortedReps.map((rep) => (
-                  <TabsTrigger
-                    key={rep.repId}
-                    value={rep.repId}
-                    className="text-[#8b949e] data-[state=active]:text-[#e6edf3] data-[state=active]:bg-[#30363d]"
-                  >
-                    {rep.repName}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-              {sortedReps.map((rep) => (
-                <TabsContent key={rep.repId} value={rep.repId}>
-                  {rep.statusConversions.length === 0 ? (
-                    <p className="text-sm text-[#8b949e] py-4">
-                      No conversion data for {rep.repName}
-                    </p>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="border-[#30363d] hover:bg-transparent">
-                          <TableHead className="text-[#8b949e]">From</TableHead>
-                          <TableHead className="text-[#8b949e]" />
-                          <TableHead className="text-[#8b949e]">To</TableHead>
-                          <TableHead className="text-right text-[#8b949e]">
-                            Jobs
-                          </TableHead>
-                          <TableHead className="text-right text-[#8b949e]">
-                            Conv. Rate
-                          </TableHead>
-                          <TableHead className="text-right text-[#8b949e]">
-                            Avg Days
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {rep.statusConversions.map((conv, idx) => (
-                          <TableRow
-                            key={idx}
-                            className="border-[#21262d] hover:bg-[#21262d]"
-                          >
-                            <TableCell className="text-[#e6edf3] text-sm">
-                              {conv.fromStatus}
-                            </TableCell>
-                            <TableCell className="text-[#484f58] text-center">
-                              &rarr;
-                            </TableCell>
-                            <TableCell className="text-[#e6edf3] text-sm">
-                              {conv.toStatus}
-                            </TableCell>
-                            <TableCell className="text-right text-[#e6edf3] tabular-nums">
-                              {conv.jobCount}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              <span
-                                className="inline-flex items-center gap-1.5"
-                                style={{ color: conversionColor(conv.conversionRate) }}
-                              >
-                                <span
-                                  className="inline-block h-1.5 rounded-full"
-                                  style={{
-                                    width: `${Math.max(conv.conversionRate * 0.5, 4)}px`,
-                                    backgroundColor: conversionColor(conv.conversionRate),
-                                  }}
-                                />
-                                {formatPercent(conv.conversionRate)}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-right text-[#8b949e] tabular-nums">
-                              {conv.avgDays.toFixed(1)}d
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </TabsContent>
-              ))}
-            </Tabs>
-          )}
-        </CardContent>
-      </Card>
+      {/* ---- Section 5: Status-to-Status Conversions (Overall Pipeline) --- */}
+      <ConversionFunnel period={period} segment={segment === "all" ? undefined : segment} />
+      <div className="mb-6" />
 
       {/* ---- Section 6 & 7: Follow-Up Metrics + Time Between Statuses --- */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

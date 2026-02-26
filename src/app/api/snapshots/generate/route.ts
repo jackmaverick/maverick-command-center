@@ -28,11 +28,11 @@ import {
 const VALID_TYPES = ["weekly", "monthly"] as const;
 type SnapshotType = (typeof VALID_TYPES)[number];
 
-const ALL_SEGMENTS: Segment[] = ["real_estate", "retail", "insurance", "repairs"];
+const ALL_SEGMENTS: Segment[] = ["real_estate", "retail", "insurance", "repairs", "warranty"];
 
-/** Statuses at or past "Signed Contract" count as won. */
+/** Statuses at or past "Sold Job" count as won. */
 const WON_STATUSES = (() => {
-  const idx = ORDERED_STATUSES.indexOf("Signed Contract");
+  const idx = ORDERED_STATUSES.indexOf("Sold Job");
   return [...ORDERED_STATUSES.slice(idx)];
 })();
 
@@ -172,9 +172,9 @@ export async function POST(request: NextRequest) {
            AND j.is_closed = false
            AND j.is_archived = false
            AND j.status_name IN (
-             'Estimating', 'Estimate Sent', 'Signed Contract',
-             'Pre-Production', 'Ready for Install',
-             'Waiting on Adjuster', 'Supplementing'
+             'Estimating', 'Estimate Sent', 'Sold Job',
+             'Production Ready', 'In Progress',
+             'Insurance Pending', 'Invoiced'
            )`,
         []
       ),
@@ -473,6 +473,7 @@ export async function POST(request: NextRequest) {
       retail: { leads: 0, won: 0, lost: 0, closeRate: 0, revenue: 0 },
       insurance: { leads: 0, won: 0, lost: 0, closeRate: 0, revenue: 0 },
       repairs: { leads: 0, won: 0, lost: 0, closeRate: 0, revenue: 0 },
+      warranty: { leads: 0, won: 0, lost: 0, closeRate: 0, revenue: 0 },
     };
 
     for (const row of segmentRows) {

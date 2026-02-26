@@ -151,19 +151,24 @@ export async function GET(request: NextRequest) {
         }
 
         return {
-          rep_jnid: rep.sales_rep_jnid,
-          rep_name: rep.sales_rep_name,
-          total_jobs: totalJobs,
-          won_jobs: wonJobs,
-          lost_jobs: lostJobs,
-          close_rate: round1(closeRate),
-          segment_close_rates: segmentBreakdown,
+          repId: rep.sales_rep_jnid,
+          repName: rep.sales_rep_name,
+          totalJobs: totalJobs,
+          wonJobs: wonJobs,
+          lostJobs: lostJobs,
+          closeRate: round1(closeRate),
+          segmentCloseRates: segmentBreakdown,
+          revenue: 0, // Simplified for now
+          avgCycleDays: 0, // Would require status history tracking
+          statusConversions: [],
+          followUpMetrics: { avgAfterEstimate: 0, avgAfterAppointment: 0, jobsWithZeroFollowUp: 0 },
+          timeBetweenStatuses: [],
         };
       })
     );
 
     // Sort by close rate descending
-    repMetrics.sort((a, b) => b.close_rate - a.close_rate);
+    repMetrics.sort((a, b) => b.closeRate - a.closeRate);
 
     return NextResponse.json({
       period: { key: period, label: range.label },

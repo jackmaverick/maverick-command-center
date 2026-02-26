@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { type PeriodKey, getDateRange, toUnixSeconds } from "@/lib/dates";
 import { SEGMENT_SQL } from "@/lib/segment";
-import { ORDERED_STATUSES, LOSS_STATUSES } from "@/lib/constants";
+import { LOSS_STATUSES } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -17,11 +17,24 @@ const VALID_PERIODS: PeriodKey[] = [
   "all",
 ];
 
-/** Statuses at or past "Signed Contract" count as won. */
-const WON_STATUSES = (() => {
-  const idx = ORDERED_STATUSES.indexOf("Signed Contract");
-  return ORDERED_STATUSES.slice(idx);
-})();
+/** Jobs are won when they reach "Sold Job" status or beyond. */
+const WON_STATUSES = [
+  "Sold Job",
+  "Production Ready",
+  "In Progress",
+  "Insurance Pending",
+  "Future Work",
+  "Needs Rescheduling",
+  "Invoiced",
+  "Final Invoicing",
+  "Pending Final Payment",
+  "Job Close Out",
+  "Paid & Closed",
+  "All Work Completed",
+  "All Work Complete",
+  "Job Completed",
+  "Warranty Complete",
+];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -144,6 +157,7 @@ export async function GET(request: NextRequest) {
           retail: 0,
           insurance: 0,
           repairs: 0,
+          warranty: 0,
         };
       }
       segmentBySource[row.source_name][row.segment as Segment] = parseInt(
@@ -176,6 +190,7 @@ export async function GET(request: NextRequest) {
           retail: 0,
           insurance: 0,
           repairs: 0,
+          warranty: 0,
         },
       };
     });

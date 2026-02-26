@@ -23,6 +23,7 @@ const VALID_SEGMENTS: Segment[] = [
   "retail",
   "insurance",
   "repairs",
+  "warranty",
 ];
 
 /** Response time buckets in minutes. Each entry is [label, maxMinutes]. */
@@ -43,10 +44,10 @@ const MISSED_THRESHOLD_MIN = 1440;
 /** Pipeline velocity stage transitions to measure. */
 const VELOCITY_TRANSITIONS: [string, string][] = [
   ["Lead", "Appointment Scheduled"],
-  ["Appointment Scheduled", "Estimate Sent"],
-  ["Estimate Sent", "Signed Contract"],
-  ["Signed Contract", "Job Scheduled"],
-  ["Job Scheduled", "Paid & Closed"],
+  ["Appointment Scheduled", "Estimating"],
+  ["Estimating", "Estimate Sent"],
+  ["Estimate Sent", "Sold Job"],
+  ["Sold Job", "Invoiced"],
 ];
 
 // ---------------------------------------------------------------------------
@@ -550,9 +551,9 @@ async function queryPipelineVelocity(
       CASE from_stage
         WHEN 'Lead' THEN 1
         WHEN 'Appointment Scheduled' THEN 2
-        WHEN 'Estimate Sent' THEN 3
-        WHEN 'Signed Contract' THEN 4
-        WHEN 'Job Scheduled' THEN 5
+        WHEN 'Estimating' THEN 3
+        WHEN 'Estimate Sent' THEN 4
+        WHEN 'Sold Job' THEN 5
         ELSE 6
       END
   `;

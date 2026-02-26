@@ -96,8 +96,8 @@ const STATUS_INDEX = Object.fromEntries(
   ORDERED_STATUSES.map((s, i) => [s, i])
 ) as Record<string, number>;
 
-/** The index of Signed Contract -- anything >= this is "converted". */
-const SIGNED_CONTRACT_IDX = STATUS_INDEX["Signed Contract"];
+/** The index of Sold Job -- anything >= this is "converted". */
+const SOLD_JOB_IDX = STATUS_INDEX["Sold Job"];
 
 /**
  * Build the optional segment WHERE fragment and push the param if needed.
@@ -268,7 +268,7 @@ async function queryStatusCounts(
 }
 
 // ---------------------------------------------------------------------------
-// Query: Overall conversion (reached Signed Contract or beyond / total)
+// Query: Overall conversion (reached Sold Job or beyond / total)
 // ---------------------------------------------------------------------------
 
 async function queryOverallConversion(
@@ -290,9 +290,9 @@ async function queryOverallConversion(
   );
   const totalJobs = parseInt(totalRows[0]?.cnt ?? "0", 10);
 
-  // Build the list of statuses at or beyond Signed Contract
+  // Build the list of statuses at or beyond Sold Job
   const convertedStatuses = ORDERED_STATUSES.filter(
-    (s) => STATUS_INDEX[s] >= SIGNED_CONTRACT_IDX
+    (s) => STATUS_INDEX[s] >= SOLD_JOB_IDX
   );
 
   // Jobs that either currently are at a converted status or have history of reaching one
@@ -337,8 +337,8 @@ async function queryKeyConversions(
 ): Promise<KeyConversion[]> {
   const transitions: [string, string][] = [
     ["Lead", "Estimate Sent"],
-    ["Estimate Sent", "Signed Contract"],
-    ["Signed Contract", "Paid & Closed"],
+    ["Estimate Sent", "Sold Job"],
+    ["Sold Job", "Paid & Closed"],
   ];
 
   const results: KeyConversion[] = [];
@@ -583,7 +583,7 @@ async function querySegmentComparison(
 
   // Build the converted statuses list
   const convertedStatuses = ORDERED_STATUSES.filter(
-    (s) => STATUS_INDEX[s] >= SIGNED_CONTRACT_IDX
+    (s) => STATUS_INDEX[s] >= SOLD_JOB_IDX
   );
   const convPlaceholders = convertedStatuses.map((_, i) => `$${i + 3}`);
 
@@ -642,8 +642,8 @@ async function querySegmentComparison(
   // Key conversions per segment (Lead→Estimate Sent, Estimate Sent→Signed, Signed→Invoiced)
   const keyConvTransitions: [string, string][] = [
     ["Lead", "Estimate Sent"],
-    ["Estimate Sent", "Signed Contract"],
-    ["Signed Contract", "Paid & Closed"],
+    ["Estimate Sent", "Sold Job"],
+    ["Sold Job", "Paid & Closed"],
   ];
 
   // For each transition, query counts grouped by segment
@@ -655,6 +655,7 @@ async function querySegmentComparison(
     retail: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
     insurance: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
     repairs: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
+    warranty: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
   };
 
   for (let ti = 0; ti < keyConvTransitions.length; ti++) {

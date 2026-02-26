@@ -29,9 +29,9 @@ const VALID_SEGMENTS: Segment[] = [
   "repairs",
 ];
 
-/** Statuses at or past "Signed Contract" count as won. */
+/** Statuses at or past "Sold Job" count as won. */
 const WON_STATUSES = (() => {
-  const idx = ORDERED_STATUSES.indexOf("Signed Contract");
+  const idx = ORDERED_STATUSES.indexOf("Sold Job");
   return ORDERED_STATUSES.slice(idx);
 })();
 

@@ -15,7 +15,7 @@ const VALID_PERIODS: PeriodKey[] = [
   "all",
 ];
 
-// Statuses that count as "converted" (Signed Contract or later)
+// Statuses that count as "converted" (Sold or later)
 const CONVERTED_STATUSES = Object.entries(STATUS_TO_STAGE)
   .filter(([, stage]) => {
     const stageIndex = STAGES.indexOf(stage);
@@ -87,9 +87,9 @@ export async function GET(request: NextRequest) {
            AND j.is_closed = false
            AND j.is_archived = false
            AND j.status_name IN (
-             'Estimating', 'Estimate Sent', 'Signed Contract',
-             'Pre-Production', 'Ready for Install',
-             'Waiting on Adjuster', 'Supplementing'
+             'Estimating', 'Estimate Sent', 'Sold Job',
+             'Production Ready', 'In Progress',
+             'Insurance Pending', 'Invoiced'
            )`,
         []
       ),
@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
         [startUnix, endUnix]
       ),
 
-      // 4. Conversion Rate - jobs that reached 'Signed Contract' or later / total in period
+      // 4. Conversion Rate - jobs that reached 'Sold Job' or later / total in period
       query<{ total: string; converted: string }>(
         `SELECT
            COUNT(*) AS total,
