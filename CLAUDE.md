@@ -247,3 +247,39 @@ vercel logs maverick-command-center
 
 **Last Updated:** February 26, 2026  
 **Maintained by:** Claude Code
+
+## Status-to-Status Conversion Tracking (Feb 26)
+
+### New Features
+**API Endpoint:** `GET /api/conversions`
+- Track conversions between specific status pairs
+- Supports period, segment, and rep filters
+- Returns conversion counts and rates
+
+**Conversions Tracked:**
+1. Lead → Appointment Scheduled (first appointment conversion)
+2. Lead → Estimating (direct estimate, no appointment)
+3. Appointment Scheduled → Estimating (post-appointment estimate)
+4. Appointment Scheduled → Lost/Cold/Dead (appointment drop-off)
+5. Estimating → Estimate Sent (estimate completion)
+6. Estimate Sent → Sold Job (close rate)
+7. Estimate Sent → Lost/Cold/Dead (estimate rejection)
+
+**Component:** `ConversionFunnel`
+- Visualizes pipeline conversions as a funnel
+- Shows converted job counts and conversion rates
+- Progress bars for visual representation
+- Can be added to any page (e.g., sales dashboard)
+
+### Implementation Details
+- Uses `STATUS_CONVERSIONS` array from `constants.ts`
+- Each conversion has `from`, `to`, and `label` fields
+- To statuses can be single status or array (for drop-off paths)
+- Query endpoint: `/api/conversions?period=month&segment=retail&rep_jnid=xxx`
+
+### Future Enhancements
+- Add `job_status_history` table for precise status transition tracking
+- Calculate average days between status transitions
+- Add conversion trends over time
+- Build detailed rep-by-rep conversion breakdowns
+
