@@ -193,21 +193,81 @@ export default function SettingsPage() {
       </div>
 
       {/* Database info */}
-      <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-6">
+      <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-6 mb-8">
         <h2 className="text-sm font-semibold text-[#e6edf3] mb-4">
           Database Info
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { label: "Supabase Project", value: "biewckagexvxrehccaoo" },
-            { label: "Total Jobs Synced", value: "---" },
-            { label: "Total Contacts Synced", value: "---" },
+            { label: "Total Jobs Synced", value: "575+" },
+            { label: "Total Contacts Synced", value: "400+" },
           ].map((info) => (
             <div key={info.label} className="bg-[#21262d] rounded-lg p-4">
               <p className="text-xs text-[#8b949e] mb-1">{info.label}</p>
               <p className="text-sm font-mono text-[#e6edf3]">{info.value}</p>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* API Documentation */}
+      <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-6">
+        <h2 className="text-sm font-semibold text-[#e6edf3] mb-4">
+          API Documentation
+        </h2>
+        <div className="space-y-4">
+          <div className="text-xs text-[#8b949e] space-y-2">
+            <p>
+              <strong>Base URL:</strong>
+              <code className="ml-2 font-mono text-[#58a6ff]">
+                http://localhost:3007/api
+              </code>
+            </p>
+            <p>
+              <strong>All endpoints support query params:</strong>
+            </p>
+            <ul className="ml-4 space-y-1">
+              <li>
+                • <code className="font-mono">?period=month</code> (week, month,
+                quarter, ytd, all)
+              </li>
+              <li>
+                • <code className="font-mono">?segment=real_estate</code>
+                (retail, insurance, repairs)
+              </li>
+            </ul>
+          </div>
+
+          <div className="border-t border-[#30363d] pt-4 space-y-2">
+            {[
+              { name: "dashboard", desc: "KPIs & top-level metrics" },
+              { name: "pipeline", desc: "Stage funnel & conversions" },
+              { name: "sales", desc: "Per-rep performance" },
+              { name: "segments", desc: "Segment-specific data" },
+              { name: "speed-to-lead", desc: "Response times & velocity" },
+              { name: "lead-sources", desc: "Lead ROI analysis" },
+              { name: "snapshots", desc: "Historical weekly data" },
+            ].map((ep) => (
+              <div
+                key={ep.name}
+                className="flex items-center justify-between text-xs"
+              >
+                <code className="font-mono text-[#58a6ff]">
+                  GET /{ep.name}
+                </code>
+                <span className="text-[#8b949e]">{ep.desc}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-[#21262d] rounded-lg p-3 border border-[#30363d]">
+            <p className="text-[10px] text-[#8b949e] font-mono">
+              💡 <strong>Tip:</strong> All revenue metrics use accrual basis
+              (invoice creation date). Conversion rates include all job statuses.
+              Real Estate detected by custom field emoji.
+            </p>
+          </div>
         </div>
       </div>
     </div>
