@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/tooltip";
 import { PeriodSelector } from "@/components/layout/period-selector";
 import { ConversionFunnel } from "@/components/ConversionFunnel";
-import { formatCurrency, formatPercent, formatDate } from "@/lib/dates";
+import { formatCurrency, formatPercent } from "@/lib/dates";
 import { CHART_COLORS, SEGMENTS } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
 
@@ -523,7 +523,7 @@ export default function DashboardPage() {
         <h2 className="text-sm font-semibold text-[#e6edf3] mb-4">
           Opportunities by Segment
         </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           {(Object.entries(SEGMENTS) as [Segment, (typeof SEGMENTS)[Segment]][]).map(
             ([key, segment]) => {
               const count = data?.opportunitiesBySegment?.[key] ?? 0;
@@ -563,7 +563,7 @@ export default function DashboardPage() {
         <h2 className="text-sm font-semibold text-[#e6edf3] mb-4">
           Sold Jobs by Segment
         </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           {(Object.entries(SEGMENTS) as [Segment, (typeof SEGMENTS)[Segment]][]).map(
             ([key, segment]) => {
               const count = data?.soldJobsBySegment?.[key] ?? 0;

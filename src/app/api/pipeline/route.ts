@@ -210,8 +210,6 @@ async function queryStageCounts(
   segment: Segment | null
 ): Promise<StageCount[]> {
   // Inflow/cohort approach: for each stage, count jobs created in period that have REACHED or PASSED that stage
-  const results: StageCount[] = [];
-
   // Define "at or beyond" status lists for each stage
   const stageStatusMap: Record<string, string[]> = {
     Lead: [...ORDERED_STATUSES], // Every job starts here
@@ -233,14 +231,15 @@ async function queryStageCounts(
     ) as string[],
   };
 
-  for (const stage of STAGES) {
+  // Run all stage queries in parallel
+  const stageQueries = STAGES.map((stage) => {
     const statuses = stageStatusMap[stage] ?? [];
     const params: unknown[] = [startUnix, endUnix];
     const segFilter = buildSegmentFilter(segment, params);
     const placeholders = statuses.map((_, i) => `$${params.length + i + 1}`);
     params.push(...statuses);
 
-    const rows = await query<{ cnt: string }>(
+    return query<{ cnt: string }>(
       `SELECT COUNT(DISTINCT j.id)::text AS cnt
        FROM jobs j
        WHERE j.jn_date_created >= $1
@@ -255,13 +254,13 @@ async function queryStageCounts(
            )
          )`,
       params
-    );
+    ).then((rows) => ({
+      stage,
+      count: parseInt(rows[0]?.cnt ?? "0", 10),
+    }));
+  });
 
-    const count = parseInt(rows[0]?.cnt ?? "0", 10);
-    results.push({ stage, count });
-  }
-
-  return results;
+  return Promise.all(stageQueries);
 }
 
 // ---------------------------------------------------------------------------
@@ -714,10 +713,7 @@ async function querySegmentComparison(
     insurance: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
     repairs: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
     warranty: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
-  } as Record<
-    Segment,
-    { leadToEstimate: number; estimateToSold: number; soldToInvoiced: number }
-  >;
+  };
 
   for (let ti = 0; ti < keyConvTransitions.length; ti++) {
     const [from, to] = keyConvTransitions[ti];

@@ -85,6 +85,7 @@ interface PipelineData {
 
 const STAGE_COLORS: Record<string, string> = {
   Lead: "#58a6ff",
+  "Appointment Scheduled": "#79c0ff",
   Estimating: "#a371f7",
   Sold: "#d29922",
   Production: "#f0883e",
@@ -219,7 +220,7 @@ export default function PipelinePage() {
       </div>
 
       {/* ── 2. KPI Cards ───────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-8">
         {/* Opportunities (Pre-sale) */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
