@@ -248,6 +248,19 @@ vercel logs maverick-command-center
 **Last Updated:** February 26, 2026  
 **Maintained by:** Claude Code
 
+## Status Mapping Corrections (Feb 26)
+
+### Critical Fix: "Signed Contract" Removed
+- **Issue**: Database and old code referenced "Signed Contract" status which no longer exists in JobNimbus
+- **Resolution**: Updated all references to "Signed Job" (the actual winning status in current system)
+- **Impact**: Fixed data accuracy across all APIs and conversion calculations
+- **Files Changed**: constants.ts, sales, pipeline, segments, snapshots, dashboard, speed-to-lead APIs
+
+### Warranty Segment Added
+- Added "warranty" to SEGMENTS and all segment-related queries
+- Updated VALID_SEGMENTS in all APIs to include warranty
+- Fixed segment breakdown reporting across all endpoints
+
 ## Status-to-Status Conversion Tracking (Feb 26)
 
 ### New Features
