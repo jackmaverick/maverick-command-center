@@ -338,7 +338,7 @@ async function queryKeyConversions(
   const transitions: [string, string][] = [
     ["Lead", "Estimate Sent"],
     ["Estimate Sent", "Signed Contract"],
-    ["Signed Contract", "Invoiced Customer"],
+    ["Signed Contract", "Paid & Closed"],
   ];
 
   const results: KeyConversion[] = [];
@@ -643,7 +643,7 @@ async function querySegmentComparison(
   const keyConvTransitions: [string, string][] = [
     ["Lead", "Estimate Sent"],
     ["Estimate Sent", "Signed Contract"],
-    ["Signed Contract", "Invoiced Customer"],
+    ["Signed Contract", "Paid & Closed"],
   ];
 
   // For each transition, query counts grouped by segment
