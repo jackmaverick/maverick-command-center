@@ -11,18 +11,22 @@ export const CHART_COLORS = [
 ] as const;
 
 // Segment definitions
+// Real Estate is a cross-cutting segment (custom field = '🔑')
+// Record types: Retail, Insurance, Repairs, Warranty
 export const SEGMENTS = {
   real_estate: { label: "Real Estate", color: "#a371f7", icon: "🏠" },
   retail: { label: "Retail", color: "#58a6ff", icon: "🏗️" },
   insurance: { label: "Insurance", color: "#d29922", icon: "🛡️" },
   repairs: { label: "Repairs", color: "#3fb950", icon: "🔧" },
+  warranty: { label: "Warranty", color: "#79c0ff", icon: "⚙️" },
 } as const;
 
 export type Segment = keyof typeof SEGMENTS;
 
-// Pipeline stage definitions (mapped from JN statuses)
+// Pipeline stage definitions (kept for backward compatibility with sales funnel)
 export const STAGES = [
   "Lead",
+  "Appointment Scheduled",
   "Estimating",
   "Sold",
   "Production",
@@ -32,19 +36,18 @@ export const STAGES = [
 
 export type Stage = (typeof STAGES)[number];
 
-// JN status → stage mapping (matched to actual Maverick Exteriors statuses)
+// JN status → stage mapping (DEPRECATED for conversion tracking, use STATUS_CONVERSIONS instead)
 export const STATUS_TO_STAGE: Record<string, Stage> = {
   // Lead stage
   Lead: "Lead",
   New: "Lead",
   "Cold Lead": "Lead",
   Cold: "Lead",
-  "Appointment Scheduled": "Lead",
+  "Appointment Scheduled": "Appointment Scheduled",
   // Estimating stage
   Estimating: "Estimating",
   "Estimate Sent": "Estimating",
   // Sold stage
-  "Signed Contract": "Sold",
   "Sold Job": "Sold",
   // Production stage
   "Production Ready": "Production",
@@ -60,28 +63,50 @@ export const STATUS_TO_STAGE: Record<string, Stage> = {
   // Completed stage
   "Paid & Closed": "Completed",
   "All Work Completed": "Completed",
+  "All Work Complete": "Completed",
   "Job Completed": "Completed",
   "Warranty Complete": "Completed",
 };
 
-// Full ordered status list for conversion tracking
+// Status-to-Status Conversions (actual pipeline flow)
+// These define the real conversion funnel you care about
+export const STATUS_CONVERSIONS = [
+  { from: "Lead", to: "Appointment Scheduled", label: "Lead → Appointment" },
+  { from: "Lead", to: "Estimating", label: "Lead → Estimating (Direct)" },
+  { from: "Appointment Scheduled", to: "Estimating", label: "Appointment → Estimating" },
+  { from: "Appointment Scheduled", to: ["Lost", "Cold", "Dead", "Cold Lead"], label: "Appointment → Lost/Cold/Dead" },
+  { from: "Estimating", to: "Estimate Sent", label: "Estimating → Estimate Sent" },
+  { from: "Estimate Sent", to: "Sold Job", label: "Estimate Sent → Sold Job" },
+  { from: "Estimate Sent", to: ["Lost", "Cold", "Dead", "Cold Lead"], label: "Estimate Sent → Lost/Cold/Dead" },
+] as const;
+
+// Full ordered status list for legacy tracking
 export const ORDERED_STATUSES = [
   "Lead",
+  "New",
   "Cold Lead",
   "Appointment Scheduled",
   "Estimating",
   "Estimate Sent",
-  "Signed Contract",
   "Sold Job",
   "Production Ready",
   "In Progress",
+  "Insurance Pending",
+  "Future Work",
+  "Needs Rescheduling",
+  "Invoiced",
   "Final Invoicing",
   "Pending Final Payment",
+  "Job Close Out",
   "Paid & Closed",
+  "All Work Completed",
+  "All Work Complete",
+  "Job Completed",
+  "Warranty Complete",
 ] as const;
 
-// Loss/hold statuses
-export const LOSS_STATUSES = ["Lost", "Dead", "Internal Supplementing"] as const;
+// Loss/hold statuses (jobs that fall out of the pipeline)
+export const LOSS_STATUSES = ["Lost", "Dead", "Cold", "Cold Lead", "Internal Supplementing"] as const;
 
 // Priority colors
 export const PRIORITY_COLORS = {
