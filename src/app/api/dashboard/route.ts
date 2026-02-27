@@ -41,6 +41,17 @@ function getPreviousPeriodKey(period: PeriodKey): PeriodKey | null {
 
 export async function GET(request: NextRequest) {
   try {
+    // Debug: log environment
+    const dbUrl = process.env.DATABASE_URL;
+    if (!dbUrl) {
+      console.error("[Dashboard API] DATABASE_URL not set!");
+      return NextResponse.json(
+        { error: "DATABASE_URL environment variable not set" },
+        { status: 500 }
+      );
+    }
+    console.log("[Dashboard API] Starting request, DB host:", dbUrl.includes("supabase") ? "supabase" : "unknown");
+
     const { searchParams } = new URL(request.url);
     const periodParam = (searchParams.get("period") ?? "month") as PeriodKey;
 
@@ -342,9 +353,13 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(dashboard);
   } catch (error) {
-    console.error("[Dashboard API] Error:", error);
+    console.error("[Dashboard API] Error caught:", error);
+    if (error instanceof Error) {
+      console.error("[Dashboard API] Error message:", error.message);
+      console.error("[Dashboard API] Error stack:", error.stack);
+    }
     return NextResponse.json(
-      { error: "Failed to fetch dashboard metrics" },
+      { error: "Failed to fetch dashboard metrics", details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }
