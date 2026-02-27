@@ -353,13 +353,24 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(dashboard);
   } catch (error) {
-    console.error("[Dashboard API] Error caught:", error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorCode = (error as any)?.code || 'UNKNOWN';
+
+    console.error("[Dashboard API] Error caught");
+    console.error("[Dashboard API] Error message:", errorMsg);
+    console.error("[Dashboard API] Error code:", errorCode);
     if (error instanceof Error) {
-      console.error("[Dashboard API] Error message:", error.message);
       console.error("[Dashboard API] Error stack:", error.stack);
     }
+
+    // Return detailed error for debugging
     return NextResponse.json(
-      { error: "Failed to fetch dashboard metrics", details: error instanceof Error ? error.message : String(error) },
+      {
+        error: "Failed to fetch dashboard metrics",
+        details: errorMsg,
+        code: errorCode,
+        timestamp: new Date().toISOString(),
+      },
       { status: 500 }
     );
   }
