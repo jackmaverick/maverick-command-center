@@ -41,17 +41,6 @@ function getPreviousPeriodKey(period: PeriodKey): PeriodKey | null {
 
 export async function GET(request: NextRequest) {
   try {
-    // Debug: log environment
-    const dbUrl = process.env.DATABASE_URL;
-    if (!dbUrl) {
-      console.error("[Dashboard API] DATABASE_URL not set!");
-      return NextResponse.json(
-        { error: "DATABASE_URL environment variable not set" },
-        { status: 500 }
-      );
-    }
-    console.log("[Dashboard API] Starting request, DB host:", dbUrl.includes("supabase") ? "supabase" : "unknown");
-
     const { searchParams } = new URL(request.url);
     const periodParam = (searchParams.get("period") ?? "month") as PeriodKey;
 
