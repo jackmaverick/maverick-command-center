@@ -1,0 +1,58 @@
+name: Remediation Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to remediate"
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+jobs:
+  remediate:
+    name: Auto-remediate review findings
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find PR details
+        id: pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_DATA=$(gh pr view ${{ inputs.pr_number }} --json headRefName,headRefOid -R "${{ github.repository }}")
+          echo "branch=$(echo $PR_DATA | jq -r '.headRefName')" >> $GITHUB_OUTPUT
+          echo "head_sha=$(echo $PR_DATA | jq -r '.headRefOid')" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.branch }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Run Claude Code remediation
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            The Greptile code review found actionable issues on PR #${{ inputs.pr_number }}.
+
+            Instructions:
+            1. Read the Greptile review comments (only for current head SHA: ${{ steps.pr.outputs.head_sha }})
+            2. Fix all actionable findings
+            3. Run `npx tsc --noEmit` and `npm run lint` to validate
+            4. Do NOT modify harness/risk-policy.json or any workflow files
+            5. Do NOT bypass any policy gates
+            6. Commit fixes with message prefixed with "fix:"
+          model: "claude-sonnet-4-20250514"
+          timeout_minutes: 15
+          allowed_tools: "Edit,Write,Bash,Read,Glob,Grep"

@@ -1,0 +1,39 @@
+name: Harness Gap
+description: A production regression that should become a harness case
+title: "[Harness Gap] "
+labels: ["harness-gap"]
+body:
+  - type: markdown
+    attributes:
+      value: "## production regression -> harness gap issue -> case added -> SLA tracked"
+  - type: input
+    id: incident
+    attributes:
+      label: Incident Reference
+      placeholder: "Link to incident, alert, or customer report"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: harness-case
+    attributes:
+      label: Proposed harness case
+      description: "What test/check should prevent this? Include file path, assertions."
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - P0 - Critical
+        - P1 - High
+        - P2 - Medium
+        - P3 - Low
+    validations:
+      required: true

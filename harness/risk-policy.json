@@ -1,0 +1,56 @@
+{
+  "version": "1",
+  "riskTierRules": {
+    "high": [
+      "src/app/api/**",
+      "src/lib/db.ts",
+      "src/lib/sync.ts",
+      "src/lib/jobnimbus.ts",
+      "src/lib/constants.ts",
+      "drizzle/**",
+      "harness/**",
+      ".github/workflows/**",
+      "next.config.ts",
+      "middleware.ts"
+    ],
+    "low": ["**"]
+  },
+  "mergePolicy": {
+    "high": {
+      "requiredChecks": [
+        "risk-policy-gate",
+        "harness-smoke",
+        "Browser Evidence",
+        "CI Pipeline"
+      ],
+      "requireCodeReview": true
+    },
+    "low": {
+      "requiredChecks": ["risk-policy-gate", "CI Pipeline"],
+      "requireCodeReview": false
+    }
+  },
+  "docsDriftRules": {
+    "watchPaths": [
+      "harness/risk-policy.json",
+      ".github/workflows/**"
+    ],
+    "requireUpdatedDocs": [
+      "HARNESS.md"
+    ]
+  },
+  "browserEvidence": {
+    "requiredFlows": [
+      "dashboard-home",
+      "pipeline-view",
+      "segments-view"
+    ],
+    "requiredFields": [
+      "entrypoint",
+      "accountIdentity",
+      "timestamp",
+      "screenshots"
+    ],
+    "maxAgeSec": 3600
+  }
+}

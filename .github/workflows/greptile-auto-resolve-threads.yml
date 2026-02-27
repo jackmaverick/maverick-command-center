@@ -1,0 +1,46 @@
+name: Auto-resolve Greptile Threads
+
+on:
+  check_run:
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  auto-resolve:
+    name: Auto-resolve bot-only threads
+    if: |
+      github.event.check_run.name == 'Greptile Code Review' &&
+      github.event.check_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: Find associated PR
+        id: pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER=$(gh pr list --head "${{ github.event.check_run.head_sha }}" --json number -q '.[0].number')
+          echo "number=$PR_NUMBER" >> $GITHUB_OUTPUT
+      - name: Auto-resolve bot-only threads
+        if: steps.pr.outputs.number
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: npx tsx harness/scripts/auto-resolve-threads.ts
+      - name: Re-trigger policy gate
+        if: steps.pr.outputs.number
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run risk-policy-gate.yml \
+            --field pr_number=${{ steps.pr.outputs.number }}
