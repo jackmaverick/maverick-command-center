@@ -1,0 +1,49 @@
+name: risk-policy-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to re-gate"
+        required: true
+
+permissions:
+  contents: read
+  checks: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  preflight:
+    name: risk-policy-gate
+    runs-on: ubuntu-latest
+    outputs:
+      risk_tier: ${{ steps.tier.outputs.risk_tier }}
+      needs_review: ${{ steps.tier.outputs.needs_review }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: Compute risk tier
+        id: tier
+        run: npx tsx harness/scripts/compute-risk-tier.ts
+      - name: Assert policy gates
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: npx tsx harness/scripts/assert-policy.ts
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Risk Policy Gate" >> $GITHUB_STEP_SUMMARY
+          echo "- **Risk Tier:** ${{ steps.tier.outputs.risk_tier }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Needs Review:** ${{ steps.tier.outputs.needs_review }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Head SHA:** ${{ github.event.pull_request.head.sha }}" >> $GITHUB_STEP_SUMMARY
