@@ -19,6 +19,7 @@ const navItems = [
   { href: "/lead-sources", label: "Lead Sources" },
   { href: "/weekly-review", label: "Weekly Review" },
   { href: "/agents", label: "Agents" },
+  { href: "/faq-review", label: "FAQ Review" },
   { href: "/settings", label: "Settings" },
 ];
 
