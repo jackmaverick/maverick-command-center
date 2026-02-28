@@ -27,7 +27,7 @@ interface SnapshotMetrics {
   closeRate: number;
   avgTicket: number;
   pipelineValue: number;
-  avgResponseTimeMinutes: number;
+  avgResponseTimeMinutes: number | null;
   segments: Record<
     string,
     {
@@ -46,7 +46,7 @@ interface SnapshotMetrics {
       won: number;
       closeRate: number;
       revenue: number;
-      avgResponseMin: number;
+      avgResponseMin: number | null;
     }
   >;
   leadSources: Record<
@@ -559,7 +559,7 @@ export default function WeeklyReviewPage() {
                       {formatCurrency(rep.revenue)}
                     </td>
                     <td className="py-3 text-right font-mono text-[#8b949e]">
-                      {rep.avgResponseMin.toFixed(1)} min
+                      {rep.avgResponseMin != null ? rep.avgResponseMin.toFixed(1) : '—'} min
                     </td>
                   </tr>
                 ))}

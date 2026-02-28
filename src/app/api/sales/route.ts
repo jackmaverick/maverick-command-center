@@ -150,6 +150,16 @@ export async function GET(request: NextRequest) {
           }
         }
 
+        // Revenue: sum of invoices on this rep's jobs in the period
+        const revenueRes = await query<{ total: string }>(
+          `SELECT COALESCE(SUM(i.total), 0) as total
+           FROM invoices i
+           JOIN jobs j ON j.jnid = i.job_jnid
+           WHERE ${repFilter.where} AND i.is_active = true`,
+          repFilter.params
+        );
+        const revenue = round2(parseFloat(revenueRes[0]?.total ?? "0"));
+
         return {
           repId: rep.sales_rep_jnid,
           repName: rep.sales_rep_name,
@@ -158,7 +168,7 @@ export async function GET(request: NextRequest) {
           lostJobs: lostJobs,
           closeRate: round1(closeRate),
           segmentCloseRates: segmentBreakdown,
-          revenue: 0, // Simplified for now
+          revenue,
           avgCycleDays: 0, // Would require status history tracking
           statusConversions: [],
           followUpMetrics: { avgAfterEstimate: 0, avgAfterAppointment: 0, jobsWithZeroFollowUp: 0 },
@@ -170,9 +180,30 @@ export async function GET(request: NextRequest) {
     // Sort by close rate descending
     repMetrics.sort((a, b) => b.closeRate - a.closeRate);
 
+    // Build summary
+    const totalJobs = repMetrics.reduce((s, r) => s + r.totalJobs, 0);
+    const totalWon = repMetrics.reduce((s, r) => s + r.wonJobs, 0);
+    const totalRevenue = repMetrics.reduce((s, r) => s + r.revenue, 0);
+    const closeRates = repMetrics.filter((r) => r.totalJobs > 0).map((r) => r.closeRate);
+    const avgCloseRate = closeRates.length > 0
+      ? round1(closeRates.reduce((s, r) => s + r, 0) / closeRates.length)
+      : 0;
+    const cycleTimes = repMetrics.filter((r) => r.avgCycleDays > 0).map((r) => r.avgCycleDays);
+    const avgCycleTimeDays = cycleTimes.length > 0
+      ? round1(cycleTimes.reduce((s, r) => s + r, 0) / cycleTimes.length)
+      : 0;
+
     return NextResponse.json({
       period: { key: period, label: range.label },
-      segment,
+      filters: { segment, rep: repJnid },
+      summary: {
+        totalRevenue,
+        avgCloseRate,
+        avgCycleTimeDays,
+        activeReps: repMetrics.length,
+        totalJobs,
+        totalWon,
+      },
       reps: repMetrics,
     });
   } catch (error) {
