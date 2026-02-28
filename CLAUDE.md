@@ -228,7 +228,20 @@ vercel logs maverick-command-center
 - [ ] Mobile responsive polish pass
 - [ ] Lighthouse performance audit
 
-### Phase 10: Advanced Features
+### Phase 10: Speed-to-Lead Spam Filtering
+- [ ] **Option 1 (Quick Win): OpenPhone contact exclusion**
+  - Add `is_excluded BOOLEAN DEFAULT false` to `contacts` table
+  - Add UI in Command Center Settings page to flag spam/junk contacts
+  - Update `/api/speed-to-lead` queries to exclude flagged contacts
+  - Backfill: review existing contacts and flag known spam/vendors/wrong numbers
+- [ ] **Option 2 (Long-term): GHL conversation data**
+  - Finish GHL sync integration (webhook handler + sync scripts already scaffolded)
+  - Pull GHL contact statuses (active/DND/spam/lost) into Supabase
+  - Use GHL pipeline stage to only measure contacts in sales funnel
+  - Replace or supplement OpenPhone data with GHL conversation attribution
+- [ ] **QuickBooks API integration** — cross-reference revenue numbers for accuracy
+
+### Phase 11: Advanced Features
 - [ ] Real-time webhooks from JobNimbus
 - [ ] Forecasting models
 - [ ] Custom report builder
@@ -245,7 +258,7 @@ vercel logs maverick-command-center
 
 ---
 
-**Last Updated:** February 26, 2026  
+**Last Updated:** February 28, 2026
 **Maintained by:** Claude Code
 
 ## Status Mapping Corrections (Feb 26)
