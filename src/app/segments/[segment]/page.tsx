@@ -22,6 +22,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { PeriodSelector } from "@/components/layout/period-selector";
+import { InfoTooltip } from "@/components/InfoTooltip";
 import { formatCurrency, formatPercent } from "@/lib/dates";
 import { SEGMENTS, STAGES } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
@@ -263,35 +264,45 @@ export default function SegmentPage() {
           <>
             {/* Revenue */}
             <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-              <p className="text-xs text-[#8b949e] mb-1">Revenue</p>
+              <div className="mb-1">
+                <InfoTooltip label="Revenue" explanation="Sum of invoice amounts for this segment in the selected period (accrual basis — invoice creation date, not payment received)." />
+              </div>
               <p className="text-xl font-bold text-[#e6edf3]">
                 {formatCurrency(summary?.revenue ?? 0)}
               </p>
             </div>
             {/* Pipeline Value */}
             <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-              <p className="text-xs text-[#8b949e] mb-1">Pipeline Value</p>
+              <div className="mb-1">
+                <InfoTooltip label="Pipeline Value" explanation="Sum of active estimate totals on open jobs in this segment, from Estimating through Invoiced stages." />
+              </div>
               <p className="text-xl font-bold text-[#e6edf3]">
                 {formatCurrency(summary?.pipelineValue ?? 0)}
               </p>
             </div>
             {/* Avg Ticket */}
             <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-              <p className="text-xs text-[#8b949e] mb-1">Avg Ticket</p>
+              <div className="mb-1">
+                <InfoTooltip label="Avg Ticket" explanation="Average invoice amount for this segment. Only counts invoices with total > $0." />
+              </div>
               <p className="text-xl font-bold text-[#e6edf3]">
                 {formatCurrency(summary?.avgTicket ?? 0)}
               </p>
             </div>
             {/* Active Jobs */}
             <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-              <p className="text-xs text-[#8b949e] mb-1">Active Jobs</p>
+              <div className="mb-1">
+                <InfoTooltip label="Active Jobs" explanation="Non-archived jobs in this segment created during the selected period." />
+              </div>
               <p className="text-xl font-bold text-[#e6edf3]">
                 {summary?.activeJobs ?? 0}
               </p>
             </div>
             {/* Close Rate */}
             <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-              <p className="text-xs text-[#8b949e] mb-1">Close Rate</p>
+              <div className="mb-1">
+                <InfoTooltip label="Close Rate" explanation="Percentage of jobs in this segment reaching Sold Job or beyond. Delta badge shows difference vs company-wide close rate." />
+              </div>
               <p className="text-xl font-bold text-[#e6edf3]">
                 {formatPercent(summary?.closeRate ?? 0)}
               </p>
@@ -303,7 +314,9 @@ export default function SegmentPage() {
             </div>
             {/* Avg Cycle Time */}
             <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-              <p className="text-xs text-[#8b949e] mb-1">Avg Cycle</p>
+              <div className="mb-1">
+                <InfoTooltip label="Avg Cycle" explanation="Average days from job creation to Sold Job for this segment. Shorter cycles indicate faster-moving deals." />
+              </div>
               <p className="text-xl font-bold text-[#e6edf3]">
                 {summary?.avgCycleTimeDays ?? 0} days
               </p>

@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { PeriodSelector } from "@/components/layout/period-selector";
 import { ConversionFunnel } from "@/components/ConversionFunnel";
+import { InfoTooltip } from "@/components/InfoTooltip";
 import { formatCurrency, formatPercent } from "@/lib/dates";
 import { SEGMENTS, CHART_COLORS } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
@@ -264,26 +265,30 @@ export default function SalesPage() {
         {[
           {
             label: "Total Revenue",
+            explanation: "Sum of invoice amounts on each rep's jobs in this period (accrual basis — invoice date, not payment received)",
             value: data ? formatCurrency(data.summary.totalRevenue) : null,
           },
           {
             label: "Avg Close Rate",
+            explanation: "Average close rate across all active reps. Close rate = jobs reaching Sold Job or beyond / total jobs assigned to rep",
             value: data ? formatPercent(data.summary.avgCloseRate) : null,
           },
           {
             label: "Avg Cycle Time",
+            explanation: "Average days from job creation to Sold Job status across all reps (requires status history tracking)",
             value: data ? `${data.summary.avgCycleTimeDays} days` : null,
           },
           {
             label: "Active Reps",
+            explanation: "Number of sales reps with at least one job assigned during this period",
             value: data ? String(data.summary.activeReps) : null,
           },
         ].map((kpi) => (
           <Card key={kpi.label} className="bg-[#161b22] border-[#30363d]">
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-medium text-[#8b949e]">
-                {kpi.label}
-              </CardTitle>
+              <InfoTooltip label={kpi.label} explanation={kpi.explanation}>
+                <CardTitle className="text-xs font-medium text-[#8b949e]">{kpi.label}</CardTitle>
+              </InfoTooltip>
             </CardHeader>
             <CardContent>
               {isLoading || !kpi.value ? (

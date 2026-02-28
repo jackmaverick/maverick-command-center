@@ -14,6 +14,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PeriodSelector } from "@/components/layout/period-selector";
+import { InfoTooltip } from "@/components/InfoTooltip";
 import { CHART_COLORS } from "@/lib/constants";
 
 /* -- Types ----------------------------------------------------------------- */
@@ -190,7 +191,9 @@ export default function SpeedToLeadPage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-            <p className="text-xs text-[#8b949e] mb-1">Avg Response Time</p>
+            <div className="mb-1">
+              <InfoTooltip label="Avg Response Time" explanation="Average time from first inbound contact (call/text) to first outbound response via OpenPhone. Only counts leads with both inbound and outbound activity." />
+            </div>
             <p className="text-2xl font-bold text-[#58a6ff]">
               {formatMinutes(data?.summary.avgResponseMinutes ?? 0)}
             </p>
@@ -199,13 +202,17 @@ export default function SpeedToLeadPage() {
             </p>
           </div>
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-            <p className="text-xs text-[#8b949e] mb-1">Under 5 Min</p>
+            <div className="mb-1">
+              <InfoTooltip label="Under 5 Min" explanation="Percentage of inbound leads that received a response within 5 minutes. Industry best practice is responding within 5 minutes." />
+            </div>
             <p className="text-2xl font-bold text-[#3fb950]">
               {(data?.summary.respondedUnder5MinPercent ?? 0).toFixed(1)}%
             </p>
           </div>
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-            <p className="text-xs text-[#8b949e] mb-1">Missed / No Response</p>
+            <div className="mb-1">
+              <InfoTooltip label="Missed / No Response" explanation="Percentage of inbound leads with no outbound response recorded in OpenPhone. High numbers may indicate missed opportunities." />
+            </div>
             <p
               className={`text-2xl font-bold ${
                 (data?.summary.missedPercent ?? 0) > 10
@@ -217,7 +224,9 @@ export default function SpeedToLeadPage() {
             </p>
           </div>
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-            <p className="text-xs text-[#8b949e] mb-1">Avg Lead to Close</p>
+            <div className="mb-1">
+              <InfoTooltip label="Avg Lead to Close" explanation="Average days from job creation to reaching Sold Job status. Only counts jobs that have been won in this period." />
+            </div>
             <p className="text-2xl font-bold text-[#e6edf3]">
               {(data?.summary.totalCycleDays ?? 0).toFixed(1)} days
             </p>

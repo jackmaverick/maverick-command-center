@@ -16,13 +16,8 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { PeriodSelector } from "@/components/layout/period-selector";
+import { InfoTooltip } from "@/components/InfoTooltip";
 import { ConversionFunnel } from "@/components/ConversionFunnel";
 import { formatCurrency, formatPercent } from "@/lib/dates";
 import { CHART_COLORS, SEGMENTS } from "@/lib/constants";
@@ -182,23 +177,9 @@ export default function DashboardPage() {
         {/* Revenue */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex items-center gap-2 cursor-help">
-                    <CardTitle className="text-xs font-medium text-[#8b949e]">
-                      Revenue
-                    </CardTitle>
-                    <span className="text-xs text-[#484f58] font-bold">ⓘ</span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-xs bg-[#21262d] border-[#30363d]">
-                  <p className="text-xs text-[#e6edf3]">
-                    Sum of all invoice amounts created during this period (accrual basis — based on invoice date, not payment received)
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <InfoTooltip label="Revenue" explanation="Sum of all invoice amounts created during this period (accrual basis — based on invoice date, not payment received)">
+              <CardTitle className="text-xs font-medium text-[#8b949e]">Revenue</CardTitle>
+            </InfoTooltip>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -217,23 +198,9 @@ export default function DashboardPage() {
         {/* Pipeline */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex items-center gap-2 cursor-help">
-                    <CardTitle className="text-xs font-medium text-[#8b949e]">
-                      Pipeline Value
-                    </CardTitle>
-                    <span className="text-xs text-[#484f58] font-bold">ⓘ</span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-xs bg-[#21262d] border-[#30363d]">
-                  <p className="text-xs text-[#e6edf3]">
-                    Total estimate value of all active jobs currently in Estimating through Invoiced stages (live snapshot, not period-filtered)
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <InfoTooltip label="Pipeline Value" explanation="Total estimate value of all active jobs currently in Estimating through Invoiced stages (live snapshot, not period-filtered)">
+              <CardTitle className="text-xs font-medium text-[#8b949e]">Pipeline Value</CardTitle>
+            </InfoTooltip>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -249,23 +216,9 @@ export default function DashboardPage() {
         {/* New Leads */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex items-center gap-2 cursor-help">
-                    <CardTitle className="text-xs font-medium text-[#8b949e]">
-                      New Leads
-                    </CardTitle>
-                    <span className="text-xs text-[#484f58] font-bold">ⓘ</span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-xs bg-[#21262d] border-[#30363d]">
-                  <p className="text-xs text-[#e6edf3]">
-                    Jobs created in JobNimbus during the selected period. Includes archived/test leads — archive them in JobNimbus then sync to remove
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <InfoTooltip label="New Leads" explanation="Jobs created in JobNimbus during the selected period. Includes archived/test leads — archive them in JobNimbus then sync to remove">
+              <CardTitle className="text-xs font-medium text-[#8b949e]">New Leads</CardTitle>
+            </InfoTooltip>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -284,23 +237,9 @@ export default function DashboardPage() {
         {/* Conversion Rate */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex items-center gap-2 cursor-help">
-                    <CardTitle className="text-xs font-medium text-[#8b949e]">
-                      Conv Rate
-                    </CardTitle>
-                    <span className="text-xs text-[#484f58] font-bold">ⓘ</span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-xs bg-[#21262d] border-[#30363d]">
-                  <p className="text-xs text-[#e6edf3]">
-                    Percentage of jobs created in this period that have reached "Sold Job" status or beyond
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <InfoTooltip label="Conv Rate" explanation="Percentage of jobs created in this period that have reached &quot;Sold Job&quot; status or beyond">
+              <CardTitle className="text-xs font-medium text-[#8b949e]">Conv Rate</CardTitle>
+            </InfoTooltip>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -316,23 +255,9 @@ export default function DashboardPage() {
         {/* Avg Ticket */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex items-center gap-2 cursor-help">
-                    <CardTitle className="text-xs font-medium text-[#8b949e]">
-                      Avg Ticket
-                    </CardTitle>
-                    <span className="text-xs text-[#484f58] font-bold">ⓘ</span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-xs bg-[#21262d] border-[#30363d]">
-                  <p className="text-xs text-[#e6edf3]">
-                    Average invoice amount for invoices created in this period
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <InfoTooltip label="Avg Ticket" explanation="Average invoice amount for invoices created in this period">
+              <CardTitle className="text-xs font-medium text-[#8b949e]">Avg Ticket</CardTitle>
+            </InfoTooltip>
           </CardHeader>
           <CardContent>
             {isLoading ? (

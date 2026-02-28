@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PeriodSelector } from "@/components/layout/period-selector";
+import { InfoTooltip } from "@/components/InfoTooltip";
 import { formatCurrency, formatPercent } from "@/lib/dates";
 import { CHART_COLORS, SEGMENTS } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
@@ -210,15 +211,21 @@ export default function LeadSourcesPage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-            <p className="text-xs text-[#8b949e] mb-1">Sources Tracked</p>
+            <div className="mb-1">
+              <InfoTooltip label="Sources Tracked" explanation="Number of distinct lead sources (e.g. Referral, Roofle, Website) with at least one job in this period." />
+            </div>
             <p className="text-xl font-bold text-[#e6edf3]">{totalSources}</p>
           </div>
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-            <p className="text-xs text-[#8b949e] mb-1">Total Leads</p>
+            <div className="mb-1">
+              <InfoTooltip label="Total Leads" explanation="Total jobs created across all lead sources in this period. A lead = a job created in JobNimbus." />
+            </div>
             <p className="text-xl font-bold text-[#e6edf3]">{totalLeads}</p>
           </div>
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-            <p className="text-xs text-[#8b949e] mb-1">Best Close Rate</p>
+            <div className="mb-1">
+              <InfoTooltip label="Best Close Rate" explanation="Lead source with the highest percentage of jobs reaching Sold Job or beyond. Only sources with 3+ leads are considered." />
+            </div>
             <p className="text-xl font-bold text-[#3fb950]">
               {bestCloseRateSource
                 ? `${formatPercent(bestCloseRateSource.closeRate)}`
@@ -231,7 +238,9 @@ export default function LeadSourcesPage() {
             )}
           </div>
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-            <p className="text-xs text-[#8b949e] mb-1">Top Revenue Source</p>
+            <div className="mb-1">
+              <InfoTooltip label="Top Revenue Source" explanation="Lead source generating the highest total invoice revenue in this period. Revenue is based on invoice creation date (accrual basis)." />
+            </div>
             <p className="text-xl font-bold text-[#58a6ff]">
               {topRevenueSource
                 ? formatCurrency(topRevenueSource.revenue)

@@ -13,6 +13,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatPercent, formatDate } from "@/lib/dates";
+import { InfoTooltip } from "@/components/InfoTooltip";
 import { CHART_COLORS, SEGMENTS } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
 
@@ -307,7 +308,9 @@ export default function WeeklyReviewPage() {
       ) : cm ? (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-            <p className="text-xs text-[#8b949e] mb-1">Revenue</p>
+            <div className="mb-1">
+              <InfoTooltip label="Revenue" explanation="Total invoice revenue for this snapshot week (accrual basis — invoice creation date, not payment received). Arrow shows change vs previous week." />
+            </div>
             <p className="text-xl font-bold text-[#e6edf3]">
               {formatCurrency(cm.revenue)}
             </p>
@@ -318,7 +321,9 @@ export default function WeeklyReviewPage() {
             />
           </div>
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-            <p className="text-xs text-[#8b949e] mb-1">New Leads</p>
+            <div className="mb-1">
+              <InfoTooltip label="New Leads" explanation="Jobs created in JobNimbus during this snapshot week. Arrow shows change vs previous week." />
+            </div>
             <p className="text-xl font-bold text-[#e6edf3]">{cm.newLeads}</p>
             <DeltaArrow
               current={cm.newLeads}
@@ -326,7 +331,9 @@ export default function WeeklyReviewPage() {
             />
           </div>
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-            <p className="text-xs text-[#8b949e] mb-1">Jobs Won</p>
+            <div className="mb-1">
+              <InfoTooltip label="Jobs Won" explanation="Jobs that reached Sold Job status or beyond during this snapshot week." />
+            </div>
             <p className="text-xl font-bold text-[#3fb950]">{cm.jobsWon}</p>
             <DeltaArrow
               current={cm.jobsWon}
@@ -334,7 +341,9 @@ export default function WeeklyReviewPage() {
             />
           </div>
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-            <p className="text-xs text-[#8b949e] mb-1">Jobs Lost</p>
+            <div className="mb-1">
+              <InfoTooltip label="Jobs Lost" explanation="Jobs that moved to Lost, Cold, or Dead status during this snapshot week. Red arrow up = more losses (bad)." />
+            </div>
             <p className="text-xl font-bold text-[#f85149]">{cm.jobsLost}</p>
             <DeltaArrow
               current={cm.jobsLost}
@@ -343,7 +352,9 @@ export default function WeeklyReviewPage() {
             />
           </div>
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-            <p className="text-xs text-[#8b949e] mb-1">Close Rate</p>
+            <div className="mb-1">
+              <InfoTooltip label="Close Rate" explanation="Percentage of jobs created this week that reached Sold Job or beyond. Arrow shows percentage point change vs previous week." />
+            </div>
             <p className="text-xl font-bold text-[#e6edf3]">
               {formatPercent(cm.closeRate)}
             </p>
@@ -354,7 +365,9 @@ export default function WeeklyReviewPage() {
             />
           </div>
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-            <p className="text-xs text-[#8b949e] mb-1">Avg Ticket</p>
+            <div className="mb-1">
+              <InfoTooltip label="Avg Ticket" explanation="Average invoice amount for this snapshot week. Only counts invoices with total > $0." />
+            </div>
             <p className="text-xl font-bold text-[#e6edf3]">
               {formatCurrency(cm.avgTicket)}
             </p>

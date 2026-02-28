@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PeriodSelector } from "@/components/layout/period-selector";
+import { InfoTooltip } from "@/components/InfoTooltip";
 import { formatCurrency, formatPercent } from "@/lib/dates";
 import { STAGES, SEGMENTS, CHART_COLORS } from "@/lib/constants";
 import type { Stage, Segment } from "@/lib/constants";
@@ -224,9 +225,9 @@ export default function PipelinePage() {
         {/* Opportunities (Pre-sale) */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">
-              Opportunities
-            </CardTitle>
+            <InfoTooltip label="Opportunities" explanation="Jobs currently in pre-sale stages (Lead through Estimate Sent). Counts jobs that have ever reached each stage in this period.">
+              <CardTitle className="text-xs font-medium text-[#8b949e]">Opportunities</CardTitle>
+            </InfoTooltip>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -242,9 +243,9 @@ export default function PipelinePage() {
         {/* Sold/Production */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">
-              Sold/Production
-            </CardTitle>
+            <InfoTooltip label="Sold/Production" explanation="Jobs that have reached Sold Job status or beyond (in production, invoicing, or completed).">
+              <CardTitle className="text-xs font-medium text-[#8b949e]">Sold/Production</CardTitle>
+            </InfoTooltip>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -260,9 +261,9 @@ export default function PipelinePage() {
         {/* Pipeline Value */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">
-              Pipeline Value
-            </CardTitle>
+            <InfoTooltip label="Pipeline Value" explanation="Sum of estimate totals on active jobs in Estimating through Invoiced stages. Shows potential revenue in the pipeline.">
+              <CardTitle className="text-xs font-medium text-[#8b949e]">Pipeline Value</CardTitle>
+            </InfoTooltip>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -278,9 +279,9 @@ export default function PipelinePage() {
         {/* Avg Cycle Time */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">
-              Avg Cycle Time
-            </CardTitle>
+            <InfoTooltip label="Avg Cycle Time" explanation="Average days from job creation to reaching Sold Job status for jobs created in this period.">
+              <CardTitle className="text-xs font-medium text-[#8b949e]">Avg Cycle Time</CardTitle>
+            </InfoTooltip>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -298,9 +299,9 @@ export default function PipelinePage() {
         {/* Overall Close Rate */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">
-              Overall Close Rate
-            </CardTitle>
+            <InfoTooltip label="Overall Close Rate" explanation="Jobs reaching Sold Job or beyond divided by total jobs created in this period. Shows X / Y jobs below.">
+              <CardTitle className="text-xs font-medium text-[#8b949e]">Overall Close Rate</CardTitle>
+            </InfoTooltip>
           </CardHeader>
           <CardContent>
             {isLoading ? (
