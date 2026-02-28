@@ -1,3 +1,7 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+
 const INTEGRATIONS = [
   {
     name: "JobNimbus",
@@ -55,6 +59,155 @@ const STATUS_BADGE = {
   },
 };
 
+interface QBOStatus {
+  connected: boolean;
+  companyName: string | null;
+  lastSync: string | null;
+  refreshTokenExpiresAt: string | null;
+  status: string;
+}
+
+function QuickBooksCard() {
+  const [qboStatus, setQboStatus] = useState<QBOStatus | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/qbo/status");
+      if (res.ok) setQboStatus(await res.json());
+    } catch {
+      // silent
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus]);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      await fetch("/api/qbo/sync", { method: "POST" });
+      await fetchStatus();
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setDisconnecting(true);
+    try {
+      await fetch("/api/qbo/disconnect", { method: "POST" });
+      await fetchStatus();
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
+  const refreshExpiresAt = qboStatus?.refreshTokenExpiresAt
+    ? new Date(qboStatus.refreshTokenExpiresAt)
+    : null;
+  const daysUntilExpiry = refreshExpiresAt
+    ? Math.floor((refreshExpiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
+  const showWarning = daysUntilExpiry !== null && daysUntilExpiry < 14;
+
+  return (
+    <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-6 mb-8">
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h2 className="text-sm font-semibold text-[#e6edf3] mb-1">
+            QuickBooks Online
+          </h2>
+          <p className="text-xs text-[#8b949e]">
+            Financial data — P&L reports, invoices, payments, bank balances
+          </p>
+        </div>
+        {qboStatus && (
+          <span
+            className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
+              qboStatus.connected
+                ? "bg-green-500/20 text-green-400"
+                : qboStatus.status === "expired"
+                  ? "bg-yellow-500/20 text-yellow-400"
+                  : "bg-red-500/20 text-red-400"
+            }`}
+          >
+            {qboStatus.connected
+              ? "Connected"
+              : qboStatus.status === "expired"
+                ? "Token Expired"
+                : "Disconnected"}
+          </span>
+        )}
+      </div>
+
+      {qboStatus?.connected ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-[#8b949e]">Company</span>
+            <span className="text-[#e6edf3] font-medium">
+              {qboStatus.companyName ?? "Unknown"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-[#8b949e]">Last Sync</span>
+            <span className="text-[#e6edf3]">
+              {qboStatus.lastSync
+                ? new Date(qboStatus.lastSync).toLocaleString()
+                : "Never"}
+            </span>
+          </div>
+          {showWarning && (
+            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded px-3 py-2 text-xs text-yellow-400">
+              Token expires in {daysUntilExpiry} days. Re-authorize to avoid disconnection.
+            </div>
+          )}
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="px-3 py-1.5 text-xs font-medium rounded bg-[#58a6ff]/10 text-[#58a6ff] hover:bg-[#58a6ff]/20 disabled:opacity-50 transition-colors"
+            >
+              {syncing ? "Syncing..." : "Sync Now"}
+            </button>
+            {(showWarning || qboStatus.status === "expired") && (
+              <a
+                href="/api/qbo/authorize"
+                className="px-3 py-1.5 text-xs font-medium rounded bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 transition-colors"
+              >
+                Re-authorize
+              </a>
+            )}
+            <button
+              onClick={handleDisconnect}
+              disabled={disconnecting}
+              className="px-3 py-1.5 text-xs font-medium rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-50 transition-colors ml-auto"
+            >
+              {disconnecting ? "Disconnecting..." : "Disconnect"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="pt-2">
+          <a
+            href="/api/qbo/authorize"
+            className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md bg-[#2ea043] text-white hover:bg-[#3fb950] transition-colors"
+          >
+            Connect QuickBooks
+          </a>
+          {qboStatus?.status === "expired" && (
+            <p className="text-xs text-yellow-400 mt-2">
+              Your session expired. Please re-connect to restore access.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   return (
     <div>
@@ -62,6 +215,9 @@ export default function SettingsPage() {
       <p className="text-[#8b949e] mb-8">
         Manage integrations, sync schedules, and dashboard configuration.
       </p>
+
+      {/* QuickBooks Connection */}
+      <QuickBooksCard />
 
       {/* Integrations */}
       <div className="mb-8">

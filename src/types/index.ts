@@ -302,3 +302,119 @@ export interface Heartbeat {
   tasks_processed: number;
   summary: string | null;
 }
+
+// ── Financial Types ───────────────────────────────────────────────────────────
+
+// QBO Connection
+export interface QBOConnectionStatus {
+  connected: boolean;
+  companyName: string | null;
+  lastSync: string | null;
+  refreshTokenExpiresAt: string | null;
+  status: string;
+}
+
+// P&L
+export interface PnLMetrics {
+  period: { start: string; end: string; label: string };
+  revenue: number;
+  expenses: number;
+  netIncome: number;
+  revenueDelta: number | null;
+  expensesDelta: number | null;
+  netIncomeDelta: number | null;
+  monthlyTrend: PnLMonthlyEntry[];
+  yoyComparison: { current: number; previous: number; delta: number } | null;
+  expenseCategories: ExpenseCategory[];
+}
+
+export interface PnLMonthlyEntry {
+  month: string;
+  revenue: number;
+  expenses: number;
+  netIncome: number;
+}
+
+export interface ExpenseCategory {
+  name: string;
+  amount: number;
+  percent: number;
+  subcategories?: { name: string; amount: number }[];
+}
+
+// Cash Flow
+export interface CashFlowMetrics {
+  currentCash: number;
+  burnRate: number;
+  runwayWeeks: number;
+  weeklyProjections: CashFlowWeek[];
+  scenarios: {
+    optimistic: CashFlowScenario;
+    realistic: CashFlowScenario;
+    conservative: CashFlowScenario;
+  };
+  expectedCollections: ExpectedCollection[];
+}
+
+export interface CashFlowWeek {
+  weekStart: string;
+  inflows: number;
+  outflows: number;
+  netCash: number;
+  runningBalance: number;
+}
+
+export interface CashFlowScenario {
+  label: string;
+  runwayWeeks: number;
+  endingCash: number;
+  projections: CashFlowWeek[];
+}
+
+export interface ExpectedCollection {
+  source: string;
+  jobName: string | null;
+  amount: number;
+  dueDate: string | null;
+  daysOutstanding: number;
+  probability: number;
+  weightedAmount: number;
+  segment: string | null;
+}
+
+// Reconciliation
+export interface ReconciliationSummary {
+  matched: number;
+  missingInQB: number;
+  missingInJN: number;
+  amountMismatches: number;
+  totalJNInvoices: number;
+  totalQBInvoices: number;
+}
+
+export interface InvoiceReconRow {
+  id: string;
+  jnInvoiceId: string | null;
+  jnDocNumber: string | null;
+  jnAmount: number | null;
+  qboInvoiceId: string | null;
+  qboDocNumber: string | null;
+  qboAmount: number | null;
+  matchConfidence: number | null;
+  matchMethod: string | null;
+  status: "matched" | "missing_in_qb" | "missing_in_jn" | "amount_mismatch" | "flagged";
+  amountDifference: number | null;
+  customerName: string | null;
+  txnDate: string | null;
+}
+
+export interface PaymentReconRow {
+  id: string;
+  stripeId: string | null;
+  qboPaymentId: string | null;
+  amount: number;
+  txnDate: string | null;
+  status: "matched" | "unmatched" | "flagged";
+  issue: string | null;
+  customerName: string | null;
+}

@@ -17,6 +17,9 @@ import {
   Bot,
   MessageCircleQuestion,
   Settings,
+  TrendingUp,
+  Wallet,
+  GitCompare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +46,14 @@ const navGroups = [
       { href: "/sales", label: "Sales Performance", icon: Users },
       { href: "/speed-to-lead", label: "Speed to Lead", icon: Zap },
       { href: "/job-types", label: "Job Types", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "FINANCIAL",
+    items: [
+      { href: "/financial/pnl", label: "P&L", icon: TrendingUp },
+      { href: "/financial/cashflow", label: "Cash Flow", icon: Wallet },
+      { href: "/financial/reconciliation", label: "Reconciliation", icon: GitCompare },
     ],
   },
   {
