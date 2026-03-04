@@ -67,8 +67,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Derive redirect_uri from the actual request URL to ensure exact match
+    const callbackUrl = new URL(request.url);
+    const derivedRedirectUri = `${callbackUrl.origin}${callbackUrl.pathname}`;
     console.log("[QBO Callback] Exchanging code for tokens, realmId:", realmId);
-    await exchangeCodeForTokens(code, realmId);
+    console.log("[QBO Callback] Derived redirect_uri:", derivedRedirectUri);
+    console.log("[QBO Callback] Env redirect_uri:", process.env.QBO_REDIRECT_URI);
+    await exchangeCodeForTokens(code, realmId, derivedRedirectUri);
     console.log("[QBO Callback] Token exchange successful");
 
     return clearCookie(

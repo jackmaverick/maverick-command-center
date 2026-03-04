@@ -157,8 +157,13 @@ export function getAuthorizationUrl(state: string): string {
  */
 export async function exchangeCodeForTokens(
   code: string,
-  realmId: string
+  realmId: string,
+  overrideRedirectUri?: string
 ): Promise<void> {
+  const redirectUri = overrideRedirectUri || getRedirectUri();
+  console.log("[QBO Token Exchange] Using redirect_uri:", redirectUri);
+  console.log("[QBO Token Exchange] Using client_id:", getClientId().substring(0, 10) + "...");
+
   const response = await fetch(QBO_TOKEN_URL, {
     method: "POST",
     headers: {
@@ -169,15 +174,14 @@ export async function exchangeCodeForTokens(
     body: new URLSearchParams({
       grant_type: "authorization_code",
       code,
-      redirect_uri: getRedirectUri(),
+      redirect_uri: redirectUri,
     }),
   });
 
   if (!response.ok) {
     const error = await response.text();
     console.error("[QBO Token Exchange] Failed:", response.status, error);
-    console.error("[QBO Token Exchange] redirect_uri used:", getRedirectUri());
-    console.error("[QBO Token Exchange] client_id used:", getClientId().substring(0, 10) + "...");
+    console.error("[QBO Token Exchange] redirect_uri used:", redirectUri);
     throw new Error(`Token exchange failed: ${response.status} ${error}`);
   }
 
