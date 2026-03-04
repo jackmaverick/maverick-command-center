@@ -175,6 +175,9 @@ export async function exchangeCodeForTokens(
 
   if (!response.ok) {
     const error = await response.text();
+    console.error("[QBO Token Exchange] Failed:", response.status, error);
+    console.error("[QBO Token Exchange] redirect_uri used:", getRedirectUri());
+    console.error("[QBO Token Exchange] client_id used:", getClientId().substring(0, 10) + "...");
     throw new Error(`Token exchange failed: ${response.status} ${error}`);
   }
 
