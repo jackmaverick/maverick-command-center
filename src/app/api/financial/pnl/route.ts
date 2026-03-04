@@ -73,19 +73,51 @@ function parsePnLTotals(report: QBOReportResponse): {
   const expenseCategories: ExpenseCategory[] = [];
 
   if (!report.Rows?.Row) {
+    console.log("[P&L Parse] No rows in report");
     return { revenue, expenses, netIncome, expenseCategories };
   }
+
+  // Log all section groups for debugging
+  const groups = report.Rows.Row.map((r) => r.group).filter(Boolean);
+  console.log("[P&L Parse] Report sections:", groups.join(", "));
 
   for (const section of report.Rows.Row) {
     const group = section.group;
 
     if (group === "Income" && section.Summary?.ColData) {
       revenue = parseFloat(section.Summary.ColData[1]?.value ?? "0") || 0;
+      console.log("[P&L Parse] Income:", revenue);
+    }
+
+    if (group === "OtherIncome" && section.Summary?.ColData) {
+      const otherIncome = parseFloat(section.Summary.ColData[1]?.value ?? "0") || 0;
+      revenue += otherIncome;
+      console.log("[P&L Parse] OtherIncome:", otherIncome, "→ Total revenue:", revenue);
+    }
+
+    if (group === "CostOfGoodsSold" && section.Summary?.ColData) {
+      const cogs = parseFloat(section.Summary.ColData[1]?.value ?? "0") || 0;
+      expenses += cogs;
+      console.log("[P&L Parse] COGS:", cogs);
+      // Extract COGS subcategories
+      if (section.Rows?.Row) {
+        for (const row of section.Rows.Row) {
+          if (row.ColData) {
+            const name = row.ColData[0]?.value ?? "Cost of Goods";
+            const amount = parseFloat(row.ColData[1]?.value ?? "0") || 0;
+            if (amount !== 0) {
+              expenseCategories.push({ name, amount, percent: 0 });
+            }
+          }
+        }
+      }
     }
 
     if (group === "Expenses" || group === "OtherExpenses") {
       if (section.Summary?.ColData) {
-        expenses += parseFloat(section.Summary.ColData[1]?.value ?? "0") || 0;
+        const sectionExpenses = parseFloat(section.Summary.ColData[1]?.value ?? "0") || 0;
+        expenses += sectionExpenses;
+        console.log(`[P&L Parse] ${group}:`, sectionExpenses, "→ Total expenses:", expenses);
       }
       // Extract expense subcategories
       if (section.Rows?.Row) {
@@ -121,6 +153,7 @@ function parsePnLTotals(report: QBOReportResponse): {
 
     if (group === "NetIncome" && section.Summary?.ColData) {
       netIncome = parseFloat(section.Summary.ColData[1]?.value ?? "0") || 0;
+      console.log("[P&L Parse] NetIncome:", netIncome);
     }
   }
 
@@ -162,12 +195,19 @@ function parseMonthlyTrend(report: QBOReportResponse): PnLMonthlyEntry[] {
   for (const section of report.Rows.Row) {
     const group = section.group;
 
-    if (group === "Income" && section.Summary?.ColData) {
-      revenueRow = section.Summary.ColData.slice(1).map(
+    if ((group === "Income" || group === "OtherIncome") && section.Summary?.ColData) {
+      const values = section.Summary.ColData.slice(1).map(
         (d) => parseFloat(d.value ?? "0") || 0
       );
+      if (revenueRow.length === 0) {
+        revenueRow = values;
+      } else {
+        for (let i = 0; i < values.length; i++) {
+          revenueRow[i] = (revenueRow[i] ?? 0) + values[i];
+        }
+      }
     }
-    if ((group === "Expenses" || group === "OtherExpenses") && section.Summary?.ColData) {
+    if ((group === "Expenses" || group === "OtherExpenses" || group === "CostOfGoodsSold") && section.Summary?.ColData) {
       const values = section.Summary.ColData.slice(1).map(
         (d) => parseFloat(d.value ?? "0") || 0
       );
@@ -246,6 +286,9 @@ export async function GET(request: NextRequest) {
           end_date: fmt(yearAgoEnd),
         }),
       ]);
+
+    console.log("[P&L API] Current report period:", fmt(range.start), "to", fmt(range.end));
+    console.log("[P&L API] Current report has rows:", !!currentReport.Rows?.Row, "count:", currentReport.Rows?.Row?.length ?? 0);
 
     const current = parsePnLTotals(currentReport);
     const previous = parsePnLTotals(prevReport);

@@ -166,18 +166,24 @@ export async function GET(request: NextRequest) {
     // ── Process results ───────────────────────────────────────────────────
 
     // 1. Current cash
+    console.log("[Cash Flow] Bank accounts found:", bankAccounts.length);
+    for (const a of bankAccounts) {
+      console.log(`[Cash Flow]   ${a.Name}: $${a.CurrentBalance} (${a.AccountType})`);
+    }
     const currentCash = bankAccounts.reduce(
       (sum, a) => sum + (a.CurrentBalance ?? 0),
       0
     );
+    console.log("[Cash Flow] Total cash:", currentCash);
 
     // 2. Burn rate (avg monthly expenses from trailing 3 months)
     let totalExpenses = 0;
-    let monthCount = 0;
+    // Track which month indices have non-zero expenses (across all sections)
+    const activeMonths = new Set<number>();
     if (expenseReport.Rows?.Row) {
       for (const section of expenseReport.Rows.Row) {
         if (
-          (section.group === "Expenses" || section.group === "OtherExpenses") &&
+          (section.group === "Expenses" || section.group === "OtherExpenses" || section.group === "CostOfGoodsSold") &&
           section.Summary?.ColData
         ) {
           // Sum up monthly expense columns (skip label at index 0)
@@ -186,14 +192,14 @@ export async function GET(request: NextRequest) {
               parseFloat(section.Summary.ColData[i]?.value ?? "0") || 0;
             if (val !== 0) {
               totalExpenses += Math.abs(val);
-              monthCount++;
+              activeMonths.add(i);
             }
           }
         }
       }
     }
-    // Each expense section contributes to monthCount separately; normalize
-    const burnRate = monthCount > 0 ? totalExpenses / Math.ceil(monthCount / 2) : 0;
+    console.log("[Cash Flow] Total expenses:", totalExpenses, "across", activeMonths.size, "months");
+    const burnRate = activeMonths.size > 0 ? totalExpenses / activeMonths.size : 0;
     const weeklyBurn = burnRate / 4.33;
 
     // 3. Expected collections from outstanding invoices

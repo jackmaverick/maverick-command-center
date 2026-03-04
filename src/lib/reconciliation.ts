@@ -92,6 +92,13 @@ export async function runInvoiceMatching(): Promise<{
         qbo.doc_number &&
         jn.number.trim() === qbo.doc_number.trim()
       ) {
+        const jnAmt = parseFloat(jn.total);
+        const qboAmt = parseFloat(qbo.total_amount);
+        if (Math.abs(jnAmt - qboAmt) > 0.01) {
+          console.log(
+            `[Reconciliation] Doc #${jn.number} matched but amounts differ: JN=$${jnAmt} vs QBO=$${qboAmt} (diff=$${Math.round((jnAmt - qboAmt) * 100) / 100})`
+          );
+        }
         bestMatch = { qboId: qbo.qbo_id, confidence: 1.0, method: "doc_number" };
         break;
       }

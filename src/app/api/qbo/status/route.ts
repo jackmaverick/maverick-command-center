@@ -1,6 +1,41 @@
 import { NextResponse } from "next/server";
-import { getQBOConnection } from "@/lib/quickbooks";
+import { getQBOConnection, getAccessToken } from "@/lib/quickbooks";
+import { query } from "@/lib/db";
 import type { QBOConnectionStatus } from "@/types";
+
+async function fetchAndUpdateCompanyName(conn: { id: string; realm_id: string }): Promise<string | null> {
+  try {
+    const { token, realmId } = await getAccessToken();
+    const env = process.env.QBO_ENVIRONMENT ?? "sandbox";
+    const baseUrl = env === "production"
+      ? "https://quickbooks.api.intuit.com"
+      : "https://sandbox-quickbooks.api.intuit.com";
+
+    const res = await fetch(
+      `${baseUrl}/v3/company/${realmId}/companyinfo/${realmId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const name = data.CompanyInfo?.CompanyName ?? null;
+      if (name) {
+        await query(
+          `UPDATE qbo_connection SET company_name = $1 WHERE id = $2`,
+          [name, conn.id]
+        );
+        return name;
+      }
+    }
+  } catch (e) {
+    console.error("[QBO Status] Failed to fetch company name:", e);
+  }
+  return null;
+}
 
 export async function GET() {
   try {
@@ -17,9 +52,15 @@ export async function GET() {
       return NextResponse.json(status);
     }
 
+    // If company name is missing, try to fetch it now
+    let companyName = conn.company_name;
+    if (!companyName && conn.status === "active") {
+      companyName = await fetchAndUpdateCompanyName(conn);
+    }
+
     const status: QBOConnectionStatus = {
       connected: conn.status === "active",
-      companyName: conn.company_name,
+      companyName,
       lastSync: conn.last_sync_at,
       refreshTokenExpiresAt: conn.refresh_token_expires_at,
       status: conn.status,
