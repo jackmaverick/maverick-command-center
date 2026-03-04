@@ -24,10 +24,13 @@ interface QBOPayment {
 
 export async function POST() {
   try {
+    console.log("[QBO Sync] Starting sync...");
+
     // Sync invoices
     const invoices = await qboQuery<QBOInvoice>(
       "SELECT * FROM Invoice MAXRESULTS 1000"
     );
+    console.log(`[QBO Sync] Fetched ${invoices.length} invoices from QBO`);
 
     for (const inv of invoices) {
       const status = inv.Balance === 0 ? "Paid" : "Open";
@@ -100,8 +103,11 @@ export async function POST() {
       );
     }
 
+    console.log(`[QBO Sync] Fetched ${payments.length} payments from QBO`);
+
     await updateLastSync();
 
+    console.log("[QBO Sync] Sync complete");
     return NextResponse.json({
       success: true,
       invoicesSynced: invoices.length,

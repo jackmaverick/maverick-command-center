@@ -70,6 +70,7 @@ interface QBOStatus {
 function QuickBooksCard() {
   const [qboStatus, setQboStatus] = useState<QBOStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
 
   const fetchStatus = useCallback(async () => {
@@ -87,9 +88,18 @@ function QuickBooksCard() {
 
   const handleSync = async () => {
     setSyncing(true);
+    setSyncResult(null);
     try {
-      await fetch("/api/qbo/sync", { method: "POST" });
+      const res = await fetch("/api/qbo/sync", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSyncResult({ success: true, message: `Synced ${data.invoicesSynced} invoices, ${data.paymentsSynced} payments` });
+      } else {
+        setSyncResult({ success: false, message: data.error || `Sync failed (${res.status})` });
+      }
       await fetchStatus();
+    } catch (e) {
+      setSyncResult({ success: false, message: e instanceof Error ? e.message : "Network error" });
     } finally {
       setSyncing(false);
     }
@@ -188,6 +198,15 @@ function QuickBooksCard() {
               {disconnecting ? "Disconnecting..." : "Disconnect"}
             </button>
           </div>
+          {syncResult && (
+            <div className={`mt-2 px-3 py-2 rounded text-xs ${
+              syncResult.success
+                ? "bg-green-500/10 border border-green-500/20 text-green-400"
+                : "bg-red-500/10 border border-red-500/20 text-red-400"
+            }`}>
+              {syncResult.message}
+            </div>
+          )}
         </div>
       ) : (
         <div className="pt-2">
