@@ -49,8 +49,9 @@ export async function GET(request: NextRequest) {
 
     // Validate CSRF state
     const cookieState = request.cookies.get("qbo_oauth_state")?.value;
+    console.log("[QBO Callback] State present:", !!state, "Cookie present:", !!cookieState, "Match:", state === cookieState);
     if (!state || !cookieState || !verifyState(state, cookieState)) {
-      console.error("[QBO Callback] State validation failed");
+      console.error("[QBO Callback] State validation failed — state:", state?.substring(0, 10), "cookie:", cookieState?.substring(0, 10));
       return clearCookie(
         NextResponse.redirect(
           new URL("/settings?qbo_error=invalid_state", request.url)
@@ -66,7 +67,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    console.log("[QBO Callback] Exchanging code for tokens, realmId:", realmId);
     await exchangeCodeForTokens(code, realmId);
+    console.log("[QBO Callback] Token exchange successful");
 
     return clearCookie(
       NextResponse.redirect(

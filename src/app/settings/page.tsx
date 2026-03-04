@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 
 const INTEGRATIONS = [
   {
@@ -68,10 +69,25 @@ interface QBOStatus {
 }
 
 function QuickBooksCard() {
+  const searchParams = useSearchParams();
   const [qboStatus, setQboStatus] = useState<QBOStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [oauthMessage, setOauthMessage] = useState<{ success: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    const error = searchParams.get("qbo_error");
+    const connected = searchParams.get("qbo_connected");
+    if (error) {
+      setOauthMessage({ success: false, message: `OAuth error: ${decodeURIComponent(error)}` });
+      // Clean URL
+      window.history.replaceState({}, "", "/settings");
+    } else if (connected) {
+      setOauthMessage({ success: true, message: "QuickBooks connected successfully!" });
+      window.history.replaceState({}, "", "/settings");
+    }
+  }, [searchParams]);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -153,6 +169,16 @@ function QuickBooksCard() {
         )}
       </div>
 
+      {oauthMessage && (
+        <div className={`mb-3 px-3 py-2 rounded text-xs ${
+          oauthMessage.success
+            ? "bg-green-500/10 border border-green-500/20 text-green-400"
+            : "bg-red-500/10 border border-red-500/20 text-red-400"
+        }`}>
+          {oauthMessage.message}
+        </div>
+      )}
+
       {qboStatus?.connected ? (
         <div className="space-y-3">
           <div className="flex items-center justify-between text-xs">
@@ -227,7 +253,7 @@ function QuickBooksCard() {
   );
 }
 
-export default function SettingsPage() {
+function SettingsContent() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-[#e6edf3] mb-2">Settings</h1>
@@ -446,5 +472,13 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense>
+      <SettingsContent />
+    </Suspense>
   );
 }
