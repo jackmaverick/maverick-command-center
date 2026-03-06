@@ -69,6 +69,7 @@ function formatFullCurrency(value: number): string {
 export default function GrossProfitPage() {
   const [period, setPeriod] = useState("all");
   const [segment, setSegment] = useState<string>("all");
+  const [jobType, setJobType] = useState<string>("all");
   const [sortField, setSortField] = useState<SortField>("dateCompleted");
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
@@ -109,7 +110,11 @@ export default function GrossProfitPage() {
 
   const sortedJobs = useMemo(() => {
     if (!data?.jobs) return [];
-    return [...data.jobs].sort((a, b) => {
+    const filtered =
+      jobType === "all"
+        ? data.jobs
+        : data.jobs.filter((j) => j.jobTypes.includes(jobType));
+    return [...filtered].sort((a, b) => {
       const aVal = a[sortField];
       const bVal = b[sortField];
       // Handle nullable date strings
@@ -127,7 +132,7 @@ export default function GrossProfitPage() {
         ? (aVal as number) - (bVal as number)
         : (bVal as number) - (aVal as number);
     });
-  }, [data?.jobs, sortField, sortAsc]);
+  }, [data?.jobs, sortField, sortAsc, jobType]);
 
   const toggleSort = useCallback(
     (field: SortField) => {
@@ -140,6 +145,23 @@ export default function GrossProfitPage() {
     },
     [sortField, sortAsc]
   );
+
+  // Recalculate summary from filtered/sorted jobs
+  const filteredSummary = useMemo(() => {
+    const totalRevenue = sortedJobs.reduce((s, j) => s + j.revenue, 0);
+    const totalCosts = sortedJobs.reduce((s, j) => s + j.totalCost, 0);
+    const totalGrossProfit = totalRevenue - totalCosts;
+    return {
+      totalRevenue,
+      totalCosts,
+      totalGrossProfit,
+      avgMarginPercent:
+        totalRevenue > 0
+          ? Math.round(((totalGrossProfit / totalRevenue) * 100) * 10) / 10
+          : 0,
+      jobCount: sortedJobs.length,
+    };
+  }, [sortedJobs]);
 
   const handleAddCost = async () => {
     if (!addCostJob || !costForm.amount) return;
@@ -186,7 +208,7 @@ export default function GrossProfitPage() {
     </TableHead>
   );
 
-  const summary = data?.summary;
+  const summary = jobType === "all" ? data?.summary : filteredSummary;
 
   return (
     <div>
@@ -219,6 +241,28 @@ export default function GrossProfitPage() {
                   className="text-[#e6edf3] focus:bg-[#21262d] focus:text-[#e6edf3]"
                 >
                   {seg.icon} {seg.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={jobType} onValueChange={setJobType}>
+            <SelectTrigger className="w-[140px] bg-[#161b22] border-[#30363d] text-[#e6edf3]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-[#161b22] border-[#30363d]">
+              <SelectItem
+                value="all"
+                className="text-[#e6edf3] focus:bg-[#21262d] focus:text-[#e6edf3]"
+              >
+                All Job Types
+              </SelectItem>
+              {["Roof", "Siding", "Gutters", "Windows", "Repair"].map((t) => (
+                <SelectItem
+                  key={t}
+                  value={t}
+                  className="text-[#e6edf3] focus:bg-[#21262d] focus:text-[#e6edf3]"
+                >
+                  {t}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -299,8 +343,8 @@ export default function GrossProfitPage() {
                   <TableRow className="border-[#30363d] hover:bg-transparent">
                     <SortHeader field="dateCompleted">Closed</SortHeader>
                     <SortHeader field="jobName">Job</SortHeader>
-                    <TableHead className="text-[#8b949e]">Type</TableHead>
-                    <TableHead className="text-[#8b949e]">Segment</TableHead>
+                    <TableHead className="text-[#8b949e]">Job Type</TableHead>
+                    <TableHead className="text-[#8b949e]">Record Type</TableHead>
                     <SortHeader field="revenue" className="text-right">
                       Revenue
                     </SortHeader>
@@ -344,9 +388,17 @@ export default function GrossProfitPage() {
                               ? formatDate(job.dateCompleted, "MMM d")
                               : "—"}
                           </TableCell>
-                          <TableCell className="text-[#e6edf3] font-medium max-w-[200px] truncate">
+                          <TableCell className="font-medium max-w-[200px] truncate">
                             <div>
-                              <div className="truncate">{job.jobName}</div>
+                              <a
+                                href={`https://app.jobnimbus.com/job/${job.jobJnid}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[#58a6ff] hover:underline truncate block"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {job.jobName}
+                              </a>
                               {job.address && (
                                 <div className="text-xs text-[#8b949e] truncate">
                                   {job.address}
