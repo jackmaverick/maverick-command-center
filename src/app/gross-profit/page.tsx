@@ -29,7 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SEGMENTS } from "@/lib/constants";
-import { formatCurrency, formatPercent } from "@/lib/dates";
+import { formatCurrency, formatPercent, formatDate } from "@/lib/dates";
 import type { GrossProfitData, GrossProfitJob, RetailCostEntry } from "@/types";
 import {
   ChevronDown,
@@ -41,6 +41,7 @@ import {
 
 type SortField =
   | "jobName"
+  | "dateCompleted"
   | "revenue"
   | "supplierCost"
   | "laborCost"
@@ -68,7 +69,7 @@ function formatFullCurrency(value: number): string {
 export default function GrossProfitPage() {
   const [period, setPeriod] = useState("all");
   const [segment, setSegment] = useState<string>("all");
-  const [sortField, setSortField] = useState<SortField>("revenue");
+  const [sortField, setSortField] = useState<SortField>("dateCompleted");
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
   const [addCostJob, setAddCostJob] = useState<string | null>(null);
@@ -111,6 +112,12 @@ export default function GrossProfitPage() {
     return [...data.jobs].sort((a, b) => {
       const aVal = a[sortField];
       const bVal = b[sortField];
+      // Handle nullable date strings
+      if (sortField === "dateCompleted") {
+        const aTime = aVal ? new Date(aVal as string).getTime() : 0;
+        const bTime = bVal ? new Date(bVal as string).getTime() : 0;
+        return sortAsc ? aTime - bTime : bTime - aTime;
+      }
       if (typeof aVal === "string" && typeof bVal === "string") {
         return sortAsc
           ? aVal.localeCompare(bVal)
@@ -290,6 +297,7 @@ export default function GrossProfitPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-[#30363d] hover:bg-transparent">
+                    <SortHeader field="dateCompleted">Closed</SortHeader>
                     <SortHeader field="jobName">Job</SortHeader>
                     <TableHead className="text-[#8b949e]">Type</TableHead>
                     <TableHead className="text-[#8b949e]">Segment</TableHead>
@@ -331,6 +339,11 @@ export default function GrossProfitPage() {
                             setExpandedJob(isExpanded ? null : job.jobJnid)
                           }
                         >
+                          <TableCell className="text-xs text-[#8b949e] whitespace-nowrap">
+                            {job.dateCompleted
+                              ? formatDate(job.dateCompleted, "MMM d")
+                              : "—"}
+                          </TableCell>
                           <TableCell className="text-[#e6edf3] font-medium max-w-[200px] truncate">
                             <div>
                               <div className="truncate">{job.jobName}</div>
@@ -420,7 +433,7 @@ export default function GrossProfitPage() {
                             key={`${job.jobJnid}-detail`}
                             className="border-[#30363d] hover:bg-transparent"
                           >
-                            <TableCell colSpan={11} className="p-0">
+                            <TableCell colSpan={12} className="p-0">
                               <ExpandedDetail
                                 job={job}
                                 retailCosts={retailCosts?.costs ?? []}
