@@ -20,6 +20,7 @@ import {
   TrendingUp,
   Wallet,
   GitCompare,
+  DollarSign,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +55,7 @@ const navGroups = [
       { href: "/financial/pnl", label: "P&L", icon: TrendingUp },
       { href: "/financial/cashflow", label: "Cash Flow", icon: Wallet },
       { href: "/financial/reconciliation", label: "Reconciliation", icon: GitCompare },
+      { href: "/gross-profit", label: "Gross Profit", icon: DollarSign },
     ],
   },
   {

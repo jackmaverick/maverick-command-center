@@ -418,3 +418,45 @@ export interface PaymentReconRow {
   issue: string | null;
   customerName: string | null;
 }
+
+// ── Gross Profit Types ──────────────────────────────────────────────────────
+
+export interface GrossProfitJob {
+  jobJnid: string;
+  jobName: string;
+  address: string | null;
+  segment: string;
+  jobTypes: string[];
+  revenue: number;
+  supplierCost: number;
+  laborCost: number;
+  retailCost: number;
+  totalCost: number;
+  grossProfit: number;
+  marginPercent: number;
+  dateCompleted: string | null;
+}
+
+export interface GrossProfitSummary {
+  totalRevenue: number;
+  totalCosts: number;
+  totalGrossProfit: number;
+  avgMarginPercent: number;
+  jobCount: number;
+}
+
+export interface GrossProfitData {
+  period: { key: string; label: string };
+  summary: GrossProfitSummary;
+  jobs: GrossProfitJob[];
+}
+
+export interface RetailCostEntry {
+  id: string;
+  jobJnid: string;
+  storeName: string;
+  amount: number;
+  description: string | null;
+  purchaseDate: string | null;
+  createdAt: string;
+}
