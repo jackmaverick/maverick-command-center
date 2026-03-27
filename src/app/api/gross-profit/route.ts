@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
         SELECT SUM(w.total_line_item_cost) AS labor_cost
         FROM work_orders w
         WHERE w.job_jnid = j.jnid
-          AND w.status_name IN ('Paid Crew', 'Paid & Closed', 'Closed')
+          AND w.status_name IN ('Paid Crew', 'Paid & Closed', 'Closed', 'Work Complete', 'Complete', 'White Glove Complete')
       ) wo ON true
       LEFT JOIN LATERAL (
         SELECT SUM(r.amount) AS retail_cost
