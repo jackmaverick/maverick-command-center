@@ -460,3 +460,51 @@ export interface RetailCostEntry {
   purchaseDate: string | null;
   createdAt: string;
 }
+
+// ── Editable Expenses (Cash Flow Monitor) ───────────────────────────────────
+
+export type ExpenseFrequency =
+  | "monthly"
+  | "weekly"
+  | "biweekly"
+  | "quarterly"
+  | "annual";
+
+export type ExpenseSource = "manual" | "ai_seeded" | "imported";
+
+export type Confidence = "high" | "medium" | "low";
+
+export interface RecurringExpense {
+  id: string;
+  name: string;
+  category: string;
+  amount: number;
+  frequency: ExpenseFrequency;
+  startDate: string;
+  endDate: string | null;
+  notes: string | null;
+  source: ExpenseSource;
+  confidence: Confidence | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OneTimeExpense {
+  id: string;
+  name: string;
+  category: string;
+  amount: number;
+  expectedDate: string;
+  note: string | null;
+  source: ExpenseSource;
+  createdAt: string;
+}
+
+export interface ForecastOverride {
+  id: string;
+  weekStart: string;
+  field: "inflows" | "outflows" | "running_balance";
+  value: number;
+  reason: string | null;
+  createdAt: string;
+}
