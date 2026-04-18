@@ -354,6 +354,14 @@ export interface CashFlowMetrics {
     conservative: CashFlowScenario;
   };
   expectedCollections: ExpectedCollection[];
+  // New fields — editable-expenses forecast model
+  availableToSpend: number;           // conservative: cash − 4wk committed − safety floor
+  availableToSpendWithPipeline: number; // aggressive: same but + 4wk weighted pipeline inflows
+  safetyFloor: number;                 // from cashflow_safety_floor setting
+  committedMonthlyFixed: number;       // sum of active recurring expenses, normalized to monthly
+  committed4Weeks: number;              // sum of next 4wk fixed commits + one-time in that window
+  recurringExpenses: RecurringExpense[]; // active rows, sorted by amount desc
+  oneTimeExpenses: OneTimeExpense[];     // within horizon window
 }
 
 export interface CashFlowWeek {
