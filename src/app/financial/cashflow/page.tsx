@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/dates";
 import type { CashFlowMetrics, CashFlowWeek } from "@/types";
+import RecurringExpensesEditor from "@/components/financial/RecurringExpensesEditor";
 
 type Scenario = "optimistic" | "realistic" | "conservative";
 type Horizon = "30" | "60" | "90";
@@ -100,6 +101,63 @@ export default function CashFlowPage() {
           </div>
         </div>
       </div>
+
+      {/* Available to Spend — HERO KPI (the decision number) */}
+      <Card className="bg-gradient-to-br from-[#1f6feb]/10 to-[#161b22] border-[#1f6feb]/30 mb-4">
+        <CardContent className="py-5">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium text-[#8b949e] uppercase tracking-wider mb-1">
+                Available to Spend
+              </p>
+              {isLoading ? (
+                <Skeleton className="h-12 w-48 bg-[#21262d]" />
+              ) : (
+                <p
+                  className={`text-5xl font-bold ${
+                    (data?.availableToSpend ?? 0) > 0
+                      ? "text-[#3fb950]"
+                      : (data?.availableToSpend ?? 0) > -50000
+                        ? "text-[#d29922]"
+                        : "text-[#f85149]"
+                  }`}
+                >
+                  {formatCurrency(data?.availableToSpend ?? 0)}
+                </p>
+              )}
+              <p className="text-[11px] text-[#8b949e] mt-2">
+                Cash{" "}
+                <span className="text-[#8b949e]/70">
+                  ({formatCurrency(data?.currentCash ?? 0)})
+                </span>{" "}
+                − 4-wk committed{" "}
+                <span className="text-[#8b949e]/70">
+                  ({formatCurrency(data?.committed4Weeks ?? 0)})
+                </span>{" "}
+                − safety floor{" "}
+                <span className="text-[#8b949e]/70">
+                  ({formatCurrency(data?.safetyFloor ?? 0)})
+                </span>
+              </p>
+            </div>
+            <div className="border-l border-[#30363d] sm:pl-6 pt-2 sm:pt-0">
+              <p className="text-[10px] font-medium text-[#8b949e] uppercase tracking-wider mb-1">
+                With Pipeline
+              </p>
+              {isLoading ? (
+                <Skeleton className="h-8 w-32 bg-[#21262d]" />
+              ) : (
+                <p className="text-2xl font-semibold text-[#58a6ff]">
+                  {formatCurrency(data?.availableToSpendWithPipeline ?? 0)}
+                </p>
+              )}
+              <p className="text-[10px] text-[#8b949e] mt-1">
+                + 4-wk weighted pipeline inflows
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
@@ -289,6 +347,14 @@ export default function CashFlowPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Recurring Expenses Editor */}
+      {data?.recurringExpenses && (
+        <RecurringExpensesEditor
+          expenses={data.recurringExpenses}
+          horizon={horizon}
+        />
+      )}
 
       {/* Expected Collections Table */}
       <Card className="bg-[#161b22] border-[#30363d]">
