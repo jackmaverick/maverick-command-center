@@ -344,6 +344,7 @@ export interface ExpenseCategory {
 
 // Cash Flow
 export interface CashFlowMetrics {
+  qboConnected: boolean;  // false when Intuit prod not yet approved — UI degrades gracefully
   currentCash: number;
   burnRate: number;
   runwayWeeks: number;
@@ -354,6 +355,15 @@ export interface CashFlowMetrics {
     conservative: CashFlowScenario;
   };
   expectedCollections: ExpectedCollection[];
+  // New fields — editable-expenses forecast model
+  availableToSpend: number;           // conservative: cash − 4wk committed − safety floor
+  availableToSpendWithPipeline: number; // aggressive: same but + 4wk weighted pipeline inflows
+  safetyFloor: number;                 // from cashflow_safety_floor setting
+  committedMonthlyFixed: number;       // sum of active recurring expenses, normalized to monthly
+  committed4Weeks: number;              // sum of next 4wk fixed commits + one-time in that window
+  recurringExpenses: RecurringExpense[]; // active rows, sorted by amount desc
+  oneTimeExpenses: OneTimeExpense[];     // within horizon window
+  planVsActual: PlanVsActualMonth[];     // trailing 3 months planned vs QBO actual
 }
 
 export interface CashFlowWeek {
@@ -459,4 +469,61 @@ export interface RetailCostEntry {
   description: string | null;
   purchaseDate: string | null;
   createdAt: string;
+}
+
+// ── Editable Expenses (Cash Flow Monitor) ───────────────────────────────────
+
+export type ExpenseFrequency =
+  | "monthly"
+  | "weekly"
+  | "biweekly"
+  | "quarterly"
+  | "annual";
+
+export type ExpenseSource = "manual" | "ai_seeded" | "imported";
+
+export type Confidence = "high" | "medium" | "low";
+
+export interface RecurringExpense {
+  id: string;
+  name: string;
+  category: string;
+  amount: number;
+  frequency: ExpenseFrequency;
+  startDate: string;
+  endDate: string | null;
+  notes: string | null;
+  source: ExpenseSource;
+  confidence: Confidence | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OneTimeExpense {
+  id: string;
+  name: string;
+  category: string;
+  amount: number;
+  expectedDate: string;
+  note: string | null;
+  source: ExpenseSource;
+  createdAt: string;
+}
+
+export interface ForecastOverride {
+  id: string;
+  weekStart: string;
+  field: "inflows" | "outflows" | "running_balance";
+  value: number;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface PlanVsActualMonth {
+  month: string;             // "Jan 2026"
+  monthKey: string;          // "2026-01"
+  planned: number;            // recurring (active that month) + one-time scheduled that month
+  actual: number | null;      // from QBO P&L Expenses; null when QBO not connected
+  variance: number | null;    // actual − planned (negative = under budget = good)
+  variancePercent: number | null;
 }
