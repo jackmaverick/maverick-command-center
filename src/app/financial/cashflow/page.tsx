@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/dates";
 import type { CashFlowMetrics, CashFlowWeek } from "@/types";
 import RecurringExpensesEditor from "@/components/financial/RecurringExpensesEditor";
+import OneTimeExpensesEditor from "@/components/financial/OneTimeExpensesEditor";
 
 type Scenario = "optimistic" | "realistic" | "conservative";
 type Horizon = "30" | "60" | "90";
@@ -352,6 +353,14 @@ export default function CashFlowPage() {
       {data?.recurringExpenses && (
         <RecurringExpensesEditor
           expenses={data.recurringExpenses}
+          horizon={horizon}
+        />
+      )}
+
+      {/* One-Time Planned Expenses Editor */}
+      {data?.oneTimeExpenses && (
+        <OneTimeExpensesEditor
+          expenses={data.oneTimeExpenses}
           horizon={horizon}
         />
       )}
