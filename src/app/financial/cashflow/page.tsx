@@ -19,6 +19,7 @@ import { formatCurrency } from "@/lib/dates";
 import type { CashFlowMetrics, CashFlowWeek } from "@/types";
 import RecurringExpensesEditor from "@/components/financial/RecurringExpensesEditor";
 import OneTimeExpensesEditor from "@/components/financial/OneTimeExpensesEditor";
+import PlanVsActualTable from "@/components/financial/PlanVsActualTable";
 
 type Scenario = "optimistic" | "realistic" | "conservative";
 type Horizon = "30" | "60" | "90";
@@ -363,6 +364,11 @@ export default function CashFlowPage() {
           expenses={data.oneTimeExpenses}
           horizon={horizon}
         />
+      )}
+
+      {/* Plan vs Actual */}
+      {data?.planVsActual && data.planVsActual.length > 0 && (
+        <PlanVsActualTable months={data.planVsActual} />
       )}
 
       {/* Expected Collections Table */}

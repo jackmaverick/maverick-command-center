@@ -362,6 +362,7 @@ export interface CashFlowMetrics {
   committed4Weeks: number;              // sum of next 4wk fixed commits + one-time in that window
   recurringExpenses: RecurringExpense[]; // active rows, sorted by amount desc
   oneTimeExpenses: OneTimeExpense[];     // within horizon window
+  planVsActual: PlanVsActualMonth[];     // trailing 3 months planned vs QBO actual
 }
 
 export interface CashFlowWeek {
@@ -515,4 +516,13 @@ export interface ForecastOverride {
   value: number;
   reason: string | null;
   createdAt: string;
+}
+
+export interface PlanVsActualMonth {
+  month: string;             // "Jan 2026"
+  monthKey: string;          // "2026-01"
+  planned: number;            // recurring (active that month) + one-time scheduled that month
+  actual: number | null;      // from QBO P&L Expenses; null when QBO not connected
+  variance: number | null;    // actual − planned (negative = under budget = good)
+  variancePercent: number | null;
 }

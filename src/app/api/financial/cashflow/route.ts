@@ -18,6 +18,7 @@ import type {
   ExpectedCollection,
   RecurringExpense,
   OneTimeExpense,
+  PlanVsActualMonth,
 } from "@/types";
 
 // Normalize a recurring expense to an equivalent monthly amount.
@@ -409,6 +410,93 @@ export async function GET(request: NextRequest) {
       currentCash - committed4Weeks - safetyFloor + weightedInflows4Weeks
     );
 
+    // ── Plan vs Actual: trailing 3 months planned (from our tables) vs QBO actual ──
+
+    const planVsActual: PlanVsActualMonth[] = [];
+
+    // Build trailing 3 months (oldest first): e.g., [Feb, Mar, Apr] if today is Apr
+    const trailingMonths = [2, 1, 0].map((offset) => {
+      const d = subMonths(now, offset);
+      const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
+      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      return {
+        label: format(monthStart, "MMM yyyy"),
+        key: format(monthStart, "yyyy-MM"),
+        start: monthStart,
+        end: monthEnd,
+      };
+    });
+
+    // Extract actuals from QBO expense report by matching column index to month
+    // expenseReport.Columns.Column[i].ColTitle gives the month label for col i
+    const columnTitles: string[] =
+      expenseReport.Columns?.Column?.map(
+        (c: { ColTitle?: string }) => c.ColTitle ?? ""
+      ) ?? [];
+
+    // Sum Expenses + OtherExpenses per column (skip CostOfGoodsSold — scales with revenue)
+    const monthlyActualExpenses: Record<string, number> = {};
+    if (expenseReport.Rows?.Row) {
+      for (const section of expenseReport.Rows.Row) {
+        if (
+          (section.group === "Expenses" || section.group === "OtherExpenses") &&
+          section.Summary?.ColData
+        ) {
+          for (let i = 1; i < section.Summary.ColData.length; i++) {
+            const val =
+              parseFloat(section.Summary.ColData[i]?.value ?? "0") || 0;
+            const title = columnTitles[i] ?? "";
+            if (title && val !== 0) {
+              monthlyActualExpenses[title] =
+                (monthlyActualExpenses[title] ?? 0) + Math.abs(val);
+            }
+          }
+        }
+      }
+    }
+
+    for (const m of trailingMonths) {
+      // Planned = sum of recurring expenses that were active during this month
+      const plannedRecurring = recurringExpenses.reduce((sum, e) => {
+        const startedBy = parseISO(e.startDate) <= m.end;
+        const notEnded = !e.endDate || parseISO(e.endDate) >= m.start;
+        if (startedBy && notEnded) {
+          return sum + normalizeToMonthly(e.amount, e.frequency);
+        }
+        return sum;
+      }, 0);
+
+      // Planned += one-time expenses scheduled in this month
+      const plannedOneTime = oneTimeExpenses.reduce((sum, e) => {
+        const d = parseISO(e.expectedDate);
+        return d >= m.start && d <= m.end ? sum + e.amount : sum;
+      }, 0);
+
+      const planned = plannedRecurring + plannedOneTime;
+
+      // Try to match month label against QBO column titles (fuzzy — QBO uses "Jan 2026" etc)
+      const actualKey =
+        Object.keys(monthlyActualExpenses).find((k) => k.includes(m.label)) ??
+        m.label;
+      const actualRaw = monthlyActualExpenses[actualKey];
+      const actual = typeof actualRaw === "number" ? actualRaw : null;
+
+      const variance = actual !== null ? actual - planned : null;
+      const variancePercent =
+        actual !== null && planned > 0
+          ? Math.round((variance! / planned) * 100)
+          : null;
+
+      planVsActual.push({
+        month: m.label,
+        monthKey: m.key,
+        planned: Math.round(planned),
+        actual: actual !== null ? Math.round(actual) : null,
+        variance: variance !== null ? Math.round(variance) : null,
+        variancePercent,
+      });
+    }
+
     // ── Build weekly projections ──────────────────────────────────────────
 
     function buildProjections(
@@ -500,6 +588,7 @@ export async function GET(request: NextRequest) {
       committed4Weeks: Math.round(committed4Weeks),
       recurringExpenses,
       oneTimeExpenses,
+      planVsActual,
     };
 
     return NextResponse.json(metrics);
