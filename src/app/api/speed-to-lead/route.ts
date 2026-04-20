@@ -289,8 +289,10 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("[Speed-to-Lead API] Error:", error);
+    const details = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
     return NextResponse.json(
-      { error: "Failed to fetch speed-to-lead metrics" },
+      { error: "Failed to fetch speed-to-lead metrics", details, stack },
       { status: 500 }
     );
   }
