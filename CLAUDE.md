@@ -58,6 +58,12 @@ JobNimbus (source) → Supabase (mirror) → Next.js API → React Dashboard
 - `GET/POST /api/sync` - JobNimbus sync
 - `GET/POST /api/recovery` - Full data recovery
 - `GET /api/dashboard` - Home KPIs
+- `GET /api/financial/cashflow` - Cash flow forecast (blends QBO + editable expenses, returns availableToSpend)
+- `GET /api/financial/cashflow/export` - CSV export of recurring + one-time expenses
+- `GET/POST /api/financial/expenses/recurring` + `PATCH/DELETE /[id]` - Editable recurring expenses CRUD
+- `GET/POST /api/financial/expenses/one-time` + `PATCH/DELETE /[id]` - One-time planned expense CRUD
+- `GET /api/financial/pnl` - P&L by category (QBO-backed)
+- `GET /api/financial/reconciliation` - JN↔QBO invoice reconciliation
 - `GET /api/pipeline` - Stage funnel
 - `GET /api/sales` - Rep metrics
 - `GET /api/segments` - Segment data (requires ?segment param)
@@ -132,6 +138,11 @@ curl -X POST https://maverick-command-center.vercel.app/api/recovery \
 - `activities` - Job activities and timeline
 - `sync_log` - Sync operation logs
 - `app_weekly_snapshots` - Historical weekly metrics
+- `app_settings` - Key-value app configuration (cashflow_safety_floor, cashflow_cogs_ratio, etc.)
+- `app_recurring_expenses` - Editable recurring costs for forecasting. Non-destructive: use end_date to retire, never DELETE. Seeded with 14 AI-derived rows — see migration 002 + TASKS.md for review notes.
+- `app_one_time_expenses` - Planned one-off expenses (ad pushes, equipment)
+- `app_forecast_overrides` - Non-destructive manual overrides on forecast weekly cells
+- `qbo_connection`, `qbo_invoices`, `qbo_payments`, `invoice_mapping` - QBO integration (see tasks/qbo-production-setup.md)
 - `jn_*` - JobNimbus custom fields, users, statuses
 
 ### Important Columns

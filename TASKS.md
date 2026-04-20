@@ -1,8 +1,35 @@
 # Maverick Command Center — Open Tasks
 
-Last updated: February 28, 2026
+Last updated: April 20, 2026
 
 ---
+
+## 🚨 Urgent — Prod issues
+
+- [ ] **Vercel DB auth broken** — `https://maverick-command-center.vercel.app/api/qbo/status` returns `password authentication failed for user "postgres"`. Vercel `DATABASE_URL` env var is stale relative to Supabase. Fix: Supabase dashboard → Settings → Database → copy connection string → paste into Vercel → redeploy.
+- [ ] **Intuit production key: 7 weeks overdue** — Submitted Feb 27, 2026 for "1-3 business day" SLA. Now 52 days late. Chase Intuit developer support, escalate if needed. Until resolved, the cash flow page works on seeded data but can't show live QBO actuals.
+
+## Cash Flow Monitor — v1 shipped April 20 (PR #4)
+
+**Completed on branch `feat/cashflow-editable-expenses`:**
+- ✅ Migration 002: `app_recurring_expenses`, `app_one_time_expenses`, `app_forecast_overrides` — seeded with 14 AI-derived rows from P&L Apr25-Mar26 (latest-3-month avg, post-payroll-transition, post-QBO-consolidation). Total fixed overhead $57k/mo. Safety floor $330k.
+- ✅ CRUD API routes under `/api/financial/expenses/{recurring,one-time}` + `/[id]` — zod-validated, non-destructive (end_date retires rows, never deletes)
+- ✅ Forecast engine blends editable expenses, computes `availableToSpend` (conservative) and `availableToSpendWithPipeline` (aggressive) alongside existing scenarios
+- ✅ Available-to-Spend hero KPI card (the decision number: cash − 4wk committed − safety floor)
+- ✅ RecurringExpensesEditor — inline amount edit, end-date, add rows, confidence pills
+- ✅ OneTimeExpensesEditor — planned one-off spend with date picker
+- ✅ PlanVsActualTable — trailing 3 months planned vs QBO actual (gracefully degrades when QBO not connected)
+- ✅ CSV export — single file for accountant review with all recurring + one-time rows
+
+**Follow-ups for next session:**
+- [ ] **Review all 14 AI-seeded rows with Brent (accountant)** — every row has `source='ai_seeded'` + confidence level + notes field for derivation. Low-confidence rows especially need review: Advertising ($4,870, highly variable), Variable/Discretionary Overhead ($1,500, estimate), Communication Services ($436, only 2 months data).
+- [ ] **Split "Employee Wages (aggregate)" into per-person rows** once hires stabilize, so individual end-dating works when someone leaves.
+- [ ] **Add annual Insurance renewal row** — base Insurance ($965/mo) + a ~$6.6k/year annual row for the renewal spike.
+- [ ] **Quarterly review of Interest paid (seller financing)** — will decrease as principal is paid to uncle.
+- [ ] **Replace CSV export with full Google Sheets integration** — needs `googleapis` package + OAuth flow. Push amounts both ways, auto-refresh Sheet on DB change. ~2-3 hrs.
+- [ ] **Phase 2: Ingest Bob's 2024 rough P&L** — extends forecast history from 12 → 24 months, better seasonal confidence.
+- [ ] **Phase 2: Revenue breakdown by salesperson** — Bob Blake legacy book vs new Maverick team, per-rep trends, blended forecast.
+- [ ] **Phase 2: 4th scenario that includes Sold stage-weighted pipeline** — currently MVP is conservative (AR + In-progress only).
 
 ## Bugs & Data Fixes
 
