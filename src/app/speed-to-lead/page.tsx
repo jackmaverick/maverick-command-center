@@ -59,6 +59,7 @@ interface SpeedToLeadData {
     totalTrackedInbound: number;
     unlinkedContacts: number;
     excludedContacts: number;
+    staleLeadContacts: number;
     totalCycleDays: number;
   };
   unknownCalls: { touches: number; uniqueNumbers: number };
@@ -284,7 +285,7 @@ export default function SpeedToLeadPage() {
 
       {/* Top-line counters */}
       {!isLoading && data && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3">
             <div className="mb-1">
               <InfoTooltip
@@ -294,6 +295,17 @@ export default function SpeedToLeadPage() {
             </div>
             <p className="text-xl font-bold text-[#e6edf3]">
               {data.summary.totalTrackedInbound}
+            </p>
+          </div>
+          <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3">
+            <div className="mb-1">
+              <InfoTooltip
+                label="Stale Leads"
+                explanation="Contacts re-engaging on old Lead-stage jobs — the JN contact was created more than 24h before this inbound. Counted separately so they don't drag down the 'New Lead' SLA."
+              />
+            </div>
+            <p className="text-xl font-bold text-[#8b949e]">
+              {data.summary.staleLeadContacts}
             </p>
           </div>
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3">

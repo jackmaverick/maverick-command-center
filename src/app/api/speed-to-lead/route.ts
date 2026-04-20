@@ -53,7 +53,10 @@ interface FirstInboundRow {
   response_minutes: string | null;
   responding_user_id: string | null;
   job_status_name: string | null;
+  contact_age_hours: string | null;
 }
+
+const NEW_LEAD_CONTACT_AGE_CUTOFF_HOURS = 24;
 
 interface VelocityRow {
   from_stage: string;
@@ -151,6 +154,7 @@ export async function GET(request: NextRequest) {
 
     let unlinkedContacts = 0;
     let excludedContacts = 0;
+    let staleLeadContacts = 0;
     const repTallies: Record<
       string,
       { name: string | null; total: number; under5: number; missed: number; sum: number; count: number }
@@ -166,10 +170,24 @@ export async function GET(request: NextRequest) {
       const mins =
         row.response_minutes !== null ? parseFloat(row.response_minutes) : null;
 
-      const bucketKey = statusToBucketKey(row.job_status_name);
+      let bucketKey = statusToBucketKey(row.job_status_name);
+
+      // "New Lead" only counts fresh contacts (JN-created within 24h of inbound).
+      // Old contacts re-engaging on Lead-stage jobs are tracked separately.
+      if (bucketKey === "new_lead") {
+        const ageHours =
+          row.contact_age_hours !== null
+            ? parseFloat(row.contact_age_hours)
+            : null;
+        if (ageHours === null || ageHours > NEW_LEAD_CONTACT_AGE_CUTOFF_HOURS) {
+          bucketKey = "_stale_lead";
+        }
+      }
 
       if (!row.job_jnid || !row.job_status_name) {
         unlinkedContacts++;
+      } else if (bucketKey === "_stale_lead") {
+        staleLeadContacts++;
       } else if (bucketKey === "_excluded" || bucketKey === null) {
         excludedContacts++;
       } else {
@@ -193,6 +211,7 @@ export async function GET(request: NextRequest) {
       if (
         row.responding_user_id &&
         bucketKey !== "_excluded" &&
+        bucketKey !== "_stale_lead" &&
         bucketKey !== null
       ) {
         const t = repTallies[repKey];
@@ -277,6 +296,7 @@ export async function GET(request: NextRequest) {
         totalTrackedInbound,
         unlinkedContacts,
         excludedContacts,
+        staleLeadContacts,
         totalCycleDays,
       },
       unknownCalls: {
@@ -369,10 +389,15 @@ async function queryFirstInboundWithStatus(
       fi.inbound_at::text,
       fr.response_minutes::text,
       fr.responding_user_id,
-      j.status_name AS job_status_name
+      j.status_name AS job_status_name,
+      CASE
+        WHEN ct.jn_date_created IS NULL THEN NULL
+        ELSE (EXTRACT(EPOCH FROM fi.inbound_at) - ct.jn_date_created) / 3600.0
+      END::text AS contact_age_hours
     FROM first_inbound fi
     LEFT JOIN first_response fr ON fr.contact_jnid = fi.contact_jnid
     LEFT JOIN jobs j ON j.jnid = fi.job_jnid
+    LEFT JOIN contacts ct ON ct.jnid = fi.contact_jnid
   `;
 
   return query<FirstInboundRow>(sql, params);
