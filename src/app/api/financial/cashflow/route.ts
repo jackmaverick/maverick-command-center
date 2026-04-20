@@ -114,12 +114,7 @@ function getCollectionProbability(
 export async function GET(request: NextRequest) {
   try {
     const conn = await getQBOConnection();
-    if (!conn) {
-      return NextResponse.json(
-        { error: "QuickBooks not connected" },
-        { status: 400 }
-      );
-    }
+    const qboConnected = !!conn;
 
     const { searchParams } = new URL(request.url);
     const horizonParam = searchParams.get("horizon") ?? "90";
@@ -134,43 +129,59 @@ export async function GET(request: NextRequest) {
 
     const horizonEnd = addWeeks(now, weeks + 1);
 
+    // ── QBO queries (only run when connected; otherwise return zeroed defaults) ──
+    type BankAccount = {
+      Id: string;
+      Name: string;
+      CurrentBalance: number;
+      AccountType: string;
+    };
+    type QBOInvoice = {
+      Id: string;
+      DocNumber: string;
+      CustomerRef: { name: string };
+      TotalAmt: number;
+      Balance: number;
+      DueDate: string;
+      TxnDate: string;
+    };
+    type ExpenseReport = {
+      Rows?: { Row?: Array<{ group?: string; Summary?: { ColData?: Array<{ value?: string }> } }> };
+      Columns?: { Column?: Array<{ ColTitle?: string }> };
+    };
+
+    const emptyReport: ExpenseReport = { Rows: { Row: [] }, Columns: { Column: [] } };
+
+    const [bankAccounts, expenseReport, qboOutstanding]: [
+      BankAccount[],
+      ExpenseReport,
+      QBOInvoice[],
+    ] = qboConnected
+      ? await Promise.all([
+          qboQuery<BankAccount>(
+            "SELECT Id, Name, CurrentBalance, AccountType FROM Account WHERE AccountType = 'Bank' AND Active = true"
+          ),
+          qboReport("ProfitAndLoss", {
+            start_date: format(subMonths(now, 3), "yyyy-MM-dd"),
+            end_date: format(now, "yyyy-MM-dd"),
+            summarize_column_by: "Month",
+          }) as Promise<ExpenseReport>,
+          qboQuery<QBOInvoice>(
+            "SELECT * FROM Invoice WHERE Balance > '0'"
+          ),
+        ])
+      : [[], emptyReport, []];
+
+    // ── Always-on queries (work with or without QBO) ──────────────────────
+
     const [
-      // QBO bank balances
-      bankAccounts,
-      // QBO trailing expenses (burn rate)
-      expenseReport,
-      // Outstanding JN invoices (projected inflows)
       outstandingInvoices,
-      // Pipeline (weighted by stage)
       pipelineJobs,
-      // QBO outstanding invoices
-      qboOutstanding,
-      // Material costs (projected outflows)
       recentMaterialCosts,
-      // Editable recurring expenses (active rows only)
       recurringRows,
-      // One-time planned expenses within horizon
       oneTimeRows,
-      // App settings (safety floor, cogs ratio)
       settingsRows,
     ] = await Promise.all([
-      // 1. Bank account balances from QBO
-      qboQuery<{
-        Id: string;
-        Name: string;
-        CurrentBalance: number;
-        AccountType: string;
-      }>(
-        "SELECT Id, Name, CurrentBalance, AccountType FROM Account WHERE AccountType = 'Bank' AND Active = true"
-      ),
-
-      // 2. Trailing 3-month expenses for burn rate
-      qboReport("ProfitAndLoss", {
-        start_date: format(subMonths(now, 3), "yyyy-MM-dd"),
-        end_date: format(now, "yyyy-MM-dd"),
-        summarize_column_by: "Month",
-      }),
-
       // 3. Outstanding JN invoices (not fully paid)
       query<{
         jnid: string;
@@ -222,17 +233,6 @@ export async function GET(request: NextRequest) {
            AND j.status_name IN ('Estimating', 'Estimate Sent', 'Sold Job', 'Production Ready', 'In Progress')
            AND j.approved_estimate_total > 0`
       ),
-
-      // 5. QBO outstanding invoices
-      qboQuery<{
-        Id: string;
-        DocNumber: string;
-        CustomerRef: { name: string };
-        TotalAmt: number;
-        Balance: number;
-        DueDate: string;
-        TxnDate: string;
-      }>("SELECT * FROM Invoice WHERE Balance > '0'"),
 
       // 6. Recent material costs (trailing 3 months avg for projected outflows)
       query<{ avg_monthly: string }>(
@@ -547,6 +547,7 @@ export async function GET(request: NextRequest) {
     }
 
     const metrics: CashFlowMetrics = {
+      qboConnected,
       currentCash: Math.round(currentCash),
       burnRate: Math.round(burnRate),
       runwayWeeks,

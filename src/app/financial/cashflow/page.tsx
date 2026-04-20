@@ -112,6 +112,29 @@ export default function CashFlowPage() {
         </div>
       </div>
 
+      {/* QBO-disconnected banner — graceful degradation */}
+      {data && !data.qboConnected && (
+        <div className="mb-4 bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3 flex items-start gap-3">
+          <div className="text-yellow-400 text-xs">⚠</div>
+          <div className="flex-1">
+            <p className="text-xs font-medium text-yellow-400">
+              QuickBooks not connected
+            </p>
+            <p className="text-[11px] text-[#8b949e] mt-1">
+              Bank balance, burn rate, collections, and Plan-vs-Actual will
+              stay empty until QBO is connected. Your recurring &amp; one-time
+              expenses + Available-to-Spend still work on seeded data.
+            </p>
+            <a
+              href="/settings"
+              className="text-[11px] text-[#58a6ff] hover:underline inline-block mt-1"
+            >
+              Connect QuickBooks in Settings →
+            </a>
+          </div>
+        </div>
+      )}
+
       {/* Available to Spend — HERO KPI (the decision number) */}
       <Card className="bg-gradient-to-br from-[#1f6feb]/10 to-[#161b22] border-[#1f6feb]/30 mb-4">
         <CardContent className="py-5">

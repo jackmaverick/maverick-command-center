@@ -344,6 +344,7 @@ export interface ExpenseCategory {
 
 // Cash Flow
 export interface CashFlowMetrics {
+  qboConnected: boolean;  // false when Intuit prod not yet approved — UI degrades gracefully
   currentCash: number;
   burnRate: number;
   runwayWeeks: number;
