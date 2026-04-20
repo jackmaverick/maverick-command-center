@@ -85,6 +85,14 @@ export default function CashFlowPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          {/* Export CSV */}
+          <a
+            href="/api/financial/cashflow/export"
+            className="px-3 py-1.5 text-xs font-medium rounded-md bg-[#161b22] border border-[#30363d] text-[#8b949e] hover:text-[#e6edf3] hover:border-[#58a6ff]/30 transition-colors"
+            title="Download recurring + one-time expenses as CSV for accountant review"
+          >
+            ↓ Export CSV
+          </a>
           {/* Horizon selector */}
           <div className="flex gap-1 bg-[#161b22] border border-[#30363d] rounded-lg p-1">
             {(["30", "60", "90"] as Horizon[]).map((h) => (
