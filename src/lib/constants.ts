@@ -108,6 +108,85 @@ export const ORDERED_STATUSES = [
 // Loss/hold statuses (jobs that fall out of the pipeline)
 export const LOSS_STATUSES = ["Lost", "Dead", "Cold", "Cold Lead", "Internal Supplementing"] as const;
 
+// Speed-to-Lead stage buckets. Each bucket groups JN statuses that share a
+// response-time SLA. Statuses not listed anywhere (e.g. "Dead", "Lost") are
+// dropped from the metric entirely.
+export const SPEED_TO_LEAD_BUCKETS = [
+  {
+    key: "new_lead",
+    label: "New Lead",
+    emoji: "🔥",
+    slaMinutes: 5,
+    color: "#58a6ff",
+    statuses: ["Lead", "Appointment Scheduled", "Adjuster Appt Scheduled"],
+  },
+  {
+    key: "estimating",
+    label: "Estimating",
+    emoji: "📋",
+    slaMinutes: 60,
+    color: "#d29922",
+    statuses: ["Estimating", "Estimate Sent", "Adjuster Appt Ran"],
+  },
+  {
+    key: "sold_pre_prod",
+    label: "Sold (Pre-Production)",
+    emoji: "✅",
+    slaMinutes: 240,
+    color: "#3fb950",
+    statuses: [
+      "Sold Job",
+      "Fully Approved",
+      "Job Scheduled",
+      "Insurance Pending",
+      "Insurance Pending/Cont Skipped",
+    ],
+  },
+  {
+    key: "in_production",
+    label: "In Production",
+    emoji: "🔨",
+    slaMinutes: 60,
+    color: "#a371f7",
+    statuses: ["In Production", "Internal Supplementing", "Project Review In Progress"],
+  },
+  {
+    key: "closing",
+    label: "Closing / Invoicing",
+    emoji: "💰",
+    slaMinutes: 240,
+    color: "#56d364",
+    statuses: [
+      "Job Close Out",
+      "Close Out In Progress",
+      "Final Invoicing",
+      "Final Invoice Sent",
+      "Deductible Invoice Sent",
+      "Deductible Collected",
+      "Invoiced",
+    ],
+  },
+  {
+    key: "post_job",
+    label: "Post-Job",
+    emoji: "🎉",
+    slaMinutes: 480,
+    color: "#79c0ff",
+    statuses: ["Paid & Closed", "Warranty Complete", "Repair Completed Approved"],
+  },
+] as const;
+
+export const SPEED_TO_LEAD_EXCLUDED_STATUSES = [
+  "Dead",
+  "Lost",
+  "Cold Lead",
+  "Cold",
+  "No Damage",
+  "Future Work",
+] as const;
+
+export type SpeedToLeadBucketKey = (typeof SPEED_TO_LEAD_BUCKETS)[number]["key"];
+
 // Priority colors
 export const PRIORITY_COLORS = {
   high: "bg-red-500",
