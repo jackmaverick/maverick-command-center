@@ -27,7 +27,7 @@ const SOLD_STATUSES = [
 ];
 
 const CLOSED_STATUSES = ["Paid & Closed", "Job Close Out", "All Work Complete", "All Work Completed"];
-const INVOICE_STATUSES = ["Sent", "Closed", "Open", "Paid", "Partially Paid"];
+const INVOICE_STATUSES = ["Sent", "Open", "Closed"];
 const WEEKLY_RETAIL_GOAL = 51_230;
 
 const RETAIL_WHERE = `

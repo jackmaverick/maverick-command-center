@@ -36,6 +36,15 @@ const WON_STATUSES = [
   "Warranty Complete",
 ];
 
+const INVOICED_STATUSES = ["Sent", "Open", "Closed"];
+const ACTIVE_REAL_JOB_WHERE = `
+  j.is_active = true
+  AND j.is_archived = false
+  AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|verification|scout_test)'
+  AND COALESCE(j.primary_contact_name, '') !~* '(test|dummy|demo|sample|verification)'
+`;
+const EFFECTIVE_INVOICE_DATE = "COALESCE(i.date_invoice, i.jn_date_created)";
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function round1(n: number): number {
@@ -104,6 +113,7 @@ export async function GET(request: NextRequest) {
          FROM jobs j
          WHERE j.jn_date_created >= $1
            AND j.jn_date_created < $2
+           AND ${ACTIVE_REAL_JOB_WHERE}
          GROUP BY COALESCE(NULLIF(TRIM(j.source_name), ''), 'Unknown')
          ORDER BY COUNT(*) DESC`,
         [startUnix, endUnix, [...WON_STATUSES], [...LOSS_STATUSES]]
@@ -118,10 +128,12 @@ export async function GET(request: NextRequest) {
          FROM invoices i
          JOIN jobs j ON j.jnid = i.job_jnid
          WHERE i.is_active = true
-           AND i.date_invoice >= $1
-           AND i.date_invoice < $2
+           AND ${ACTIVE_REAL_JOB_WHERE}
+           AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
+           AND ${EFFECTIVE_INVOICE_DATE} >= $1
+           AND ${EFFECTIVE_INVOICE_DATE} < $2
          GROUP BY COALESCE(NULLIF(TRIM(j.source_name), ''), 'Unknown')`,
-        [startUnix, endUnix]
+        [startUnix, endUnix, INVOICED_STATUSES]
       ),
 
       // 3. Source x Segment cross-tab
@@ -134,6 +146,7 @@ export async function GET(request: NextRequest) {
          FROM jobs j
          WHERE j.jn_date_created >= $1
            AND j.jn_date_created < $2
+           AND ${ACTIVE_REAL_JOB_WHERE}
          GROUP BY COALESCE(NULLIF(TRIM(j.source_name), ''), 'Unknown'),
                   (${SEGMENT_SQL})`,
         [startUnix, endUnix]

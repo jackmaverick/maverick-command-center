@@ -27,6 +27,7 @@ const VALID_SEGMENTS: Segment[] = [
   "retail",
   "insurance",
   "repairs",
+  "warranty",
 ];
 
 /** Statuses at or past "Sold Job" count as won. */
@@ -34,6 +35,15 @@ const WON_STATUSES = (() => {
   const idx = ORDERED_STATUSES.indexOf("Sold Job");
   return ORDERED_STATUSES.slice(idx);
 })();
+
+const INVOICED_STATUSES = ["Sent", "Open", "Closed"];
+const ACTIVE_REAL_JOB_WHERE = `
+  j.is_active = true
+  AND j.is_archived = false
+  AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|verification|scout_test)'
+  AND COALESCE(j.primary_contact_name, '') !~* '(test|dummy|demo|sample|verification)'
+`;
+const EFFECTIVE_INVOICE_DATE = "COALESCE(i.date_invoice, i.jn_date_created)";
 
 /** Consecutive status pairs for speed/conversion metrics. */
 const STATUS_PAIRS = (() => {
@@ -91,7 +101,7 @@ export async function GET(request: NextRequest) {
     // Common base params: $1=startUnix, $2=endUnix, $3=segment
     const baseParams: unknown[] = [startUnix, endUnix, segment];
     // Common WHERE for jobs in this segment + date range
-    const jobWhere = `j.jn_date_created >= $1 AND j.jn_date_created < $2 AND ${segWhere(3)}`;
+    const jobWhere = `j.jn_date_created >= $1 AND j.jn_date_created < $2 AND ${ACTIVE_REAL_JOB_WHERE} AND ${segWhere(3)}`;
 
     // ── Run all queries in parallel ────────────────────────────────────
 
@@ -125,10 +135,12 @@ export async function GET(request: NextRequest) {
          FROM invoices i
          JOIN jobs j ON j.jnid = i.job_jnid
          WHERE i.is_active = true
-           AND i.date_invoice >= $1
-           AND i.date_invoice < $2
+           AND ${ACTIVE_REAL_JOB_WHERE}
+           AND COALESCE(i.status_name, i.status::text, '') = ANY($4::text[])
+           AND ${EFFECTIVE_INVOICE_DATE} >= $1
+           AND ${EFFECTIVE_INVOICE_DATE} < $2
            AND ${segWhere(3)}`,
-        baseParams
+        [...baseParams, INVOICED_STATUSES]
       ),
 
       // 3. Avg ticket
@@ -138,11 +150,13 @@ export async function GET(request: NextRequest) {
          FROM invoices i
          JOIN jobs j ON j.jnid = i.job_jnid
          WHERE i.is_active = true
-           AND i.date_invoice >= $1
-           AND i.date_invoice < $2
+           AND ${ACTIVE_REAL_JOB_WHERE}
+           AND COALESCE(i.status_name, i.status::text, '') = ANY($4::text[])
+           AND ${EFFECTIVE_INVOICE_DATE} >= $1
+           AND ${EFFECTIVE_INVOICE_DATE} < $2
            AND i.total > 0
            AND ${segWhere(3)}`,
-        baseParams
+        [...baseParams, INVOICED_STATUSES]
       ),
 
       // 4. Pipeline value (active non-closed jobs in segment)
@@ -150,9 +164,8 @@ export async function GET(request: NextRequest) {
       query<{ pipeline_value: string }>(
         `SELECT COALESCE(SUM(j.approved_estimate_total), 0)::text AS pipeline_value
          FROM jobs j
-         WHERE j.is_active = true
+         WHERE ${ACTIVE_REAL_JOB_WHERE}
            AND j.is_closed = false
-           AND j.is_archived = false
            AND ${segWhere(1)}`,
         [segment]
       ),
@@ -164,8 +177,7 @@ export async function GET(request: NextRequest) {
            j.status_name,
            COUNT(*)::text AS count
          FROM jobs j
-         WHERE j.is_active = true
-           AND j.is_archived = false
+         WHERE ${ACTIVE_REAL_JOB_WHERE}
            AND j.status_name IS NOT NULL
            AND ${segWhere(1)}
          GROUP BY j.status_name`,
@@ -276,7 +288,8 @@ export async function GET(request: NextRequest) {
            COUNT(*) FILTER (WHERE j.status_name = ANY($3::text[]))::text AS won
          FROM jobs j
          WHERE j.jn_date_created >= $1
-           AND j.jn_date_created < $2`,
+           AND j.jn_date_created < $2
+           AND ${ACTIVE_REAL_JOB_WHERE}`,
         [startUnix, endUnix, [...WON_STATUSES]]
       ),
     ]);

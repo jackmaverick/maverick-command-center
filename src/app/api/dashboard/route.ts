@@ -24,6 +24,15 @@ const CONVERTED_STATUSES = Object.entries(STATUS_TO_STAGE)
   })
   .map(([status]) => status);
 
+const INVOICED_STATUSES = ["Sent", "Open", "Closed"];
+const ACTIVE_REAL_JOB_WHERE = `
+  j.is_active = true
+  AND j.is_archived = false
+  AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|verification|scout_test)'
+  AND COALESCE(j.primary_contact_name, '') !~* '(test|dummy|demo|sample|verification)'
+`;
+const EFFECTIVE_INVOICE_DATE = "COALESCE(i.date_invoice, i.jn_date_created)";
+
 /**
  * Compute the "previous" period for delta comparison.
  * E.g. if current period is "month", previous period is "last_month".
@@ -70,10 +79,13 @@ export async function GET(request: NextRequest) {
       query<{ total: string }>(
         `SELECT COALESCE(SUM(i.total), 0) AS total
          FROM invoices i
+         JOIN jobs j ON j.jnid = i.job_jnid
          WHERE i.is_active = true
-           AND i.date_invoice >= $1
-           AND i.date_invoice < $2`,
-        [startUnix, endUnix]
+           AND ${ACTIVE_REAL_JOB_WHERE}
+           AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
+           AND ${EFFECTIVE_INVOICE_DATE} >= $1
+           AND ${EFFECTIVE_INVOICE_DATE} < $2`,
+        [startUnix, endUnix, INVOICED_STATUSES]
       ),
 
       // 2. Pipeline Value - active estimates on jobs that are not closed/archived
@@ -86,6 +98,8 @@ export async function GET(request: NextRequest) {
            AND j.is_active = true
            AND j.is_closed = false
            AND j.is_archived = false
+           AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|verification|scout_test)'
+           AND COALESCE(j.primary_contact_name, '') !~* '(test|dummy|demo|sample|verification)'
            AND j.status_name IN (
              'Estimating', 'Estimate Sent', 'Sold Job',
              'Production Ready', 'In Progress',
@@ -100,8 +114,7 @@ export async function GET(request: NextRequest) {
          FROM jobs j
          WHERE j.jn_date_created >= $1
            AND j.jn_date_created < $2
-           AND j.is_active = true
-           AND j.is_archived = false`,
+           AND ${ACTIVE_REAL_JOB_WHERE}`,
         [startUnix, endUnix]
       ),
 
@@ -115,8 +128,7 @@ export async function GET(request: NextRequest) {
          FROM jobs j
          WHERE j.jn_date_created >= $1
            AND j.jn_date_created < $2
-           AND j.is_active = true
-           AND j.is_archived = false`,
+           AND ${ACTIVE_REAL_JOB_WHERE}`,
         [startUnix, endUnix, CONVERTED_STATUSES]
       ),
 
@@ -124,11 +136,14 @@ export async function GET(request: NextRequest) {
       query<{ avg_ticket: string }>(
         `SELECT COALESCE(AVG(i.total), 0) AS avg_ticket
          FROM invoices i
+         JOIN jobs j ON j.jnid = i.job_jnid
          WHERE i.is_active = true
-           AND i.date_invoice >= $1
-           AND i.date_invoice < $2
+           AND ${ACTIVE_REAL_JOB_WHERE}
+           AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
+           AND ${EFFECTIVE_INVOICE_DATE} >= $1
+           AND ${EFFECTIVE_INVOICE_DATE} < $2
            AND i.total > 0`,
-        [startUnix, endUnix]
+        [startUnix, endUnix, INVOICED_STATUSES]
       ),
 
       // 6. Previous period revenue (for delta calculation)
@@ -143,10 +158,13 @@ export async function GET(request: NextRequest) {
         return query<{ total: string | null }>(
           `SELECT COALESCE(SUM(i.total), 0) AS total
            FROM invoices i
+           JOIN jobs j ON j.jnid = i.job_jnid
            WHERE i.is_active = true
-             AND i.date_invoice >= $1
-             AND i.date_invoice < $2`,
-          [prevStartUnix, prevEndUnix]
+             AND ${ACTIVE_REAL_JOB_WHERE}
+             AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
+             AND ${EFFECTIVE_INVOICE_DATE} >= $1
+             AND ${EFFECTIVE_INVOICE_DATE} < $2`,
+          [prevStartUnix, prevEndUnix, INVOICED_STATUSES]
         );
       })(),
 
@@ -154,8 +172,7 @@ export async function GET(request: NextRequest) {
       query<{ status_name: string; count: string }>(
         `SELECT j.status_name, COUNT(*) AS count
          FROM jobs j
-         WHERE j.is_active = true
-           AND j.is_archived = false
+         WHERE ${ACTIVE_REAL_JOB_WHERE}
            AND j.status_name IS NOT NULL
            AND j.jn_date_created >= $1
            AND j.jn_date_created < $2
@@ -171,11 +188,13 @@ export async function GET(request: NextRequest) {
          FROM invoices i
          JOIN jobs j ON j.jnid = i.job_jnid
          WHERE i.is_active = true
-           AND i.date_invoice >= $1
-           AND i.date_invoice < $2
+           AND ${ACTIVE_REAL_JOB_WHERE}
+           AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
+           AND ${EFFECTIVE_INVOICE_DATE} >= $1
+           AND ${EFFECTIVE_INVOICE_DATE} < $2
          GROUP BY j.record_type_name
          ORDER BY total DESC`,
-        [startUnix, endUnix]
+        [startUnix, endUnix, INVOICED_STATUSES]
       ),
 
       // 9. Top Lead Sources - grouped & counted, top 10
@@ -186,6 +205,7 @@ export async function GET(request: NextRequest) {
          FROM jobs j
          WHERE j.jn_date_created >= $1
            AND j.jn_date_created < $2
+           AND ${ACTIVE_REAL_JOB_WHERE}
          GROUP BY j.source_name
          ORDER BY count DESC
          LIMIT 10`,
@@ -198,8 +218,7 @@ export async function GET(request: NextRequest) {
            ${SEGMENT_SQL} AS segment,
            COUNT(*) AS count
          FROM jobs j
-         WHERE j.is_active = true
-           AND j.is_archived = false
+         WHERE ${ACTIVE_REAL_JOB_WHERE}
            AND j.jn_date_created >= $1
            AND j.jn_date_created < $2
            AND j.status_name IN ('Lead', 'New', 'Cold Lead', 'Appointment Scheduled', 'Estimating', 'Estimate Sent')
@@ -216,10 +235,11 @@ export async function GET(request: NextRequest) {
          FROM jobs j
          WHERE j.jn_date_created >= $1
            AND j.jn_date_created < $2
-           AND j.status_name IN ('Sold Job', 'Production Ready', 'In Progress', 'Insurance Pending', 'Future Work', 'Needs Rescheduling', 'Invoiced', 'Final Invoicing', 'Pending Final Payment', 'Job Close Out')
+           AND ${ACTIVE_REAL_JOB_WHERE}
+           AND j.status_name = ANY($3::text[])
          GROUP BY segment
          ORDER BY count DESC`,
-        [startUnix, endUnix]
+        [startUnix, endUnix, CONVERTED_STATUSES]
       ),
     ]);
 
@@ -306,8 +326,7 @@ export async function GET(request: NextRequest) {
          FROM jobs j
          WHERE j.jn_date_created >= $1
            AND j.jn_date_created < $2
-           AND j.is_active = true
-           AND j.is_archived = false`,
+           AND ${ACTIVE_REAL_JOB_WHERE}`,
         [prevStartUnix, prevEndUnix]
       );
       const prevLeads = parseInt(prevLeadsRows[0]?.count ?? "0", 10);
@@ -343,7 +362,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(dashboard);
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    const errorCode = (error as any)?.code || 'UNKNOWN';
+    const errorCode = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : 'UNKNOWN';
 
     console.error("[Dashboard API] Error caught");
     console.error("[Dashboard API] Error message:", errorMsg);
