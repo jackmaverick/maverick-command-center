@@ -224,7 +224,9 @@ export async function GET(request: NextRequest) {
          HAVING COUNT(*) FILTER (WHERE j.jn_date_created >= $1 AND j.jn_date_created < $2) > 0
              OR COUNT(*) FILTER (WHERE j.status_name = ANY($3::text[]) AND j.jn_date_status_change >= $1 AND j.jn_date_status_change < $2) > 0
              OR COUNT(*) FILTER (WHERE j.is_closed = false) > 0
-         ORDER BY sold_value::numeric DESC, open_pipeline::numeric DESC`,
+         ORDER BY
+           SUM(CASE WHEN j.status_name = ANY($3::text[]) AND j.jn_date_status_change >= $1 AND j.jn_date_status_change < $2 THEN COALESCE(NULLIF(j.approved_invoice_total, 0), NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_invoice, 0), NULLIF(j.last_estimate, 0), 0) ELSE 0 END) DESC,
+           SUM(CASE WHEN j.is_closed = false THEN COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), NULLIF(j.approved_invoice_total, 0), 0) ELSE 0 END) DESC`,
         [startUnix, endUnix, SOLD_STATUSES, ["Lost", "Dead", "Cold", "Cold Lead"], nowUnix]
       ),
       query<ActionRow>(
@@ -342,7 +344,9 @@ export async function GET(request: NextRequest) {
          HAVING COUNT(*) FILTER (WHERE j.jn_date_created >= $1 AND j.jn_date_created < $2) > 0
              OR COUNT(*) FILTER (WHERE j.status_name = ANY($3::text[]) AND j.jn_date_status_change >= $1 AND j.jn_date_status_change < $2) > 0
              OR SUM(CASE WHEN j.is_closed = false THEN COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), NULLIF(j.approved_invoice_total, 0), 0) ELSE 0 END) > 0
-         ORDER BY sold_value::numeric DESC, open_pipeline::numeric DESC
+         ORDER BY
+           SUM(CASE WHEN j.status_name = ANY($3::text[]) AND j.jn_date_status_change >= $1 AND j.jn_date_status_change < $2 THEN COALESCE(NULLIF(j.approved_invoice_total, 0), NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_invoice, 0), NULLIF(j.last_estimate, 0), 0) ELSE 0 END) DESC,
+           SUM(CASE WHEN j.is_closed = false THEN COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), NULLIF(j.approved_invoice_total, 0), 0) ELSE 0 END) DESC
          LIMIT 10`,
         [startUnix, endUnix, SOLD_STATUSES]
       ),
