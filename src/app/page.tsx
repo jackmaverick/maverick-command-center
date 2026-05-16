@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -270,6 +271,33 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Retail Growth Control Room CTA ─────────────────────────── */}
+      <Link href="/segments/retail" className="block mb-8 group">
+        <Card className="bg-[#0f1a2a] border-[#1f6feb] hover:border-[#58a6ff] transition-colors">
+          <CardContent className="p-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="inline-flex rounded-full bg-[#1f6feb]/20 px-2.5 py-1 text-xs font-semibold text-[#58a6ff]">
+                  New
+                </span>
+                <span className="text-xs uppercase tracking-[0.18em] text-[#8b949e]">
+                  Growth scoreboard
+                </span>
+              </div>
+              <h2 className="text-xl font-bold text-[#e6edf3] mb-1">
+                Retail Growth Control Room
+              </h2>
+              <p className="max-w-3xl text-sm text-[#8b949e]">
+                Track the controllable retail engine separately from insurance upside: pace, pipeline, next money, stale estimates, and the weekly operating targets that get Maverick to the next level.
+              </p>
+            </div>
+            <div className="text-sm font-semibold text-[#58a6ff] group-hover:text-[#79c0ff]">
+              Open retail growth →
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
 
       {/* ── Charts Row ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
