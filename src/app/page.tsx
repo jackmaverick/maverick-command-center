@@ -59,6 +59,33 @@ interface DashboardData {
   soldJobsBySegment: Record<string, number>;
 }
 
+interface RetailGrowthWeek {
+  weekStart: string;
+  retail: number;
+  insurance: number;
+  repairs: number;
+  realEstate: number;
+  other: number;
+  total: number;
+  invoiceCount: number;
+}
+
+interface RetailGrowthData {
+  target: {
+    monthlyGrowthRate: number;
+    basis: string;
+    retailWeeklyGoal: number;
+    priorRetailAverage: number;
+  };
+  currentWeek: RetailGrowthWeek & {
+    retailPacePercent: number;
+    retailShare: number;
+    insuranceAndOtherBump: number;
+    status: "green" | "yellow" | "red";
+  };
+  history: RetailGrowthWeek[];
+}
+
 /* ── Helpers ──────────────────────────────────────────────────────────── */
 
 function getGreeting(): string {
@@ -144,6 +171,19 @@ export default function DashboardPage() {
     queryFn: async () => {
       const res = await fetch(`/api/dashboard?period=${period}`);
       if (!res.ok) throw new Error("Failed to fetch dashboard data");
+      return res.json();
+    },
+  });
+
+  const {
+    data: retailGrowth,
+    isLoading: isRetailGrowthLoading,
+    isError: isRetailGrowthError,
+  } = useQuery<RetailGrowthData>({
+    queryKey: ["retail-growth"],
+    queryFn: async () => {
+      const res = await fetch("/api/retail-growth");
+      if (!res.ok) throw new Error("Failed to fetch retail growth data");
       return res.json();
     },
   });
@@ -266,6 +306,136 @@ export default function DashboardPage() {
               <p className="text-2xl font-bold text-[#e6edf3]">
                 {formatCurrency(data?.avgTicket ?? 0)}
               </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Retail Growth Baseline ──────────────────────────────────── */}
+      <div className="mb-8">
+        <Card className="bg-[#161b22] border-[#30363d] overflow-hidden">
+          <CardHeader className="border-b border-[#30363d]">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+                  Retail Growth Baseline
+                </CardTitle>
+                <p className="text-xs text-[#8b949e] mt-1">
+                  Retail is the controllable engine. Insurance is tracked as upside, not the goal hiding place.
+                </p>
+              </div>
+              {!isRetailGrowthLoading && retailGrowth && (
+                <span
+                  className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold ${
+                    retailGrowth.currentWeek.status === "green"
+                      ? "bg-green-500/10 text-green-400 border border-green-500/20"
+                      : retailGrowth.currentWeek.status === "yellow"
+                        ? "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"
+                        : "bg-red-500/10 text-red-400 border border-red-500/20"
+                  }`}
+                >
+                  {retailGrowth.currentWeek.status === "green"
+                    ? "Ahead of retail pace"
+                    : retailGrowth.currentWeek.status === "yellow"
+                      ? "Close to retail pace"
+                      : "Behind retail pace"}
+                </span>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            {isRetailGrowthLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="h-24 bg-[#21262d]" />
+                ))}
+              </div>
+            ) : isRetailGrowthError || !retailGrowth ? (
+              <p className="text-sm text-red-400">Retail growth metrics failed to load.</p>
+            ) : (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
+                    <p className="text-xs text-[#8b949e] mb-1">Retail invoiced this week</p>
+                    <p className="text-2xl font-bold text-[#e6edf3]">
+                      {formatCurrency(retailGrowth.currentWeek.retail)}
+                    </p>
+                    <p className="text-xs text-[#8b949e] mt-1">
+                      Goal: {formatCurrency(retailGrowth.target.retailWeeklyGoal)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
+                    <p className="text-xs text-[#8b949e] mb-1">Retail pace</p>
+                    <p className="text-2xl font-bold text-[#e6edf3]">
+                      {retailGrowth.currentWeek.retailPacePercent.toFixed(1)}%
+                    </p>
+                    <div className="mt-3 h-2 rounded-full bg-[#21262d] overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${
+                          retailGrowth.currentWeek.status === "green"
+                            ? "bg-green-400"
+                            : retailGrowth.currentWeek.status === "yellow"
+                              ? "bg-yellow-400"
+                              : "bg-red-400"
+                        }`}
+                        style={{ width: `${Math.min(retailGrowth.currentWeek.retailPacePercent, 140)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
+                    <p className="text-xs text-[#8b949e] mb-1">Total invoiced this week</p>
+                    <p className="text-2xl font-bold text-[#e6edf3]">
+                      {formatCurrency(retailGrowth.currentWeek.total)}
+                    </p>
+                    <p className="text-xs text-[#8b949e] mt-1">
+                      {retailGrowth.currentWeek.retailShare.toFixed(1)}% retail mix
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
+                    <p className="text-xs text-[#8b949e] mb-1">Insurance/other bump</p>
+                    <p className="text-2xl font-bold text-[#e6edf3]">
+                      {formatCurrency(retailGrowth.currentWeek.insuranceAndOtherBump)}
+                    </p>
+                    <p className="text-xs text-[#8b949e] mt-1">
+                      Useful cash, not the retail baseline
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-medium text-[#8b949e]">
+                      Prior 4 full weeks retail baseline: {formatCurrency(retailGrowth.target.priorRetailAverage)} avg/wk + {Math.round(retailGrowth.target.monthlyGrowthRate * 100)}% growth
+                    </p>
+                    <p className="text-xs text-[#484f58]">Target source: {retailGrowth.target.basis}</p>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {retailGrowth.history.map((week) => {
+                      const maxRetail = Math.max(
+                        retailGrowth.target.retailWeeklyGoal,
+                        ...retailGrowth.history.map((h) => h.retail),
+                        retailGrowth.currentWeek.retail,
+                        1
+                      );
+                      return (
+                        <div key={week.weekStart} className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                          <p className="text-[11px] text-[#8b949e] mb-1">{week.weekStart}</p>
+                          <p className="text-sm font-semibold text-[#e6edf3]">{formatCurrency(week.retail)}</p>
+                          <div className="mt-2 h-1.5 rounded-full bg-[#21262d] overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-[#58a6ff]"
+                              style={{ width: `${(week.retail / maxRetail) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
