@@ -185,8 +185,7 @@ export async function GET(request: NextRequest) {
       const totalLeads = parseInt(row.total_leads, 10);
       const wonJobs = parseInt(row.won_jobs, 10);
       const lostJobs = parseInt(row.lost_jobs, 10);
-      const decided = wonJobs + lostJobs;
-      const closeRate = decided > 0 ? round1((wonJobs / decided) * 100) : 0;
+      const closeRate = totalLeads > 0 ? round1((wonJobs / totalLeads) * 100) : 0;
       const revenue = round2(revenueBySource[row.source_name] ?? 0);
       const avgTicket = wonJobs > 0 ? round2(revenue / wonJobs) : 0;
 
@@ -263,12 +262,10 @@ function generateInsights(sources: SourcePerformance[]): string[] {
 
   if (sources.length === 0) return insights;
 
-  // Calculate overall average close rate (across all sources with decisions)
+  // Calculate overall average close rate against total lead volume.
   const totalWon = sources.reduce((s, r) => s + r.wonJobs, 0);
-  const totalLost = sources.reduce((s, r) => s + r.lostJobs, 0);
-  const totalDecided = totalWon + totalLost;
-  const overallCloseRate =
-    totalDecided > 0 ? round1((totalWon / totalDecided) * 100) : 0;
+  const totalLeads = sources.reduce((s, r) => s + r.totalLeads, 0);
+  const overallCloseRate = totalLeads > 0 ? round1((totalWon / totalLeads) * 100) : 0;
 
   // Highest volume source
   const topVolume = sources[0]; // already sorted desc by total_leads

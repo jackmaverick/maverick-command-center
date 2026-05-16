@@ -99,8 +99,7 @@ export async function GET(request: NextRequest) {
       const totalJobs = parseInt(totalRes[0]?.count ?? "0", 10);
       const wonJobs = parseInt(wonRes[0]?.count ?? "0", 10);
       const lostJobs = parseInt(lostRes[0]?.count ?? "0", 10);
-      const decided = wonJobs + lostJobs;
-      const closeRate = decided > 0 ? (wonJobs / decided) * 100 : 0;
+      const closeRate = totalJobs > 0 ? (wonJobs / totalJobs) * 100 : 0;
 
       const segmentBreakdown: Record<string, number> = {};
       for (const seg of VALID_SEGMENTS) {
@@ -110,11 +109,11 @@ export async function GET(request: NextRequest) {
           query<{ count: string }>(`SELECT COUNT(*) AS count FROM jobs j WHERE ${segFilter.where} AND j.status_name = ANY($${segFilter.nextIdx}::text[])`, [...segFilter.params, WON_STATUSES]),
           query<{ count: string }>(`SELECT COUNT(*) AS count FROM jobs j WHERE ${segFilter.where} AND j.status_name = ANY($${segFilter.nextIdx}::text[])`, [...segFilter.params, LOSS_STATUSES]),
         ]);
+        const st = parseInt(segTotal[0]?.count ?? "0", 10);
         const sw = parseInt(segWon[0]?.count ?? "0", 10);
-        const sl = parseInt(segLost[0]?.count ?? "0", 10);
-        const sd = sw + sl;
-        segmentBreakdown[seg] = sd > 0 ? round1((sw / sd) * 100) : 0;
-        if (parseInt(segTotal[0]?.count ?? "0", 10) === 0) segmentBreakdown[seg] = 0;
+        // Keep the lost query in the Promise batch so this is easy to expand later.
+        void segLost;
+        segmentBreakdown[seg] = st > 0 ? round1((sw / st) * 100) : 0;
       }
 
       return {
@@ -138,7 +137,8 @@ export async function GET(request: NextRequest) {
     const totalWon = repMetrics.reduce((s, r) => s + r.wonJobs, 0);
     const totalLost = repMetrics.reduce((s, r) => s + r.lostJobs, 0);
     const totalRevenue = round2(repMetrics.reduce((s, r) => s + r.revenue, 0));
-    const avgCloseRate = totalWon + totalLost > 0 ? round1((totalWon / (totalWon + totalLost)) * 100) : 0;
+    void totalLost;
+    const avgCloseRate = totalJobs > 0 ? round1((totalWon / totalJobs) * 100) : 0;
 
     return NextResponse.json({
       period: { key: period, label: range.label, start: range.start.toISOString(), end: range.end.toISOString() },
