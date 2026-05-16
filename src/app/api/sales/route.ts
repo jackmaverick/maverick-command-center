@@ -29,7 +29,13 @@ function buildJobFilter(startUnix: number, endUnix: number, segment: Segment | n
   const params: unknown[] = [startUnix, endUnix];
   let idx = 3;
   if (segment) { conditions.push(segmentWhereClause(idx)); params.push(segment); idx++; }
-  if (repJnid) { conditions.push(`j.sales_rep_jnid = $${idx}`); params.push(repJnid); idx++; }
+  if (repJnid === "unassigned") {
+    conditions.push("j.sales_rep_jnid IS NULL");
+  } else if (repJnid) {
+    conditions.push(`j.sales_rep_jnid = $${idx}`);
+    params.push(repJnid);
+    idx++;
+  }
   return { where: conditions.join(" AND "), params, nextIdx: idx };
 }
 
@@ -44,7 +50,13 @@ function buildInvoiceFilter(startUnix: number, endUnix: number, segment: Segment
   const params: unknown[] = [INVOICED_STATUSES, startUnix, endUnix];
   let idx = 4;
   if (segment) { conditions.push(segmentWhereClause(idx)); params.push(segment); idx++; }
-  if (repJnid) { conditions.push(`j.sales_rep_jnid = $${idx}`); params.push(repJnid); idx++; }
+  if (repJnid === "unassigned") {
+    conditions.push("j.sales_rep_jnid IS NULL");
+  } else if (repJnid) {
+    conditions.push(`j.sales_rep_jnid = $${idx}`);
+    params.push(repJnid);
+    idx++;
+  }
   return { where: conditions.join(" AND "), params, nextIdx: idx };
 }
 
@@ -61,7 +73,7 @@ export async function GET(request: NextRequest) {
     const range = getDateRange(period);
     const startUnix = toUnixSeconds(range.start);
     const endUnix = toUnixSeconds(range.end);
-    const repConditions = [ACTIVE_REAL_JOB_WHERE, "j.sales_rep_jnid IS NOT NULL"];
+    const repConditions = [ACTIVE_REAL_JOB_WHERE];
     const repParams: unknown[] = [];
     let repParamIdx = 1;
     if (segment) {
@@ -69,14 +81,16 @@ export async function GET(request: NextRequest) {
       repParams.push(segment);
       repParamIdx++;
     }
-    if (repJnid) {
+    if (repJnid === "unassigned") {
+      repConditions.push("j.sales_rep_jnid IS NULL");
+    } else if (repJnid) {
       repConditions.push(`j.sales_rep_jnid = $${repParamIdx}`);
       repParams.push(repJnid);
       repParamIdx++;
     }
 
     const repsRows = await query<{ sales_rep_jnid: string; sales_rep_name: string }>(
-      `SELECT DISTINCT j.sales_rep_jnid, COALESCE(j.sales_rep_name, 'Unassigned') AS sales_rep_name
+      `SELECT DISTINCT COALESCE(j.sales_rep_jnid, 'unassigned') AS sales_rep_jnid, COALESCE(j.sales_rep_name, 'Unassigned') AS sales_rep_name
        FROM jobs j
        WHERE ${repConditions.join(" AND ")}
        ORDER BY sales_rep_name`,
