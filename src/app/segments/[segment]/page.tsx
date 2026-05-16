@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/table";
 import { PeriodSelector } from "@/components/layout/period-selector";
 import { InfoTooltip } from "@/components/InfoTooltip";
+import { RetailGrowthPage } from "@/components/retail-growth-page";
 import { formatCurrency, formatPercent } from "@/lib/dates";
 import { SEGMENTS, STAGES } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
@@ -196,11 +197,15 @@ export default function SegmentPage() {
       if (!res.ok) throw new Error("Failed to fetch segment data");
       return res.json();
     },
-    enabled: !!segmentKey,
+    enabled: !!segmentKey && segmentKey !== "retail",
   });
 
   if (!segmentKey) {
     notFound();
+  }
+
+  if (segmentKey === "retail") {
+    return <RetailGrowthPage />;
   }
 
   const seg = SEGMENTS[segmentKey];
@@ -212,8 +217,6 @@ export default function SegmentPage() {
     value: data?.stageCounts?.[stage] ?? 0,
     fill: seg.color,
   }));
-  const maxStageCount = Math.max(1, ...stageChartData.map((d) => d.value));
-
   // Sort reps by revenue descending
   const sortedReps = [...(data?.repPerformance ?? [])].sort(
     (a, b) => b.revenue - a.revenue
