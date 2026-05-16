@@ -135,7 +135,7 @@ export async function GET(request: NextRequest) {
          JOIN jobs j ON j.jnid = i.job_jnid
          WHERE ${RETAIL_WHERE}
            AND i.is_active = true
-           AND COALESCE(i.status_name, i.status, '') = ANY($3::text[])
+           AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
            AND i.date_invoice >= $1
            AND i.date_invoice < $2`,
         [startUnix, endUnix, INVOICE_STATUSES]
@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
          JOIN jobs j ON j.jnid = i.job_jnid
          WHERE ${RETAIL_WHERE}
            AND i.is_active = true
-           AND COALESCE(i.status_name, i.status, '') = ANY($3::text[])
+           AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
            AND i.date_invoice >= $1
            AND i.date_invoice < $2`,
         [weekStartUnix, weekEndUnix, INVOICE_STATUSES]
