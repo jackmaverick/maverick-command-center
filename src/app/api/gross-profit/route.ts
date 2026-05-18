@@ -63,6 +63,7 @@ interface JobRow {
   cf_string_27: string | null;
   cf_string_28: string | null;
   jn_date_status_change: string | null;
+  sales_rep_name: string | null;
   revenue: string | null;
   supplier_cost: string | null;
   labor_cost: string | null;
@@ -125,6 +126,7 @@ export async function GET(request: NextRequest) {
         j.cf_string_27,
         j.cf_string_28,
         j.jn_date_status_change,
+        j.sales_rep_name,
         COALESCE(c.invoiced_total, 0) AS revenue,
         COALESCE(c.material_cost, 0) AS supplier_cost,
         COALESCE(c.crew_labor_cost, 0) AS labor_cost,
@@ -156,6 +158,7 @@ export async function GET(request: NextRequest) {
       jobName: row.name,
       address: row.address_line1,
       segment: row.segment,
+      salesRepName: row.sales_rep_name,
       jobTypes: getJobTypes(row),
       revenue: money(row.revenue),
       supplierCost: money(row.supplier_cost),

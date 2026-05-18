@@ -60,6 +60,35 @@ interface DashboardData {
   soldJobsBySegment: Record<string, number>;
 }
 
+interface GrossProfitJob {
+  jobJnid: string;
+  jobName: string;
+  address: string | null;
+  segment: string;
+  salesRepName: string | null;
+  jobTypes: string[];
+  revenue: number;
+  supplierCost: number;
+  laborCost: number;
+  retailCost: number;
+  totalCost: number;
+  grossProfit: number;
+  marginPercent: number;
+  dateCompleted: string | null;
+}
+
+interface GrossProfitData {
+  period: { key: string; label: string };
+  summary: {
+    totalRevenue: number;
+    totalCosts: number;
+    totalGrossProfit: number;
+    avgMarginPercent: number;
+    jobCount: number;
+  };
+  jobs: GrossProfitJob[];
+}
+
 /* ── Helpers ──────────────────────────────────────────────────────────── */
 
 function getGreeting(): string {
@@ -104,6 +133,46 @@ function DeltaBadge({ value }: { value: number | null }) {
   );
 }
 
+function formatFullCurrency(value: number): string {
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+}
+
+function getClientName(jobName: string): string {
+  const parts = jobName.split(" - ");
+  return parts.length > 1 ? parts.slice(1).join(" - ") : jobName;
+}
+
+function buildScopeRevenue(jobs: GrossProfitJob[]) {
+  const totals: Record<string, number> = {
+    Roof: 0,
+    Siding: 0,
+    Windows: 0,
+    Gutters: 0,
+    Repairs: 0,
+    Unclassified: 0,
+  };
+
+  for (const job of jobs) {
+    const types = job.jobTypes.length ? job.jobTypes : ["Unclassified"];
+    const splitRevenue = job.revenue / types.length;
+    for (const type of types) {
+      const label = type === "Repair" ? "Repairs" : type;
+      totals[label] = (totals[label] ?? 0) + splitRevenue;
+    }
+  }
+
+  return Object.entries(totals)
+    .map(([name, value]) => ({ name, value }))
+    .filter((row) => row.value > 0);
+}
+
+function percentOf(value: number, total: number): number {
+  return total > 0 ? Math.round((value / total) * 1000) / 10 : 0;
+}
 
 /* ── Custom Recharts Tooltip ─────────────────────────────────────────── */
 
@@ -148,6 +217,30 @@ export default function DashboardPage() {
       return res.json();
     },
   });
+
+  const { data: grossProfitData, isLoading: isGrossProfitLoading } = useQuery<GrossProfitData>({
+    queryKey: ["gross-profit-overview", period],
+    queryFn: async () => {
+      const res = await fetch(`/api/gross-profit?period=${period}`);
+      if (!res.ok) throw new Error("Failed to fetch gross profit data");
+      return res.json();
+    },
+  });
+
+  const closedJobs = grossProfitData?.jobs ?? [];
+  const closedSummary = grossProfitData?.summary;
+  const scopeRevenue = buildScopeRevenue(closedJobs);
+  const topClosedJobs = [...closedJobs].sort((a, b) => b.revenue - a.revenue).slice(0, 6);
+  const totalCosts = closedSummary?.totalCosts ?? 0;
+  const laborCost = closedJobs.reduce((sum, job) => sum + job.laborCost, 0);
+  const materialCost = closedJobs.reduce((sum, job) => sum + job.supplierCost, 0);
+  const otherCost = closedJobs.reduce((sum, job) => sum + job.retailCost, 0);
+  const revenueVariance = (data?.revenue ?? 0) - (closedSummary?.totalRevenue ?? 0);
+  const costRows = [
+    { label: "Labor", value: laborCost, color: "#58a6ff" },
+    { label: "Materials", value: materialCost, color: "#d29922" },
+    { label: "Retail/other", value: otherCost, color: "#a371f7" },
+  ];
 
   // Prepare pie chart data from revenueByJobType
   const pieData = data
@@ -270,6 +363,250 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
+      </div>
+
+      {/* ── Revenue Command Center ─────────────────────────────────── */}
+      <div className="mb-8">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-[#58a6ff] mb-2">
+              From Jack&apos;s sketch
+            </p>
+            <h2 className="text-xl font-bold text-[#e6edf3]">Revenue Command Center</h2>
+            <p className="text-sm text-[#8b949e] mt-1">
+              JN revenue, work mix, COGS, GP, and the jobs driving the month.
+            </p>
+          </div>
+          <div className="text-xs text-[#8b949e]">
+            JN invoices use invoice date. GP uses Paid &amp; Closed jobs by close date.
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6">
+          <Card className="bg-[#0f1a2a] border-[#1f6feb]">
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+                JN Revenue
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-10 bg-[#21262d]" />
+                  ))}
+                </div>
+              ) : (
+                <div>
+                  <p className="text-4xl font-bold text-[#e6edf3] mb-1">
+                    {formatCurrency(data?.revenue ?? 0)}
+                  </p>
+                  <div className="flex items-center gap-2 text-xs text-[#8b949e] mb-5">
+                    <span>{data?.period.label}</span>
+                    <DeltaBadge value={data?.revenueDelta ?? null} />
+                  </div>
+                  <div className="space-y-3">
+                    {Object.entries(data?.revenueByJobType ?? {}).map(([name, value], i) => (
+                      <div key={name}>
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="text-[#e6edf3]">{name}</span>
+                          <span className="font-mono text-[#8b949e]">{formatCurrency(value)}</span>
+                        </div>
+                        <div className="h-1.5 bg-[#21262d] rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${percentOf(value, data?.revenue ?? 0)}%`,
+                              backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-[#161b22] border-[#30363d]">
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+                Work Mix
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isGrossProfitLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3, 4].map((i) => (
+                    <Skeleton key={i} className="h-9 bg-[#21262d]" />
+                  ))}
+                </div>
+              ) : scopeRevenue.length === 0 ? (
+                <p className="text-sm text-[#8b949e]">No closed jobs with scope data for this period.</p>
+              ) : (
+                <div className="space-y-3">
+                  {scopeRevenue.map((row, i) => (
+                    <div key={row.name} className="flex items-center gap-3">
+                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="text-[#e6edf3]">{row.name}</span>
+                          <span className="font-mono text-[#8b949e]">{formatCurrency(row.value)}</span>
+                        </div>
+                        <div className="h-1.5 bg-[#21262d] rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${percentOf(row.value, closedSummary?.totalRevenue ?? 0)}%`,
+                              backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-[#161b22] border-[#30363d]">
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+                COGS + GP
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isGrossProfitLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3, 4].map((i) => (
+                    <Skeleton key={i} className="h-9 bg-[#21262d]" />
+                  ))}
+                </div>
+              ) : (
+                <div>
+                  <div className="grid grid-cols-2 gap-3 mb-5">
+                    <div className="rounded-lg bg-[#0d1117] border border-[#30363d] p-3">
+                      <p className="text-xs text-[#8b949e] mb-1">Gross Profit</p>
+                      <p className="text-xl font-bold text-green-400">
+                        {formatCurrency(closedSummary?.totalGrossProfit ?? 0)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-[#0d1117] border border-[#30363d] p-3">
+                      <p className="text-xs text-[#8b949e] mb-1">GP %</p>
+                      <p className="text-xl font-bold text-[#e6edf3]">
+                        {formatPercent(closedSummary?.avgMarginPercent ?? 0)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {costRows.map((row) => (
+                      <div key={row.label}>
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="text-[#e6edf3]">{row.label}</span>
+                          <span className="font-mono text-[#8b949e]">{formatCurrency(row.value)}</span>
+                        </div>
+                        <div className="h-1.5 bg-[#21262d] rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{ width: `${percentOf(row.value, totalCosts)}%`, backgroundColor: row.color }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Card className="bg-[#161b22] border-[#30363d] lg:col-span-1">
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+                Revenue Bridge
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-[#8b949e]">JN invoiced</span>
+                  <span className="font-mono text-[#e6edf3]">{formatFullCurrency(data?.revenue ?? 0)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-[#8b949e]">Closed-job revenue</span>
+                  <span className="font-mono text-[#e6edf3]">{formatFullCurrency(closedSummary?.totalRevenue ?? 0)}</span>
+                </div>
+                <div className="flex items-center justify-between border-t border-[#30363d] pt-4">
+                  <span className="text-sm text-[#8b949e]">Timing gap</span>
+                  <span className={`font-mono ${revenueVariance >= 0 ? "text-green-400" : "text-red-400"}`}>
+                    {formatFullCurrency(revenueVariance)}
+                  </span>
+                </div>
+                <p className="text-xs text-[#8b949e] leading-relaxed">
+                  This separates money invoiced this period from jobs closed this period. That keeps the dashboard honest when invoices and close-outs land on different days.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-[#161b22] border-[#30363d] lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+                Jobs Sorted by Sales Rep / Client Name
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isGrossProfitLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3, 4].map((i) => (
+                    <Skeleton key={i} className="h-10 bg-[#21262d]" />
+                  ))}
+                </div>
+              ) : topClosedJobs.length === 0 ? (
+                <p className="text-sm text-[#8b949e]">No Paid &amp; Closed jobs in this period yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-[#30363d] text-left text-xs uppercase tracking-wide text-[#8b949e]">
+                        <th className="pb-2 pr-4 font-medium">Sales Rep</th>
+                        <th className="pb-2 pr-4 font-medium">Client</th>
+                        <th className="pb-2 pr-4 text-right font-medium">Revenue</th>
+                        <th className="pb-2 pr-4 text-right font-medium">GP</th>
+                        <th className="pb-2 text-right font-medium">Margin</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topClosedJobs.map((job) => (
+                        <tr key={job.jobJnid} className="border-b border-[#21262d] last:border-0">
+                          <td className="py-3 pr-4 text-[#e6edf3] whitespace-nowrap">
+                            {job.salesRepName ?? "Unassigned"}
+                          </td>
+                          <td className="py-3 pr-4 text-[#8b949e] min-w-[180px]">
+                            <div className="text-[#e6edf3]">{getClientName(job.jobName)}</div>
+                            <div className="text-xs text-[#484f58]">{job.jobTypes.join(", ") || "Unclassified"}</div>
+                          </td>
+                          <td className="py-3 pr-4 text-right font-mono text-[#e6edf3] whitespace-nowrap">
+                            {formatCurrency(job.revenue)}
+                          </td>
+                          <td className={`py-3 pr-4 text-right font-mono whitespace-nowrap ${job.grossProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                            {formatCurrency(job.grossProfit)}
+                          </td>
+                          <td className="py-3 text-right font-mono text-[#e6edf3] whitespace-nowrap">
+                            {formatPercent(job.marginPercent)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* ── Retail Growth Control Room CTA ─────────────────────────── */}
