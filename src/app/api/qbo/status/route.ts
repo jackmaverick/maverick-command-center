@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getQBOConnection, getAccessToken } from "@/lib/quickbooks";
-import { query } from "@/lib/db";
+import { getAccessToken, type QBOConnection } from "@/lib/quickbooks";
+import { query, queryOne } from "@/lib/db";
 import type { QBOConnectionStatus } from "@/types";
 
 async function fetchAndUpdateCompanyName(conn: { id: string; realm_id: string }): Promise<string | null> {
@@ -39,7 +39,9 @@ async function fetchAndUpdateCompanyName(conn: { id: string; realm_id: string })
 
 export async function GET() {
   try {
-    const conn = await getQBOConnection();
+    const conn = await queryOne<QBOConnection>(
+      `SELECT * FROM qbo_connection ORDER BY connected_at DESC LIMIT 1`
+    );
 
     if (!conn) {
       const status: QBOConnectionStatus = {
