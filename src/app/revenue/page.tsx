@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PeriodSelector } from "@/components/layout/period-selector";
 import { formatCurrency } from "@/lib/dates";
 
-type TabKey = "all" | "status" | "type" | "rep" | "qbo";
+type TabKey = "all" | "status" | "type" | "rep" | "qbo" | "qboInvoices";
 
 interface RevenueBreakdownRow {
   key: string;
@@ -45,6 +45,18 @@ interface RevenueInvoice {
   } | null;
 }
 
+interface QboInvoice {
+  invoiceId: string;
+  docNumber: string | null;
+  customerName: string;
+  amount: number;
+  balance: number;
+  status: string;
+  txnDate: string | null;
+  matchedJnInvoiceId: string | null;
+  matchedJnInvoiceNumber: string | null;
+}
+
 interface RevenueLineItemsData {
   period: { key: string; label: string; start: string; end: string };
   basis: {
@@ -67,6 +79,10 @@ interface RevenueLineItemsData {
     invoiceCount: number;
     matchedToQbo: number;
     unmatchedToQbo: number;
+    qboTotalRevenue: number;
+    qboTotalBalance: number;
+    qboInvoiceCount: number;
+    qboRevenueVariance: number;
   };
   breakdowns: {
     byStatus: RevenueBreakdownRow[];
@@ -74,6 +90,7 @@ interface RevenueLineItemsData {
     byRep: RevenueBreakdownRow[];
   };
   invoices: RevenueInvoice[];
+  qboInvoices: QboInvoice[];
 }
 
 function formatFullCurrency(value: number): string {
@@ -179,6 +196,8 @@ export default function RevenueLineItemsPage() {
   }, [data?.invoices, search, tab]);
 
   const visibleTotal = filteredInvoices.reduce((sum, invoice) => sum + invoice.total, 0);
+  const qboVisibleTotal = (data?.qboInvoices ?? []).reduce((sum, invoice) => sum + invoice.amount, 0);
+  const qboUnmatched = (data?.qboInvoices ?? []).filter((invoice) => !invoice.matchedJnInvoiceNumber);
 
   return (
     <div>
@@ -201,15 +220,25 @@ export default function RevenueLineItemsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4 mb-6">
         {isLoading ? (
-          [1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-28 bg-[#21262d]" />)
+          [1, 2, 3, 4, 5, 6].map((i) => <Skeleton key={i} className="h-28 bg-[#21262d]" />)
         ) : (
           <>
             <SummaryCard
-              label={`${data?.period.label ?? "Period"} revenue`}
+              label="JobNimbus revenue"
               value={formatFullCurrency(data?.summary.totalRevenue ?? 0)}
-              sublabel={`${data?.summary.invoiceCount ?? 0} invoices`}
+              sublabel={`${data?.summary.invoiceCount ?? 0} JN invoices`}
+            />
+            <SummaryCard
+              label="QuickBooks revenue"
+              value={formatFullCurrency(data?.summary.qboTotalRevenue ?? 0)}
+              sublabel={`${data?.summary.qboInvoiceCount ?? 0} QBO invoices`}
+            />
+            <SummaryCard
+              label="QBO - JN variance"
+              value={formatFullCurrency(data?.summary.qboRevenueVariance ?? 0)}
+              sublabel="Positive means QBO is higher"
             />
             <SummaryCard
               label="Paid against invoices"
@@ -224,7 +253,7 @@ export default function RevenueLineItemsPage() {
             <SummaryCard
               label="Matched to QBO"
               value={`${data?.summary.matchedToQbo ?? 0}/${data?.summary.invoiceCount ?? 0}`}
-              sublabel="After QBO sync + matching"
+              sublabel={`${qboUnmatched.length} QBO invoices not in JN rollup`}
             />
             <SummaryCard
               label="QBO status"
@@ -238,7 +267,7 @@ export default function RevenueLineItemsPage() {
       <Card className="bg-[#0f1a2a] border-[#1f6feb] mb-6">
         <CardContent className="p-4 text-sm text-[#8b949e]">
           <span className="font-semibold text-[#e6edf3]">Current basis:</span>{" "}
-          {data?.basis.source ?? "JobNimbus invoices"}, statuses {data?.basis.includedStatuses.join(", ") ?? "Sent, Open, Closed"}, invoice date fallback to created date. QuickBooks is shown as reconciliation status, not the source of this revenue card yet.
+          JobNimbus remains the CRM invoice rollup. QuickBooks is now shown beside it as the accounting invoice rollup for the same period. The variance is QuickBooks minus JobNimbus, so the difference is visible instead of hidden in one magic number.
         </CardContent>
       </Card>
 
@@ -250,7 +279,8 @@ export default function RevenueLineItemsPage() {
               { key: "status", label: "By Status" },
               { key: "type", label: "By Type" },
               { key: "rep", label: "By Rep" },
-              { key: "qbo", label: "Unmatched QBO" },
+              { key: "qbo", label: "JN not in QBO" },
+              { key: "qboInvoices", label: "QBO invoices" },
             ] as { key: TabKey; label: string }[]
           ).map((item) => (
             <button
@@ -281,11 +311,17 @@ export default function RevenueLineItemsPage() {
             {tab === "status" && "Revenue by invoice status"}
             {tab === "type" && "Revenue by job type"}
             {tab === "rep" && "Revenue by sales rep"}
-            {tab === "qbo" && "Invoices not matched to QuickBooks"}
+            {tab === "qbo" && "JobNimbus invoices not matched to QuickBooks"}
+            {tab === "qboInvoices" && "QuickBooks invoices for this period"}
           </CardTitle>
           {(tab === "all" || tab === "qbo") && (
             <div className="text-xs text-[#8b949e]">
               Visible total: <span className="font-mono text-[#e6edf3]">{formatFullCurrency(visibleTotal)}</span>
+            </div>
+          )}
+          {tab === "qboInvoices" && (
+            <div className="text-xs text-[#8b949e]">
+              QBO visible total: <span className="font-mono text-[#e6edf3]">{formatFullCurrency(qboVisibleTotal)}</span>
             </div>
           )}
         </CardHeader>
@@ -302,6 +338,45 @@ export default function RevenueLineItemsPage() {
             <BreakdownTable rows={data?.breakdowns.byType ?? []} />
           ) : tab === "rep" ? (
             <BreakdownTable rows={data?.breakdowns.byRep ?? []} />
+          ) : tab === "qboInvoices" ? (
+            (data?.qboInvoices ?? []).length === 0 ? (
+              <p className="text-sm text-[#8b949e] py-8 text-center">No QuickBooks invoices loaded for this period yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-[#30363d] text-left uppercase tracking-wide text-[#8b949e]">
+                      <th className="pb-2 pr-4 font-medium">Date</th>
+                      <th className="pb-2 pr-4 font-medium">QBO Invoice</th>
+                      <th className="pb-2 pr-4 font-medium">Customer</th>
+                      <th className="pb-2 pr-4 font-medium">Status</th>
+                      <th className="pb-2 pr-4 text-right font-medium">Amount</th>
+                      <th className="pb-2 pr-4 text-right font-medium">Balance</th>
+                      <th className="pb-2 text-right font-medium">JN Match</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data?.qboInvoices ?? []).map((invoice) => (
+                      <tr key={invoice.invoiceId} className="border-b border-[#21262d] last:border-0 align-top">
+                        <td className="py-3 pr-4 text-[#8b949e] whitespace-nowrap">{formatDate(invoice.txnDate)}</td>
+                        <td className="py-3 pr-4 text-[#e6edf3] whitespace-nowrap">{invoice.docNumber ?? invoice.invoiceId}</td>
+                        <td className="py-3 pr-4 text-[#e6edf3]">{invoice.customerName}</td>
+                        <td className="py-3 pr-4 text-[#8b949e] whitespace-nowrap">{invoice.status}</td>
+                        <td className="py-3 pr-4 text-right font-mono text-[#e6edf3] whitespace-nowrap">{formatFullCurrency(invoice.amount)}</td>
+                        <td className="py-3 pr-4 text-right font-mono text-[#8b949e] whitespace-nowrap">{formatFullCurrency(invoice.balance)}</td>
+                        <td className="py-3 text-right whitespace-nowrap">
+                          {invoice.matchedJnInvoiceNumber ? (
+                            <span className="rounded-full bg-green-500/10 px-2 py-1 text-green-400">JN {invoice.matchedJnInvoiceNumber}</span>
+                          ) : (
+                            <span className="rounded-full bg-yellow-500/10 px-2 py-1 text-yellow-400">No JN rollup match</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
           ) : filteredInvoices.length === 0 ? (
             <p className="text-sm text-[#8b949e] py-8 text-center">No invoices match this filter.</p>
           ) : (

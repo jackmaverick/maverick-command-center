@@ -53,6 +53,24 @@ type BreakdownRow = {
   count: string;
 };
 
+type QboInvoiceRow = {
+  invoice_id: string;
+  doc_number: string | null;
+  customer_name: string | null;
+  amount: string;
+  balance: string;
+  status: string | null;
+  txn_date: string | null;
+  matched_jn_invoice_id: string | null;
+  matched_jn_invoice_number: string | null;
+};
+
+type QboSummaryRow = {
+  total_revenue: string;
+  total_balance: string;
+  invoice_count: string;
+};
+
 type QboStatusRow = {
   connected: boolean;
   company_name: string | null;
@@ -75,6 +93,9 @@ export async function GET(request: NextRequest) {
     const endUnix = toUnixSeconds(range.end);
 
     const params = [startUnix, endUnix, INVOICED_STATUSES];
+    const startDate = range.start.toISOString().slice(0, 10);
+    const endDate = range.end.toISOString().slice(0, 10);
+    const qboParams = [startDate, endDate];
     const invoiceWhere = `
       i.is_active = true
       AND ${ACTIVE_REAL_JOB_WHERE}
@@ -83,7 +104,7 @@ export async function GET(request: NextRequest) {
       AND ${EFFECTIVE_INVOICE_DATE} < $2
     `;
 
-    const [invoiceRows, byStatusRows, byTypeRows, byRepRows, qboStatusRows] = await Promise.all([
+    const [invoiceRows, byStatusRows, byTypeRows, byRepRows, qboStatusRows, qboSummaryRows, qboInvoiceRows] = await Promise.all([
       query<RevenueInvoiceRow>(
         `SELECT
            i.jnid::text AS invoice_id,
@@ -102,18 +123,19 @@ export async function GET(request: NextRequest) {
            COALESCE(j.sales_rep_name, 'Unassigned') AS sales_rep_name,
            COALESCE(j.source_name, 'Unknown') AS source_name,
            COALESCE(c.display_name, j.primary_contact_name, 'Unknown') AS customer_name,
-           im.qbo_invoice_id,
-           qi.doc_number AS qbo_doc_number,
-           qi.total_amount::text AS qbo_amount,
-           qi.balance::text AS qbo_balance,
-           im.status AS qbo_match_status,
-           im.match_method AS qbo_match_method,
-           im.match_confidence::text AS qbo_match_confidence
+           COALESCE(qim.qbo_id, qid.qbo_id) AS qbo_invoice_id,
+           COALESCE(qim.doc_number, qid.doc_number) AS qbo_doc_number,
+           COALESCE(qim.total_amount, qid.total_amount)::text AS qbo_amount,
+           COALESCE(qim.balance, qid.balance)::text AS qbo_balance,
+           COALESCE(im.status, CASE WHEN qid.qbo_id IS NOT NULL THEN 'matched' ELSE NULL END) AS qbo_match_status,
+           COALESCE(im.match_method, CASE WHEN qid.qbo_id IS NOT NULL THEN 'doc_number' ELSE NULL END) AS qbo_match_method,
+           COALESCE(im.match_confidence, CASE WHEN qid.qbo_id IS NOT NULL THEN 0.95 ELSE NULL END)::text AS qbo_match_confidence
          FROM invoices i
          JOIN jobs j ON j.jnid = i.job_jnid
          LEFT JOIN contacts c ON c.jnid = i.contact_jnid
          LEFT JOIN invoice_mapping im ON im.jn_invoice_id = i.jnid
-         LEFT JOIN qbo_invoices qi ON qi.qbo_id = im.qbo_invoice_id
+         LEFT JOIN qbo_invoices qim ON qim.qbo_id = im.qbo_invoice_id
+         LEFT JOIN qbo_invoices qid ON qid.doc_number = i.number::text
          WHERE ${invoiceWhere}
          ORDER BY ${EFFECTIVE_INVOICE_DATE} DESC NULLS LAST, i.total DESC`,
         params
@@ -162,6 +184,38 @@ export async function GET(request: NextRequest) {
          ORDER BY connected_at DESC
          LIMIT 1`
       ).catch(() => []),
+      query<QboSummaryRow>(
+        `SELECT
+           COALESCE(SUM(total_amount), 0)::text AS total_revenue,
+           COALESCE(SUM(balance), 0)::text AS total_balance,
+           COUNT(*)::text AS invoice_count
+         FROM qbo_invoices
+         WHERE txn_date >= $1::date
+           AND txn_date < $2::date
+           AND COALESCE(total_amount, 0) > 0`,
+        qboParams
+      ).catch(() => [{ total_revenue: "0", total_balance: "0", invoice_count: "0" }]),
+      query<QboInvoiceRow>(
+        `SELECT
+           qi.qbo_id AS invoice_id,
+           qi.doc_number,
+           qi.customer_name,
+           COALESCE(qi.total_amount, 0)::text AS amount,
+           COALESCE(qi.balance, 0)::text AS balance,
+           qi.status,
+           qi.txn_date::text,
+           i.jnid::text AS matched_jn_invoice_id,
+           i.number::text AS matched_jn_invoice_number
+         FROM qbo_invoices qi
+         LEFT JOIN invoice_mapping im ON im.qbo_invoice_id = qi.qbo_id
+         LEFT JOIN invoices i ON i.jnid = im.jn_invoice_id OR i.number::text = qi.doc_number
+         LEFT JOIN jobs j ON j.jnid = i.job_jnid
+         WHERE qi.txn_date >= $1::date
+           AND qi.txn_date < $2::date
+           AND COALESCE(qi.total_amount, 0) > 0
+         ORDER BY qi.txn_date DESC NULLS LAST, qi.total_amount DESC`,
+        qboParams
+      ).catch(() => []),
     ]);
 
     const invoices = invoiceRows.map((row) => ({
@@ -199,6 +253,11 @@ export async function GET(request: NextRequest) {
     const totalPaid = invoices.reduce((sum, invoice) => sum + invoice.totalPaid, 0);
     const totalBalance = invoices.reduce((sum, invoice) => sum + invoice.balance, 0);
     const matchedToQbo = invoices.filter((invoice) => invoice.qbo !== null).length;
+    const qboTotalRevenue = money(qboSummaryRows[0]?.total_revenue);
+    const qboTotalBalance = money(qboSummaryRows[0]?.total_balance);
+    const qboInvoiceCount = parseInt(qboSummaryRows[0]?.invoice_count ?? "0", 10);
+    const jnRevenue = Math.round(totalRevenue * 100) / 100;
+    const qboRevenueVariance = Math.round((qboTotalRevenue - jnRevenue) * 100) / 100;
 
     const mapBreakdown = (rows: BreakdownRow[]) =>
       rows.map((row) => ({ key: row.key, total: money(row.total), count: parseInt(row.count, 10) }));
@@ -224,12 +283,16 @@ export async function GET(request: NextRequest) {
         status: "disconnected",
       },
       summary: {
-        totalRevenue: Math.round(totalRevenue * 100) / 100,
+        totalRevenue: jnRevenue,
         totalPaid: Math.round(totalPaid * 100) / 100,
         totalBalance: Math.round(totalBalance * 100) / 100,
         invoiceCount: invoices.length,
         matchedToQbo,
         unmatchedToQbo: invoices.length - matchedToQbo,
+        qboTotalRevenue,
+        qboTotalBalance,
+        qboInvoiceCount,
+        qboRevenueVariance,
       },
       breakdowns: {
         byStatus: mapBreakdown(byStatusRows),
@@ -237,6 +300,17 @@ export async function GET(request: NextRequest) {
         byRep: mapBreakdown(byRepRows),
       },
       invoices,
+      qboInvoices: qboInvoiceRows.map((row) => ({
+        invoiceId: row.invoice_id,
+        docNumber: row.doc_number,
+        customerName: row.customer_name ?? "Unknown",
+        amount: money(row.amount),
+        balance: money(row.balance),
+        status: row.status ?? "Unknown",
+        txnDate: row.txn_date,
+        matchedJnInvoiceId: row.matched_jn_invoice_id,
+        matchedJnInvoiceNumber: row.matched_jn_invoice_number,
+      })),
     });
   } catch (error) {
     console.error("Revenue line-items API error:", error);

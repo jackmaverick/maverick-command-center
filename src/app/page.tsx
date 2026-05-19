@@ -47,6 +47,10 @@ interface LeadSource {
 interface DashboardData {
   period: DashboardPeriod;
   revenue: number;
+  qboRevenue: number;
+  qboInvoiceCount: number;
+  qboBalance: number;
+  qboRevenueVariance: number;
   pipelineValue: number;
   newLeads: number;
   conversionRate: number;
@@ -285,6 +289,18 @@ export default function DashboardPage() {
                     {formatCurrency(data?.revenue ?? 0)}
                   </p>
                   <DeltaBadge value={data?.revenueDelta ?? null} />
+                  <div className="mt-2 space-y-1 text-xs text-[#8b949e]">
+                    <div className="flex justify-between gap-2">
+                      <span>QBO</span>
+                      <span className="font-mono text-[#e6edf3]">{formatCurrency(data?.qboRevenue ?? 0)}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span>Diff</span>
+                      <span className={`font-mono ${(data?.qboRevenueVariance ?? 0) === 0 ? "text-[#8b949e]" : (data?.qboRevenueVariance ?? 0) > 0 ? "text-yellow-400" : "text-red-400"}`}>
+                        {formatFullCurrency(data?.qboRevenueVariance ?? 0)}
+                      </span>
+                    </div>
+                  </div>
                   <p className="mt-2 text-xs font-medium text-[#58a6ff] group-hover:text-[#79c0ff]">
                     View invoice detail →
                   </p>
@@ -379,7 +395,7 @@ export default function DashboardPage() {
             </p>
             <h2 className="text-xl font-bold text-[#e6edf3]">Revenue Command Center</h2>
             <p className="text-sm text-[#8b949e] mt-1">
-              JN revenue, work mix, COGS, GP, and the jobs driving the month.
+              JobNimbus invoices, QuickBooks invoices, the variance between them, work mix, COGS, GP, and the jobs driving the month.
             </p>
           </div>
           <div className="text-xs text-[#8b949e]">
@@ -403,14 +419,30 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <div>
-                  <p className="text-4xl font-bold text-[#e6edf3] mb-1">
-                    {formatCurrency(data?.revenue ?? 0)}
-                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                    <div className="rounded-lg bg-[#0d1117] border border-[#30363d] p-3">
+                      <p className="text-xs text-[#8b949e] mb-1">JobNimbus invoices</p>
+                      <p className="text-2xl font-bold text-[#e6edf3]">
+                        {formatCurrency(data?.revenue ?? 0)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-[#0d1117] border border-[#30363d] p-3">
+                      <p className="text-xs text-[#8b949e] mb-1">QuickBooks invoices</p>
+                      <p className="text-2xl font-bold text-[#e6edf3]">
+                        {formatCurrency(data?.qboRevenue ?? 0)}
+                      </p>
+                      <p className="text-xs text-[#484f58]">{data?.qboInvoiceCount ?? 0} QBO invoices</p>
+                    </div>
+                  </div>
                   <div className="flex items-center gap-2 text-xs text-[#8b949e] mb-5">
                     <span>{data?.period.label}</span>
                     <DeltaBadge value={data?.revenueDelta ?? null} />
-                    <Link href={`/revenue?period=${period}`} className="ml-auto font-semibold text-[#58a6ff] hover:text-[#79c0ff]">
-                      Audit invoices →
+                    <span className="ml-auto">QBO - JN: </span>
+                    <span className={`font-mono ${(data?.qboRevenueVariance ?? 0) === 0 ? "text-[#8b949e]" : (data?.qboRevenueVariance ?? 0) > 0 ? "text-yellow-400" : "text-red-400"}`}>
+                      {formatFullCurrency(data?.qboRevenueVariance ?? 0)}
+                    </span>
+                    <Link href={`/revenue?period=${period}`} className="font-semibold text-[#58a6ff] hover:text-[#79c0ff]">
+                      Audit →
                     </Link>
                   </div>
                   <div className="space-y-3">
@@ -544,17 +576,27 @@ export default function DashboardPage() {
                   <span className="font-mono text-[#e6edf3]">{formatFullCurrency(data?.revenue ?? 0)}</span>
                 </div>
                 <div className="flex items-center justify-between">
+                  <span className="text-sm text-[#8b949e]">QuickBooks invoiced</span>
+                  <span className="font-mono text-[#e6edf3]">{formatFullCurrency(data?.qboRevenue ?? 0)}</span>
+                </div>
+                <div className="flex items-center justify-between">
                   <span className="text-sm text-[#8b949e]">Closed-job revenue</span>
                   <span className="font-mono text-[#e6edf3]">{formatFullCurrency(closedSummary?.totalRevenue ?? 0)}</span>
                 </div>
                 <div className="flex items-center justify-between border-t border-[#30363d] pt-4">
-                  <span className="text-sm text-[#8b949e]">Timing gap</span>
+                  <span className="text-sm text-[#8b949e]">QBO - JN variance</span>
+                  <span className={`font-mono ${(data?.qboRevenueVariance ?? 0) === 0 ? "text-[#8b949e]" : (data?.qboRevenueVariance ?? 0) > 0 ? "text-yellow-400" : "text-red-400"}`}>
+                    {formatFullCurrency(data?.qboRevenueVariance ?? 0)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-[#8b949e]">JN vs closed timing gap</span>
                   <span className={`font-mono ${revenueVariance >= 0 ? "text-green-400" : "text-red-400"}`}>
                     {formatFullCurrency(revenueVariance)}
                   </span>
                 </div>
                 <p className="text-xs text-[#8b949e] leading-relaxed">
-                  This separates money invoiced this period from jobs closed this period. That keeps the dashboard honest when invoices and close-outs land on different days.
+                  This separates the CRM invoice rollup from the accounting invoice rollup, then separately shows timing between invoiced work and closed jobs. This is the part that keeps us from lying to ourselves with a pretty number.
                 </p>
               </div>
             </CardContent>

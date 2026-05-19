@@ -74,6 +74,7 @@ export async function GET(request: NextRequest) {
       leadSourceRows,
       opportunitiesBySegmentRows,
       soldJobsBySegmentRows,
+      qboRevenueRows,
     ] = await Promise.all([
       // 1. YTD Revenue (accrual basis - uses date_invoice BIGINT)
       query<{ total: string }>(
@@ -241,6 +242,19 @@ export async function GET(request: NextRequest) {
          ORDER BY count DESC`,
         [startUnix, endUnix, CONVERTED_STATUSES]
       ),
+
+      // 12. QuickBooks invoice revenue for the same period, when QBO sync is connected
+      query<{ total: string; balance: string; count: string }>(
+        `SELECT
+           COALESCE(SUM(total_amount), 0)::text AS total,
+           COALESCE(SUM(balance), 0)::text AS balance,
+           COUNT(*)::text AS count
+         FROM qbo_invoices
+         WHERE txn_date >= $1::date
+           AND txn_date < $2::date
+           AND COALESCE(total_amount, 0) > 0`,
+        [range.start.toISOString().slice(0, 10), range.end.toISOString().slice(0, 10)]
+      ).catch(() => [{ total: "0", balance: "0", count: "0" }]),
     ]);
 
     // ── Process results ─────────────────────────────────────────────────
@@ -250,6 +264,10 @@ export async function GET(request: NextRequest) {
 
     // 2. Pipeline value
     const pipelineValue = parseFloat(pipelineRows[0]?.total ?? "0");
+    const qboRevenue = Math.round((parseFloat(qboRevenueRows[0]?.total ?? "0") || 0) * 100) / 100;
+    const qboInvoiceCount = parseInt(qboRevenueRows[0]?.count ?? "0", 10);
+    const qboBalance = Math.round((parseFloat(qboRevenueRows[0]?.balance ?? "0") || 0) * 100) / 100;
+    const qboRevenueVariance = Math.round((qboRevenue - revenue) * 100) / 100;
 
     // 3. New leads
     const newLeads = parseInt(newLeadsRows[0]?.count ?? "0", 10);
@@ -346,6 +364,10 @@ export async function GET(request: NextRequest) {
         end: range.end.toISOString(),
       },
       revenue,
+      qboRevenue,
+      qboInvoiceCount,
+      qboBalance,
+      qboRevenueVariance,
       pipelineValue,
       newLeads,
       conversionRate: Math.round(conversionRate * 10) / 10,
