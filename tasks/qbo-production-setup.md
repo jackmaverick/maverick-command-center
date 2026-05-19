@@ -36,8 +36,8 @@
 
 ## Future Enhancements
 
-- [ ] **Vercel Cron for auto-sync** — set up 15-min or daily cron to keep QBO data fresh
-- [ ] **QBO Webhooks** — real-time sync when invoices/payments change in QuickBooks
+- [x] **Vercel Cron for auto-sync** — `vercel.json` runs `/api/qbo/cron` every 15 minutes after deploy. Set optional `CRON_SECRET` in Vercel to protect the route.
+- [x] **QBO Webhooks endpoint** — `/api/qbo/webhook` verifies Intuit signatures with `QBO_WEBHOOK_VERIFIER_TOKEN` and runs the shared sync. Still needs the webhook URL + verifier token added in the Intuit developer dashboard.
 - [ ] **Capture `intuit_tid` header** — for QBO support troubleshooting (noted in questionnaire)
 - [ ] **Cash flow model tuning** — refine collection probability weights with historical data after 30 days
 - [ ] **Reconciliation manual actions** — approve/flag matches from the UI (API exists, UI buttons need wiring)
