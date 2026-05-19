@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getQBOConnection } from "@/lib/quickbooks";
 import { runFullQboSync } from "@/lib/qbo-sync";
 
 export const runtime = "nodejs";
@@ -16,6 +17,16 @@ async function handleCron(req: NextRequest) {
   }
 
   try {
+    const conn = await getQBOConnection();
+    if (!conn) {
+      return NextResponse.json({
+        success: true,
+        source: "qbo-cron",
+        skipped: true,
+        reason: "No active QuickBooks connection. Reconnect from /settings to resume automated sync.",
+      });
+    }
+
     const result = await runFullQboSync();
     return NextResponse.json({ success: true, source: "qbo-cron", ...result });
   } catch (error) {
