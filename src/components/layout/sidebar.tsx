@@ -53,6 +53,7 @@ const navGroups = [
     label: "FINANCIAL",
     items: [
       { href: "/financial/pnl", label: "P&L", icon: TrendingUp },
+      { href: "/revenue", label: "Revenue Audit", icon: DollarSign },
       { href: "/financial/cashflow", label: "Cash Flow", icon: Wallet },
       { href: "/financial/reconciliation", label: "Reconciliation", icon: GitCompare },
       { href: "/gross-profit", label: "Gross Profit", icon: DollarSign },

@@ -269,25 +269,30 @@ export default function DashboardPage() {
       {/* ── KPI Cards ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         {/* Revenue */}
-        <Card className="bg-[#161b22] border-[#30363d]">
-          <CardHeader className="pb-2">
-            <InfoTooltip label="Revenue" explanation="Sum of all invoice amounts created during this period (accrual basis — based on invoice date, not payment received)">
-              <CardTitle className="text-xs font-medium text-[#8b949e]">Revenue</CardTitle>
-            </InfoTooltip>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-8 w-24 bg-[#21262d]" />
-            ) : (
-              <div>
-                <p className="text-2xl font-bold text-[#e6edf3]">
-                  {formatCurrency(data?.revenue ?? 0)}
-                </p>
-                <DeltaBadge value={data?.revenueDelta ?? null} />
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <Link href={`/revenue?period=${period}`} className="block group">
+          <Card className="h-full bg-[#161b22] border-[#30363d] group-hover:border-[#58a6ff] transition-colors">
+            <CardHeader className="pb-2">
+              <InfoTooltip label="Revenue" explanation="Sum of all invoice amounts created during this period (accrual basis — based on invoice date, not payment received)">
+                <CardTitle className="text-xs font-medium text-[#8b949e]">Revenue</CardTitle>
+              </InfoTooltip>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-8 w-24 bg-[#21262d]" />
+              ) : (
+                <div>
+                  <p className="text-2xl font-bold text-[#e6edf3]">
+                    {formatCurrency(data?.revenue ?? 0)}
+                  </p>
+                  <DeltaBadge value={data?.revenueDelta ?? null} />
+                  <p className="mt-2 text-xs font-medium text-[#58a6ff] group-hover:text-[#79c0ff]">
+                    View invoice detail →
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </Link>
 
         {/* Pipeline */}
         <Card className="bg-[#161b22] border-[#30363d]">
@@ -404,6 +409,9 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2 text-xs text-[#8b949e] mb-5">
                     <span>{data?.period.label}</span>
                     <DeltaBadge value={data?.revenueDelta ?? null} />
+                    <Link href={`/revenue?period=${period}`} className="ml-auto font-semibold text-[#58a6ff] hover:text-[#79c0ff]">
+                      Audit invoices →
+                    </Link>
                   </div>
                   <div className="space-y-3">
                     {Object.entries(data?.revenueByJobType ?? {}).map(([name, value], i) => (
