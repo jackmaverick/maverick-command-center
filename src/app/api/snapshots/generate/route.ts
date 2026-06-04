@@ -70,15 +70,21 @@ function getPeriodBounds(type: SnapshotType): { start: Date; end: Date } {
 
 // ── POST handler ────────────────────────────────────────────────────────────
 
-export async function POST(request: NextRequest) {
+function isAuthorized(request: NextRequest): boolean {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) return true;
+
+  return (
+    request.headers.get("x-cron-secret") === cronSecret ||
+    request.headers.get("authorization") === `Bearer ${cronSecret}`
+  );
+}
+
+async function handleGenerate(request: NextRequest) {
   try {
-    // ── Auth check ────────────────────────────────────────────────────
-    const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret) {
-      const provided = request.headers.get("x-cron-secret");
-      if (provided !== cronSecret) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
+    // Auth check
+    if (!isAuthorized(request)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // ── Parse params ──────────────────────────────────────────────────
@@ -645,4 +651,12 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+export async function GET(request: NextRequest) {
+  return handleGenerate(request);
+}
+
+export async function POST(request: NextRequest) {
+  return handleGenerate(request);
 }

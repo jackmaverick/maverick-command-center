@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { type PeriodKey, getDateRange } from "@/lib/dates";
+import { type PeriodKey, getDateRange, isValidPeriodKey } from "@/lib/dates";
 import { SEGMENT_SQL } from "@/lib/segment";
 import type { Segment } from "@/lib/constants";
 
@@ -8,15 +8,6 @@ import type { Segment } from "@/lib/constants";
 // Constants
 // ---------------------------------------------------------------------------
 
-const VALID_PERIODS: PeriodKey[] = [
-  "week",
-  "last_week",
-  "month",
-  "last_month",
-  "quarter",
-  "ytd",
-  "all",
-];
 
 const VALID_SEGMENTS: Segment[] = [
   "real_estate",
@@ -123,7 +114,7 @@ export async function GET(request: NextRequest) {
 
     // -- Parse & validate period --
     const periodParam = (searchParams.get("period") ?? "month") as PeriodKey;
-    const period = VALID_PERIODS.includes(periodParam) ? periodParam : "month";
+    const period = isValidPeriodKey(periodParam) ? periodParam : "month";
     const range = getDateRange(period);
 
     // -- Parse & validate segment --
@@ -148,7 +139,7 @@ export async function GET(request: NextRequest) {
     // -- 1. Aggregate response times --
     const responseTimes: number[] = [];
     let missedCount = 0;
-    let totalInbound = responseTimeRows.length;
+    const totalInbound = responseTimeRows.length;
 
     for (const row of responseTimeRows) {
       if (row.response_minutes !== null) {

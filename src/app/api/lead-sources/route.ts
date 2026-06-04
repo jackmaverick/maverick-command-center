@@ -1,21 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { type PeriodKey, getDateRange, toUnixSeconds } from "@/lib/dates";
+import { type PeriodKey, getDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
 import { SEGMENT_SQL } from "@/lib/segment";
 import { LOSS_STATUSES } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const VALID_PERIODS: PeriodKey[] = [
-  "week",
-  "last_week",
-  "month",
-  "last_month",
-  "quarter",
-  "ytd",
-  "all",
-];
 
 /** Jobs are won when they reach "Sold Job" status or beyond. */
 const WON_STATUSES = [
@@ -94,7 +85,7 @@ export async function GET(request: NextRequest) {
 
     // Parse & validate period
     const periodParam = (searchParams.get("period") ?? "month") as PeriodKey;
-    const period = VALID_PERIODS.includes(periodParam) ? periodParam : "month";
+    const period = isValidPeriodKey(periodParam) ? periodParam : "month";
     const range = getDateRange(period);
     const startUnix = toUnixSeconds(range.start);
     const endUnix = toUnixSeconds(range.end);

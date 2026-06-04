@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { type PeriodKey, getDateRange, toUnixSeconds } from "@/lib/dates";
+import { type PeriodKey, getDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
 import { segmentWhereClause } from "@/lib/segment";
 import { LOSS_STATUSES } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
 
-const VALID_PERIODS: PeriodKey[] = [
-  "week", "last_week", "month", "last_month", "quarter", "ytd", "all",
-];
 const VALID_SEGMENTS: Segment[] = [
   "real_estate", "retail", "insurance", "repairs", "warranty",
 ];
@@ -67,7 +64,7 @@ export async function GET(request: NextRequest) {
     const segment = (searchParams.get("segment") as Segment | null) || null;
     const repJnid = searchParams.get("rep_jnid") || null;
 
-    if (!VALID_PERIODS.includes(period)) return NextResponse.json({ error: "Invalid period" }, { status: 400 });
+    if (!isValidPeriodKey(period)) return NextResponse.json({ error: "Invalid period" }, { status: 400 });
     if (segment && !VALID_SEGMENTS.includes(segment)) return NextResponse.json({ error: "Invalid segment" }, { status: 400 });
 
     const range = getDateRange(period);

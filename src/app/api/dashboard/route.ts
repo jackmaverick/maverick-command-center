@@ -1,19 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { type PeriodKey, getDateRange, toUnixSeconds } from "@/lib/dates";
+import { type PeriodKey, getDateRange, getPreviousDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
 import { SEGMENT_SQL } from "@/lib/segment";
 import { STATUS_TO_STAGE, STAGES, CHART_COLORS } from "@/lib/constants";
 
 // Valid period keys for input validation
-const VALID_PERIODS: PeriodKey[] = [
-  "week",
-  "last_week",
-  "month",
-  "last_month",
-  "quarter",
-  "ytd",
-  "all",
-];
 
 // Statuses that count as "converted" (Sold or later)
 const CONVERTED_STATUSES = Object.entries(STATUS_TO_STAGE)
@@ -33,28 +24,13 @@ const ACTIVE_REAL_JOB_WHERE = `
 `;
 const EFFECTIVE_INVOICE_DATE = "COALESCE(i.date_invoice, i.jn_date_created)";
 
-/**
- * Compute the "previous" period for delta comparison.
- * E.g. if current period is "month", previous period is "last_month".
- */
-function getPreviousPeriodKey(period: PeriodKey): PeriodKey | null {
-  switch (period) {
-    case "week":
-      return "last_week";
-    case "month":
-      return "last_month";
-    default:
-      return null;
-  }
-}
-
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const periodParam = (searchParams.get("period") ?? "month") as PeriodKey;
 
     // Validate period
-    const period = VALID_PERIODS.includes(periodParam) ? periodParam : "month";
+    const period = isValidPeriodKey(periodParam) ? periodParam : "month";
     const range = getDateRange(period);
 
     // Convert date range to unix seconds for BIGINT columns
@@ -147,13 +123,12 @@ export async function GET(request: NextRequest) {
         [startUnix, endUnix, INVOICED_STATUSES]
       ),
 
-      // 6. Previous period revenue (for delta calculation)
+      // 6. Previous period revenue for delta calculation
       (() => {
-        const prevKey = getPreviousPeriodKey(period);
-        if (!prevKey) {
+        const prevRange = getPreviousDateRange(period);
+        if (!prevRange) {
           return Promise.resolve([{ total: null }] as { total: string | null }[]);
         }
-        const prevRange = getDateRange(prevKey);
         const prevStartUnix = toUnixSeconds(prevRange.start);
         const prevEndUnix = toUnixSeconds(prevRange.end);
         return query<{ total: string | null }>(
@@ -281,9 +256,9 @@ export async function GET(request: NextRequest) {
     const avgTicket = parseFloat(avgTicketRows[0]?.avg_ticket ?? "0");
 
     // 6. Revenue delta (percentage change from previous period)
+    const prevRange = getPreviousDateRange(period);
     let revenueDelta: number | null = null;
-    const prevKey = getPreviousPeriodKey(period);
-    if (prevKey && previousRevenueRows[0]?.total !== null) {
+    if (prevRange && previousRevenueRows[0]?.total !== null) {
       const previousRevenue = parseFloat(previousRevenueRows[0]?.total ?? "0");
       if (previousRevenue > 0) {
         revenueDelta = ((revenue - previousRevenue) / previousRevenue) * 100;
@@ -335,8 +310,7 @@ export async function GET(request: NextRequest) {
 
     // ── Leads delta (compare to previous period if available) ───────────
     let leadsDelta: number | null = null;
-    if (prevKey) {
-      const prevRange = getDateRange(prevKey);
+    if (prevRange) {
       const prevStartUnix = toUnixSeconds(prevRange.start);
       const prevEndUnix = toUnixSeconds(prevRange.end);
       const prevLeadsRows = await query<{ count: string }>(

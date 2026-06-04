@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { type PeriodKey, getDateRange, toUnixSeconds } from "@/lib/dates";
+import { type PeriodKey, getDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
 import { SEGMENT_SQL } from "@/lib/segment";
 import {
   ORDERED_STATUSES,
@@ -12,15 +12,6 @@ import type { Segment } from "@/lib/constants";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const VALID_PERIODS: PeriodKey[] = [
-  "week",
-  "last_week",
-  "month",
-  "last_month",
-  "quarter",
-  "ytd",
-  "all",
-];
 
 const VALID_SEGMENTS: Segment[] = [
   "real_estate",
@@ -93,7 +84,7 @@ export async function GET(request: NextRequest) {
     const segment: Segment = segmentParam;
 
     const periodParam = (searchParams.get("period") ?? "month") as PeriodKey;
-    const period = VALID_PERIODS.includes(periodParam) ? periodParam : "month";
+    const period = isValidPeriodKey(periodParam) ? periodParam : "month";
     const range = getDateRange(period);
     const startUnix = toUnixSeconds(range.start);
     const endUnix = toUnixSeconds(range.end);

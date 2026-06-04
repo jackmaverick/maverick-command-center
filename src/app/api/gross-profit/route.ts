@@ -1,18 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { type PeriodKey, getDateRange, toUnixSeconds } from "@/lib/dates";
+import { type PeriodKey, getDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
 import { SEGMENT_SQL, segmentWhereClause } from "@/lib/segment";
 import type { Segment } from "@/lib/constants";
 
-const VALID_PERIODS: PeriodKey[] = [
-  "week",
-  "last_week",
-  "month",
-  "last_month",
-  "quarter",
-  "ytd",
-  "all",
-];
 const VALID_SEGMENTS: Segment[] = [
   "real_estate",
   "retail",
@@ -85,7 +76,7 @@ export async function GET(request: NextRequest) {
     const period = (searchParams.get("period") ?? "all") as PeriodKey;
     const segment = (searchParams.get("segment") as Segment | null) || null;
 
-    if (!VALID_PERIODS.includes(period)) {
+    if (!isValidPeriodKey(period)) {
       return NextResponse.json({ error: "Invalid period" }, { status: 400 });
     }
     if (segment && !VALID_SEGMENTS.includes(segment)) {

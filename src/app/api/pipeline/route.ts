@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { SEGMENT_SQL, segmentWhereClause } from "@/lib/segment";
-import { getDateRange, toUnixSeconds, type PeriodKey } from "@/lib/dates";
+import { getDateRange, isValidPeriodKey, toUnixSeconds, type PeriodKey } from "@/lib/dates";
 import {
   STATUS_TO_STAGE,
   ORDERED_STATUSES,
@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
 
     // -- Parse & validate period --
     const periodParam = (searchParams.get("period") ?? "month") as PeriodKey;
-    if (!VALID_PERIODS.includes(periodParam)) {
+    if (!isValidPeriodKey(periodParam)) {
       return NextResponse.json(
         { error: `Invalid period. Must be one of: ${VALID_PERIODS.join(", ")}` },
         { status: 400 }
@@ -215,6 +215,9 @@ async function queryStageCounts(
     Lead: [...ORDERED_STATUSES], // Every job starts here
     "Appointment Scheduled": ORDERED_STATUSES.filter(
       (s) => STATUS_INDEX[s] >= STATUS_INDEX["Appointment Scheduled"]
+    ) as string[],
+    "Appointment Ran": ORDERED_STATUSES.filter(
+      (s) => STATUS_INDEX[s] >= STATUS_INDEX["Appt Ran"]
     ) as string[],
     Estimating: ORDERED_STATUSES.filter(
       (s) => STATUS_INDEX[s] >= STATUS_INDEX["Estimating"]

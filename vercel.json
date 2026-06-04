@@ -3,6 +3,14 @@
     {
       "path": "/api/qbo/cron",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/snapshots/generate?type=weekly",
+      "schedule": "15 6 * * 1"
+    },
+    {
+      "path": "/api/snapshots/generate?type=monthly",
+      "schedule": "30 6 1 * *"
     }
   ]
 }

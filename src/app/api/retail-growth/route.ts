@@ -1,17 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { type PeriodKey, getDateRange, toUnixSeconds } from "@/lib/dates";
+import { type PeriodKey, getDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
 import { STAGES } from "@/lib/constants";
 
-const VALID_PERIODS: PeriodKey[] = [
-  "week",
-  "last_week",
-  "month",
-  "last_month",
-  "quarter",
-  "ytd",
-  "all",
-];
 
 const SOLD_STATUSES = [
   "Sold Job",
@@ -103,7 +94,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const periodParam = (searchParams.get("period") ?? "month") as PeriodKey;
-    const period = VALID_PERIODS.includes(periodParam) ? periodParam : "month";
+    const period = isValidPeriodKey(periodParam) ? periodParam : "month";
     const range = getDateRange(period);
     const startUnix = toUnixSeconds(range.start);
     const endUnix = toUnixSeconds(range.end);

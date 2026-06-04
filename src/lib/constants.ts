@@ -23,10 +23,11 @@ export const SEGMENTS = {
 
 export type Segment = keyof typeof SEGMENTS;
 
-// Pipeline stage definitions (kept for backward compatibility with sales funnel)
+// Pipeline stage definitions kept for backward compatibility with sales funnel
 export const STAGES = [
   "Lead",
   "Appointment Scheduled",
+  "Appointment Ran",
   "Estimating",
   "Sold",
   "Production",
@@ -36,48 +37,74 @@ export const STAGES = [
 
 export type Stage = (typeof STAGES)[number];
 
-// JN status → stage mapping (DEPRECATED for conversion tracking, use STATUS_CONVERSIONS instead)
+// JN status to stage mapping
 export const STATUS_TO_STAGE: Record<string, Stage> = {
   // Lead stage
   Lead: "Lead",
   New: "Lead",
   "Cold Lead": "Lead",
   Cold: "Lead",
+  "Storm Alert": "Lead",
   "Appointment Scheduled": "Appointment Scheduled",
+  "Adjuster Appt Scheduled": "Appointment Scheduled",
+  // Appointment ran stage
+  "Appt Ran": "Appointment Ran",
+  "Appointment Ran": "Appointment Ran",
+  "Adjuster Appt Ran": "Appointment Ran",
   // Estimating stage
   Estimating: "Estimating",
   "Estimate Sent": "Estimating",
+  "Claim Review": "Estimating",
+  "Scope Approval": "Estimating",
+  "Waiting on Claim": "Estimating",
+  "No Damage": "Estimating",
   // Sold stage
   "Sold Job": "Sold",
+  "Signed Contract": "Sold",
+  "Fully Approved": "Sold",
+  "Deductible Collected": "Sold",
   // Production stage
   "Production Ready": "Production",
+  "Job Scheduled": "Production",
   "In Progress": "Production",
+  "In Production": "Production",
   "Insurance Pending": "Production",
+  "Insurance Pending/Cont Skipped": "Production",
+  "Pre Production Supplementing": "Production",
   "Future Work": "Production",
   "Needs Rescheduling": "Production",
+  "City / HOA Approval": "Production",
   // Invoicing stage
   Invoiced: "Invoicing",
   "Final Invoicing": "Invoicing",
+  "Deductible Invoice Sent": "Invoicing",
+  "Final Invoice Sent": "Invoicing",
   "Pending Final Payment": "Invoicing",
   "Job Close Out": "Invoicing",
+  "Close Out In Progress": "Invoicing",
+  "Project Review In Progress": "Invoicing",
+  "Back End Job Audit": "Invoicing",
   // Completed stage
   "Paid & Closed": "Completed",
   "All Work Completed": "Completed",
   "All Work Complete": "Completed",
+  "Work Completed Approved": "Completed",
+  "Repair Completed Approved": "Completed",
   "Job Completed": "Completed",
   "Warranty Complete": "Completed",
 };
 
-// Status-to-Status Conversions (actual pipeline flow)
-// These define the real conversion funnel you care about
+// Status-to-status conversions using actual movement history when available.
 export const STATUS_CONVERSIONS = [
-  { from: "Lead", to: "Appointment Scheduled", label: "Lead → Appointment" },
+  { from: "Lead", to: "Appointment Scheduled", label: "Lead → Appointment Scheduled" },
+  { from: "Appointment Scheduled", to: "Appt Ran", label: "Appointment Scheduled → Appt Ran" },
+  { from: "Appt Ran", to: "Estimating", label: "Appt Ran → Estimating" },
   { from: "Lead", to: "Estimating", label: "Lead → Estimating (Direct)" },
-  { from: "Appointment Scheduled", to: "Estimating", label: "Appointment → Estimating" },
-  { from: "Appointment Scheduled", to: ["Lost", "Cold", "Dead", "Cold Lead"], label: "Appointment → Lost/Cold/Dead" },
+  { from: "Appointment Scheduled", to: "Estimating", label: "Appointment Scheduled → Estimating" },
+  { from: "Appointment Scheduled", to: ["Lost", "Cold", "Dead", "Cold Lead", "No Damage"], label: "Appointment → Lost/Cold/No Damage" },
   { from: "Estimating", to: "Estimate Sent", label: "Estimating → Estimate Sent" },
-  { from: "Estimate Sent", to: "Sold Job", label: "Estimate Sent → Sold Job" },
-  { from: "Estimate Sent", to: ["Lost", "Cold", "Dead", "Cold Lead"], label: "Estimate Sent → Lost/Cold/Dead" },
+  { from: "Estimate Sent", to: ["Sold Job", "Signed Contract"], label: "Estimate Sent → Sold" },
+  { from: "Estimate Sent", to: ["Lost", "Cold", "Dead", "Cold Lead", "No Damage"], label: "Estimate Sent → Lost/Cold/No Damage" },
 ] as const;
 
 // Full ordered status list for legacy tracking
@@ -85,28 +112,51 @@ export const ORDERED_STATUSES = [
   "Lead",
   "New",
   "Cold Lead",
+  "Storm Alert",
   "Appointment Scheduled",
+  "Adjuster Appt Scheduled",
+  "Appt Ran",
+  "Adjuster Appt Ran",
   "Estimating",
   "Estimate Sent",
+  "Claim Review",
+  "Scope Approval",
+  "Waiting on Claim",
+  "No Damage",
   "Sold Job",
+  "Signed Contract",
+  "Fully Approved",
+  "Deductible Collected",
   "Production Ready",
+  "Job Scheduled",
   "In Progress",
+  "In Production",
   "Insurance Pending",
+  "Insurance Pending/Cont Skipped",
+  "Pre Production Supplementing",
   "Future Work",
   "Needs Rescheduling",
+  "City / HOA Approval",
   "Invoiced",
   "Final Invoicing",
+  "Deductible Invoice Sent",
+  "Final Invoice Sent",
   "Pending Final Payment",
   "Job Close Out",
+  "Close Out In Progress",
+  "Project Review In Progress",
+  "Back End Job Audit",
   "Paid & Closed",
   "All Work Completed",
   "All Work Complete",
+  "Work Completed Approved",
+  "Repair Completed Approved",
   "Job Completed",
   "Warranty Complete",
 ] as const;
 
-// Loss/hold statuses (jobs that fall out of the pipeline)
-export const LOSS_STATUSES = ["Lost", "Dead", "Cold", "Cold Lead", "Internal Supplementing"] as const;
+// Loss/hold statuses, jobs that fall out of the pipeline
+export const LOSS_STATUSES = ["Lost", "Dead", "Cold", "Cold Lead", "No Damage", "Internal Supplementing"] as const;
 
 // Priority colors
 export const PRIORITY_COLORS = {
