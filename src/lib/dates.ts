@@ -18,6 +18,7 @@ import {
 export type BasePeriodKey =
   | "week"
   | "last_week"
+  | "last_60"
   | "month"
   | "last_month"
   | "quarter"
@@ -35,6 +36,7 @@ export interface DateRange {
 export const BASE_PERIOD_KEYS: BasePeriodKey[] = [
   "week",
   "last_week",
+  "last_60",
   "month",
   "last_month",
   "quarter",
@@ -110,6 +112,12 @@ export function getDateRange(period: PeriodKey | string): DateRange {
         label: "Last Week",
       };
     }
+    case "last_60":
+      return {
+        start: subDays(now, 60),
+        end: now,
+        label: "Last 60 Days",
+      };
     case "month":
       return {
         start: startOfMonth(now),

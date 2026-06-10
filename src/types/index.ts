@@ -426,14 +426,27 @@ export interface GrossProfitJob {
   jobName: string;
   address: string | null;
   segment: string;
+  salesRepName: string | null;
+  statusName: string | null;
   jobTypes: string[];
   revenue: number;
-  supplierCost: number;
+  materialsCost: number;
   laborCost: number;
-  retailCost: number;
+  subcontractorCost: number;
+  permitCost: number;
+  miscCost: number;
   totalCost: number;
   grossProfit: number;
   marginPercent: number;
+  isFinalGpReady: boolean;
+  isAccurate: boolean;
+  accuracyStatus: "accurate" | "needs_review" | "not_final";
+  gpConfidence: "medium" | "low" | "not_final" | string;
+  gpReadyReason: string | null;
+  gpBlockers: string[];
+  systemCostWarnings: string[];
+  nonFinalWorkOrderCount: number;
+  supplierReviewInvoiceCount: number;
   dateCompleted: string | null;
 }
 
@@ -443,6 +456,10 @@ export interface GrossProfitSummary {
   totalGrossProfit: number;
   avgMarginPercent: number;
   jobCount: number;
+  accurateJobCount: number;
+  needsReviewJobCount: number;
+  notFinalJobCount: number;
+  accuracyPercent: number;
 }
 
 export interface GrossProfitData {

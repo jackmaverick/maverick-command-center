@@ -169,6 +169,7 @@ export const PRIORITY_COLORS = {
 export const PERIOD_OPTIONS = [
   { value: "week", label: "This Week" },
   { value: "last_week", label: "Last Week" },
+  { value: "last_60", label: "Last 60 Days" },
   { value: "month", label: "This Month" },
   { value: "last_month", label: "Last Month" },
   { value: "quarter", label: "This Quarter" },

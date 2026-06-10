@@ -32,6 +32,15 @@ import { SEGMENTS } from "@/lib/constants";
 import { formatCurrency, formatPercent, formatDate } from "@/lib/dates";
 import type { GrossProfitData, GrossProfitJob, RetailCostEntry } from "@/types";
 import {
+  Bar,
+  BarChart,
+  Cell,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
   ChevronDown,
   ChevronUp,
   Plus,
@@ -43,9 +52,9 @@ type SortField =
   | "jobName"
   | "dateCompleted"
   | "revenue"
-  | "supplierCost"
+  | "materialsCost"
   | "laborCost"
-  | "retailCost"
+  | "miscCost"
   | "totalCost"
   | "grossProfit"
   | "marginPercent";
@@ -66,8 +75,48 @@ function formatFullCurrency(value: number): string {
   return `$${value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
+function accuracyLabel(status: GrossProfitJob["accuracyStatus"]): string {
+  if (status === "accurate") return "Accurate";
+  if (status === "needs_review") return "Needs Review";
+  return "Not Final";
+}
+
+function accuracyClass(status: GrossProfitJob["accuracyStatus"]): string {
+  if (status === "accurate") return "text-[#3fb950] bg-[#3fb950]/10";
+  if (status === "needs_review") return "text-[#d29922] bg-[#d29922]/10";
+  return "text-[#8b949e] bg-[#30363d]/60";
+}
+
+function blockerLabel(value: string): string {
+  return value.replaceAll("_", " ");
+}
+
+function SortHeader({
+  field,
+  children,
+  onSort,
+  className = "",
+}: {
+  field: SortField;
+  children: React.ReactNode;
+  onSort: (field: SortField) => void;
+  className?: string;
+}) {
+  return (
+    <TableHead
+      className={`text-[#8b949e] cursor-pointer hover:text-[#e6edf3] select-none ${className}`}
+      onClick={() => onSort(field)}
+    >
+      <span className="flex items-center gap-1">
+        {children}
+        <ArrowUpDown className="h-3 w-3" />
+      </span>
+    </TableHead>
+  );
+}
+
 export default function GrossProfitPage() {
-  const [period, setPeriod] = useState("all");
+  const [period, setPeriod] = useState("last_60");
   const [segment, setSegment] = useState<string>("all");
   const [jobType, setJobType] = useState<string>("all");
   const [sortField, setSortField] = useState<SortField>("dateCompleted");
@@ -132,7 +181,7 @@ export default function GrossProfitPage() {
         ? (aVal as number) - (bVal as number)
         : (bVal as number) - (aVal as number);
     });
-  }, [data?.jobs, sortField, sortAsc, jobType]);
+  }, [data, sortField, sortAsc, jobType]);
 
   const toggleSort = useCallback(
     (field: SortField) => {
@@ -151,6 +200,9 @@ export default function GrossProfitPage() {
     const totalRevenue = sortedJobs.reduce((s, j) => s + j.revenue, 0);
     const totalCosts = sortedJobs.reduce((s, j) => s + j.totalCost, 0);
     const totalGrossProfit = totalRevenue - totalCosts;
+    const accurateJobCount = sortedJobs.filter((j) => j.accuracyStatus === "accurate").length;
+    const needsReviewJobCount = sortedJobs.filter((j) => j.accuracyStatus === "needs_review").length;
+    const notFinalJobCount = sortedJobs.filter((j) => j.accuracyStatus === "not_final").length;
     return {
       totalRevenue,
       totalCosts,
@@ -160,6 +212,13 @@ export default function GrossProfitPage() {
           ? Math.round(((totalGrossProfit / totalRevenue) * 100) * 10) / 10
           : 0,
       jobCount: sortedJobs.length,
+      accurateJobCount,
+      needsReviewJobCount,
+      notFinalJobCount,
+      accuracyPercent:
+        sortedJobs.length > 0
+          ? Math.round((accurateJobCount / sortedJobs.length) * 1000) / 10
+          : 0,
     };
   }, [sortedJobs]);
 
@@ -188,27 +247,15 @@ export default function GrossProfitPage() {
     queryClient.invalidateQueries({ queryKey: ["retail-costs"] });
   };
 
-  const SortHeader = ({
-    field,
-    children,
-    className = "",
-  }: {
-    field: SortField;
-    children: React.ReactNode;
-    className?: string;
-  }) => (
-    <TableHead
-      className={`text-[#8b949e] cursor-pointer hover:text-[#e6edf3] select-none ${className}`}
-      onClick={() => toggleSort(field)}
-    >
-      <span className="flex items-center gap-1">
-        {children}
-        <ArrowUpDown className="h-3 w-3" />
-      </span>
-    </TableHead>
-  );
-
   const summary = jobType === "all" ? data?.summary : filteredSummary;
+  const accuracyChartData = useMemo(() => {
+    const source = summary ?? filteredSummary;
+    return [
+      { name: "Accurate", value: source.accurateJobCount, fill: "#3fb950" },
+      { name: "Needs Review", value: source.needsReviewJobCount, fill: "#d29922" },
+      { name: "Not Final", value: source.notFinalJobCount, fill: "#8b949e" },
+    ];
+  }, [filteredSummary, summary]);
 
   return (
     <div>
@@ -219,7 +266,7 @@ export default function GrossProfitPage() {
             Gross Profit
           </h1>
           <p className="text-sm text-[#8b949e]">
-            Job-level profitability for completed &amp; paid jobs
+            Final GP accuracy for recent completed and close-out jobs
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -272,8 +319,13 @@ export default function GrossProfitPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-4 mb-8">
         {[
+          {
+            label: "Accurate",
+            value: isLoading ? null : `${summary?.accurateJobCount ?? 0}/${summary?.jobCount ?? 0}`,
+            colorClass: "text-[#3fb950]",
+          },
           {
             label: "Revenue",
             value: isLoading ? null : formatCurrency(summary?.totalRevenue ?? 0),
@@ -318,6 +370,98 @@ export default function GrossProfitPage() {
         ))}
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)] gap-6 mb-8">
+        <Card className="bg-[#161b22] border-[#30363d]">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+              GP Accuracy
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-[220px] w-full" />
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart
+                  layout="vertical"
+                  data={accuracyChartData}
+                  margin={{ top: 4, right: 24, bottom: 4, left: 12 }}
+                >
+                  <XAxis
+                    type="number"
+                    allowDecimals={false}
+                    tick={{ fill: "#8b949e", fontSize: 11 }}
+                    axisLine={{ stroke: "#30363d" }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={92}
+                    tick={{ fill: "#e6edf3", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <RechartsTooltip
+                    cursor={{ fill: "rgba(88,166,255,0.08)" }}
+                    contentStyle={{
+                      backgroundColor: "#161b22",
+                      border: "1px solid #30363d",
+                      borderRadius: 6,
+                      color: "#e6edf3",
+                    }}
+                    formatter={(value) => [`${value} jobs`, "Count"]}
+                  />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={30}>
+                    {accuracyChartData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#161b22] border-[#30363d]">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+              Accuracy Rules
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {[
+              {
+                label: "Accurate",
+                text: "Final/paid revenue and no GP blockers",
+                dotClass: "bg-[#3fb950]",
+                textClass: "text-[#3fb950]",
+              },
+              {
+                label: "Needs Review",
+                text: "Final revenue but work orders or supplier costs need review",
+                dotClass: "bg-[#d29922]",
+                textClass: "text-[#d29922]",
+              },
+              {
+                label: "Not Final",
+                text: "Invoice or job is not fully paid/closed yet",
+                dotClass: "bg-[#8b949e]",
+                textClass: "text-[#8b949e]",
+              },
+            ].map((item) => (
+              <div key={item.label} className="flex items-start gap-3">
+                <span className={`mt-1 h-2.5 w-2.5 rounded-full ${item.dotClass}`} />
+                <div>
+                  <p className={`text-sm font-medium ${item.textClass}`}>{item.label}</p>
+                  <p className="text-xs text-[#8b949e]">{item.text}</p>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Job Table */}
       <Card className="bg-[#161b22] border-[#30363d]">
         <CardHeader>
@@ -341,29 +485,26 @@ export default function GrossProfitPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-[#30363d] hover:bg-transparent">
-                    <SortHeader field="dateCompleted">Closed</SortHeader>
-                    <SortHeader field="jobName">Job</SortHeader>
+                    <SortHeader field="dateCompleted" onSort={toggleSort}>Closed</SortHeader>
+                    <SortHeader field="jobName" onSort={toggleSort}>Job</SortHeader>
                     <TableHead className="text-[#8b949e]">Job Type</TableHead>
                     <TableHead className="text-[#8b949e]">Record Type</TableHead>
-                    <SortHeader field="revenue" className="text-right">
+                    <TableHead className="text-[#8b949e]">Accuracy</TableHead>
+                    <SortHeader field="revenue" onSort={toggleSort} className="text-right">
                       Revenue
                     </SortHeader>
-                    <SortHeader field="supplierCost" className="text-right">
-                      Supplier
-                    </SortHeader>
-                    <SortHeader field="laborCost" className="text-right">
+                    <SortHeader field="materialsCost" onSort={toggleSort} className="text-right">Materials</SortHeader>
+                    <SortHeader field="laborCost" onSort={toggleSort} className="text-right">
                       Labor
                     </SortHeader>
-                    <SortHeader field="retailCost" className="text-right">
-                      Retail
-                    </SortHeader>
-                    <SortHeader field="totalCost" className="text-right">
+                    <SortHeader field="miscCost" onSort={toggleSort} className="text-right">Misc Costs</SortHeader>
+                    <SortHeader field="totalCost" onSort={toggleSort} className="text-right">
                       Total Cost
                     </SortHeader>
-                    <SortHeader field="grossProfit" className="text-right">
+                    <SortHeader field="grossProfit" onSort={toggleSort} className="text-right">
                       Profit
                     </SortHeader>
-                    <SortHeader field="marginPercent" className="text-right">
+                    <SortHeader field="marginPercent" onSort={toggleSort} className="text-right">
                       Margin
                     </SortHeader>
                     <TableHead className="w-8" />
@@ -437,12 +578,19 @@ export default function GrossProfitPage() {
                               <span className="text-xs text-[#484f58]">—</span>
                             )}
                           </TableCell>
+                          <TableCell>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap ${accuracyClass(job.accuracyStatus)}`}
+                            >
+                              {accuracyLabel(job.accuracyStatus)}
+                            </span>
+                          </TableCell>
                           <TableCell className="text-right text-[#e6edf3]">
                             {formatFullCurrency(job.revenue)}
                           </TableCell>
                           <TableCell className="text-right text-[#8b949e]">
-                            {job.supplierCost > 0
-                              ? formatFullCurrency(job.supplierCost)
+                            {job.materialsCost > 0
+                              ? formatFullCurrency(job.materialsCost)
                               : "—"}
                           </TableCell>
                           <TableCell className="text-right text-[#8b949e]">
@@ -451,8 +599,8 @@ export default function GrossProfitPage() {
                               : "—"}
                           </TableCell>
                           <TableCell className="text-right text-[#8b949e]">
-                            {job.retailCost > 0
-                              ? formatFullCurrency(job.retailCost)
+                            {job.miscCost > 0
+                              ? formatFullCurrency(job.miscCost)
                               : "—"}
                           </TableCell>
                           <TableCell className="text-right text-[#e6edf3]">
@@ -485,7 +633,7 @@ export default function GrossProfitPage() {
                             key={`${job.jobJnid}-detail`}
                             className="border-[#30363d] hover:bg-transparent"
                           >
-                            <TableCell colSpan={12} className="p-0">
+                            <TableCell colSpan={13} className="p-0">
                               <ExpandedDetail
                                 job={job}
                                 retailCosts={retailCosts?.costs ?? []}
@@ -514,14 +662,14 @@ export default function GrossProfitPage() {
         </div>
       )}
 
-      {/* Add Retail Cost Dialog */}
+      {/* Add Misc Cost Dialog */}
       <Dialog
         open={!!addCostJob}
         onOpenChange={(open) => !open && setAddCostJob(null)}
       >
         <DialogContent className="bg-[#161b22] border-[#30363d] text-[#e6edf3]">
           <DialogHeader>
-            <DialogTitle>Add Retail/Misc Cost</DialogTitle>
+            <DialogTitle>Add Misc Cost</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div>
@@ -637,9 +785,9 @@ function ExpandedDetail({
           </h4>
           <div className="space-y-2">
             {[
-              { label: "Supplier Materials", value: job.supplierCost },
+              { label: "Materials", value: job.materialsCost },
               { label: "Labor (Work Orders)", value: job.laborCost },
-              { label: "Retail/Misc", value: job.retailCost },
+              { label: "Misc Costs", value: job.miscCost },
             ].map((item) => (
               <div
                 key={item.label}
@@ -695,11 +843,64 @@ function ExpandedDetail({
           </div>
         </div>
 
-        {/* Retail Costs */}
+        {/* Accuracy */}
         <div>
+          <h4 className="text-xs font-semibold text-[#8b949e] uppercase tracking-wider mb-3">
+            Accuracy
+          </h4>
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-[#8b949e]">Status</span>
+              <span
+                className={`px-1.5 py-0.5 rounded text-xs font-medium ${accuracyClass(job.accuracyStatus)}`}
+              >
+                {accuracyLabel(job.accuracyStatus)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[#8b949e]">GP confidence</span>
+              <span className="text-[#e6edf3] capitalize">
+                {blockerLabel(job.gpConfidence)}
+              </span>
+            </div>
+            {job.gpBlockers.length > 0 && (
+              <div>
+                <span className="text-[#8b949e]">Blockers</span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {job.gpBlockers.map((blocker) => (
+                    <span
+                      key={blocker}
+                      className="rounded bg-[#d29922]/10 px-1.5 py-0.5 text-xs text-[#d29922]"
+                    >
+                      {blockerLabel(blocker)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {job.systemCostWarnings.length > 0 && (
+              <div>
+                <span className="text-[#8b949e]">Warnings</span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {job.systemCostWarnings.map((warning) => (
+                    <span
+                      key={warning}
+                      className="rounded bg-[#30363d] px-1.5 py-0.5 text-xs text-[#8b949e]"
+                    >
+                      {blockerLabel(warning)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Misc Costs */}
+        <div className="md:col-span-3">
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-xs font-semibold text-[#8b949e] uppercase tracking-wider">
-              Retail Costs
+              Misc Costs
             </h4>
             <button
               onClick={(e) => {
@@ -713,7 +914,7 @@ function ExpandedDetail({
           </div>
           {retailCosts.length === 0 ? (
             <p className="text-xs text-[#484f58]">
-              No retail costs entered yet.
+              No misc costs entered yet.
             </p>
           ) : (
             <div className="space-y-2">
