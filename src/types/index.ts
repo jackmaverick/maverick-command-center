@@ -425,6 +425,7 @@ export interface GrossProfitJob {
   jobJnid: string;
   jobName: string;
   address: string | null;
+  city: string | null;
   segment: string;
   salesRepName: string | null;
   statusName: string | null;

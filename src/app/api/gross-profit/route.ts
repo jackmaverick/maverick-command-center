@@ -47,6 +47,7 @@ interface JobRow {
   jnid: string;
   name: string;
   address_line1: string | null;
+  city: string | null;
   status_name: string | null;
   segment: string;
   cf_string_24: string | null;
@@ -120,6 +121,7 @@ export async function GET(request: NextRequest) {
         j.jnid,
         j.name,
         j.address_line1,
+        j.city,
         j.status_name,
         (${SEGMENT_SQL}) AS segment,
         j.cf_string_24,
@@ -237,6 +239,7 @@ export async function GET(request: NextRequest) {
       jobJnid: row.jnid,
       jobName: row.name,
       address: row.address_line1,
+      city: row.city,
       segment: row.segment,
       salesRepName: row.sales_rep_name,
       statusName: row.status_name,

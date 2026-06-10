@@ -540,9 +540,9 @@ export default function GrossProfitPage() {
                               >
                                 {job.jobName}
                               </a>
-                              {job.address && (
+                              {(job.address || job.city) && (
                                 <div className="text-xs text-[#8b949e] truncate">
-                                  {job.address}
+                                  {[job.address, job.city].filter(Boolean).join(", ")}
                                 </div>
                               )}
                             </div>
