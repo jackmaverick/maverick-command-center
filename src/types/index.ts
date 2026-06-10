@@ -435,6 +435,8 @@ export interface GrossProfitJob {
   laborCost: number;
   subcontractorCost: number;
   permitCost: number;
+  gafMeasurementCost: number;
+  firstMateMeasurementCost: number;
   miscCost: number;
   totalCost: number;
   grossProfit: number;

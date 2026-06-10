@@ -62,6 +62,8 @@ interface JobRow {
   labor_cost: string | null;
   subcontractor_cost: string | null;
   permit_cost: string | null;
+  gaf_measurement_cost: string | null;
+  first_mate_measurement_cost: string | null;
   misc_cost: string | null;
   total_cost: string | null;
   gross_profit: string | null;
@@ -136,6 +138,8 @@ export async function GET(request: NextRequest) {
         COALESCE(gp.finalized_work_order_cost, 0) + COALESCE(gp.subcontractor_invoice_cost, 0) AS labor_cost,
         COALESCE(gp.subcontractor_invoice_cost, 0) AS subcontractor_cost,
         COALESCE(gp.permit_cost, COALESCE(gp.city_permit_cost, 0) + COALESCE(gp.hoa_permit_cost, 0)) AS permit_cost,
+        COALESCE(mc.gaf_measurement_cost, 0) AS gaf_measurement_cost,
+        COALESCE(mc.first_mate_measurement_cost, 0) AS first_mate_measurement_cost,
         COALESCE(gp.retail_misc_cost, 0)
           + COALESCE(gp.permit_cost, COALESCE(gp.city_permit_cost, 0) + COALESCE(gp.hoa_permit_cost, 0))
           + COALESCE(mc.measurement_cost, 0) AS misc_cost,
@@ -224,9 +228,10 @@ export async function GET(request: NextRequest) {
             ) AS has_first_mate_measurement
         )
         SELECT
+          CASE WHEN has_gaf_measurement THEN 35 ELSE 0 END AS gaf_measurement_cost,
+          CASE WHEN has_first_mate_measurement THEN 14 ELSE 0 END AS first_mate_measurement_cost,
           (CASE WHEN has_gaf_measurement THEN 35 ELSE 0 END)
-            + (CASE WHEN has_first_mate_measurement THEN 14 ELSE 0 END)
-            AS measurement_cost
+            + (CASE WHEN has_first_mate_measurement THEN 14 ELSE 0 END) AS measurement_cost
         FROM measurement_flags
       ) mc ON true
       WHERE ${whereClause}
@@ -249,6 +254,8 @@ export async function GET(request: NextRequest) {
       laborCost: money(row.labor_cost),
       subcontractorCost: money(row.subcontractor_cost),
       permitCost: money(row.permit_cost),
+      gafMeasurementCost: money(row.gaf_measurement_cost),
+      firstMateMeasurementCost: money(row.first_mate_measurement_cost),
       miscCost: money(row.misc_cost),
       totalCost: money(row.total_cost),
       grossProfit: money(row.gross_profit),

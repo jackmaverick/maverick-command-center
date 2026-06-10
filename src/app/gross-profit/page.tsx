@@ -775,6 +775,27 @@ function ExpandedDetail({
   onAddCost: () => void;
   onDeleteCost: (id: string) => void;
 }) {
+  const systemMiscCosts = [
+    {
+      id: "permit-costs",
+      label: "Permit costs",
+      description: "Captured permit fees",
+      amount: job.permitCost,
+    },
+    {
+      id: "gaf-measurement",
+      label: "GAF QuickMeasure",
+      description: "Measurement report",
+      amount: job.gafMeasurementCost,
+    },
+    {
+      id: "first-mate-measurement",
+      label: "First Mate AI measurement",
+      description: "Measurement report",
+      amount: job.firstMateMeasurementCost,
+    },
+  ].filter((cost) => cost.amount > 0);
+
   return (
     <div className="bg-[#0d1117] border-t border-[#30363d] px-6 py-4">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -912,12 +933,28 @@ function ExpandedDetail({
               <Plus className="h-3 w-3" /> Add
             </button>
           </div>
-          {retailCosts.length === 0 ? (
+          {systemMiscCosts.length === 0 && retailCosts.length === 0 ? (
             <p className="text-xs text-[#484f58]">
               No misc costs entered yet.
             </p>
           ) : (
             <div className="space-y-2">
+              {systemMiscCosts.map((cost) => (
+                <div
+                  key={cost.id}
+                  className="flex items-center justify-between text-sm"
+                >
+                  <div>
+                    <span className="text-[#8b949e]">{cost.label}</span>
+                    <span className="text-[#484f58] text-xs ml-2">
+                      {cost.description}
+                    </span>
+                  </div>
+                  <span className="text-[#e6edf3]">
+                    ${cost.amount.toFixed(2)}
+                  </span>
+                </div>
+              ))}
               {retailCosts.map((cost) => (
                 <div
                   key={cost.id}
