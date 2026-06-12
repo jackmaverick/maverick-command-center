@@ -188,6 +188,27 @@ export default function CashFlowPage() {
         )}
       </div>
 
+      <Card className="bg-[#161b22] border-[#30363d] mb-8">
+        <CardContent className="pt-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-[#e6edf3]">
+                Need the JobNimbus pipeline timing view?
+              </p>
+              <p className="text-xs text-[#8b949e] mt-1">
+                See expected cash by Retail, Insurance, Repairs, stuck money, timing curves, and conversion gates.
+              </p>
+            </div>
+            <a
+              href="/financial/pipeline-cashflow"
+              className="inline-flex w-fit items-center rounded-md border border-[#58a6ff]/30 bg-[#58a6ff]/10 px-3 py-2 text-xs font-medium text-[#58a6ff] hover:bg-[#58a6ff]/15"
+            >
+              Open Pipeline Cashflow
+            </a>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Forecast Chart */}
       <Card className="bg-[#161b22] border-[#30363d] mb-8">
         <CardHeader>

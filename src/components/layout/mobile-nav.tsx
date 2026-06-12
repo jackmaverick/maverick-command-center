@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
@@ -16,6 +15,8 @@ const navItems = [
   { href: "/sales", label: "Sales Performance" },
   { href: "/speed-to-lead", label: "Speed to Lead" },
   { href: "/job-types", label: "Job Types" },
+  { href: "/financial/cashflow", label: "Cash Flow" },
+  { href: "/financial/pipeline-cashflow", label: "Pipeline Cashflow" },
   { href: "/lead-sources", label: "Lead Sources" },
   { href: "/weekly-review", label: "Weekly Review" },
   { href: "/agents", label: "Agents" },
