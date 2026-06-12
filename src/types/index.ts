@@ -347,6 +347,7 @@ export interface CashFlowMetrics {
   currentCash: number;
   burnRate: number;
   runwayWeeks: number;
+  decision: CashFlowDecision;
   weeklyProjections: CashFlowWeek[];
   scenarios: {
     optimistic: CashFlowScenario;
@@ -354,6 +355,21 @@ export interface CashFlowMetrics {
     conservative: CashFlowScenario;
   };
   expectedCollections: ExpectedCollection[];
+}
+
+export interface CashFlowDecision {
+  safetyFloor: number;
+  availableToSpend: number;
+  minimumProjectedCash: number;
+  netCashOverHorizon: number;
+  weightedCollections: number;
+  totalCollections: number;
+  staleCollections: number;
+  staleWeightedCollections: number;
+  pipelineWeighted: number;
+  monthlyOutflowModel: number;
+  dataFreshness: string;
+  sourceNotes: string[];
 }
 
 export interface CashFlowWeek {

@@ -62,12 +62,23 @@ export default function CashFlowPage() {
       return res.json();
     },
   });
+  const hasData = Boolean(data) && !isError;
 
   const activeProjections: CashFlowWeek[] =
     data?.scenarios[scenario]?.projections ?? data?.weeklyProjections ?? [];
 
   // Danger threshold: 2 weeks of burn
   const dangerThreshold = (data?.burnRate ?? 0) / 2;
+  const decision = data?.decision;
+  const staleCollectionRate = decision?.totalCollections
+    ? Math.round((decision.staleCollections / decision.totalCollections) * 100)
+    : 0;
+  const availableTone =
+    (decision?.availableToSpend ?? 0) <= 0
+      ? "text-[#f85149]"
+      : (decision?.availableToSpend ?? 0) < 50000
+        ? "text-[#d29922]"
+        : "text-[#3fb950]";
 
   return (
     <div>
@@ -101,6 +112,73 @@ export default function CashFlowPage() {
         </div>
       </div>
 
+      {/* Decision strip */}
+      <Card className="bg-[#0d1117] border-[#30363d] mb-6">
+        <CardContent className="p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b949e] mb-2">
+                Decision number
+              </p>
+              <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+                {isLoading ? (
+                  <Skeleton className="h-10 w-36 bg-[#21262d]" />
+                ) : !hasData ? (
+                  <p className="text-3xl font-bold text-[#8b949e]">Unavailable</p>
+                ) : (
+                  <p className={`text-4xl font-bold ${availableTone}`}>
+                    {formatCurrency(decision?.availableToSpend ?? 0)}
+                  </p>
+                )}
+                <p className="text-sm text-[#8b949e] pb-1">
+                  available to spend while protecting a{" "}
+                  <span className="text-[#e6edf3]">
+                    {formatCurrency(decision?.safetyFloor ?? 330000)}
+                  </span>{" "}
+                  floor through the selected horizon.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4 lg:min-w-[520px]">
+              <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-3">
+                <p className="text-[#8b949e]">Low point</p>
+                <p className="mt-1 font-mono text-lg font-semibold text-[#e6edf3]">
+                  {hasData ? formatCurrency(decision?.minimumProjectedCash ?? 0) : "—"}
+                </p>
+              </div>
+              <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-3">
+                <p className="text-[#8b949e]">Net {horizon}d</p>
+                <p
+                  className={`mt-1 font-mono text-lg font-semibold ${
+                    (decision?.netCashOverHorizon ?? 0) >= 0
+                      ? "text-[#3fb950]"
+                      : "text-[#f85149]"
+                  }`}
+                >
+                  {hasData ? formatCurrency(decision?.netCashOverHorizon ?? 0) : "—"}
+                </p>
+              </div>
+              <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-3">
+                <p className="text-[#8b949e]">Weighted AR</p>
+                <p className="mt-1 font-mono text-lg font-semibold text-[#3fb950]">
+                  {hasData ? formatCurrency(decision?.weightedCollections ?? 0) : "—"}
+                </p>
+              </div>
+              <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-3">
+                <p className="text-[#8b949e]">AR over 30d</p>
+                <p
+                  className={`mt-1 font-mono text-lg font-semibold ${
+                    staleCollectionRate > 25 ? "text-[#d29922]" : "text-[#e6edf3]"
+                  }`}
+                >
+                  {hasData ? `${staleCollectionRate}%` : "—"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <Card className="bg-[#161b22] border-[#30363d]">
@@ -112,6 +190,8 @@ export default function CashFlowPage() {
           <CardContent>
             {isLoading ? (
               <Skeleton className="h-8 w-24 bg-[#21262d]" />
+            ) : !hasData ? (
+              <p className="text-2xl font-bold text-[#8b949e]">—</p>
             ) : (
               <p className="text-2xl font-bold text-[#3fb950]">
                 {formatCurrency(data?.currentCash ?? 0)}
@@ -129,6 +209,8 @@ export default function CashFlowPage() {
           <CardContent>
             {isLoading ? (
               <Skeleton className="h-8 w-24 bg-[#21262d]" />
+            ) : !hasData ? (
+              <p className="text-2xl font-bold text-[#8b949e]">—</p>
             ) : (
               <p className="text-2xl font-bold text-[#f85149]">
                 {formatCurrency(data?.burnRate ?? 0)}
@@ -146,6 +228,8 @@ export default function CashFlowPage() {
           <CardContent>
             {isLoading ? (
               <Skeleton className="h-8 w-24 bg-[#21262d]" />
+            ) : !hasData ? (
+              <p className="text-2xl font-bold text-[#8b949e]">—</p>
             ) : (
               <p
                 className={`text-2xl font-bold ${
@@ -290,11 +374,67 @@ export default function CashFlowPage() {
         </CardContent>
       </Card>
 
+      <div className="grid grid-cols-1 gap-4 mb-8 lg:grid-cols-3">
+        <Card className="bg-[#161b22] border-[#30363d] lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+              Cash Flow Model Inputs
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+              <div>
+                <p className="text-[#8b949e]">Total AR</p>
+                <p className="mt-1 font-mono text-base text-[#e6edf3]">
+                  {hasData ? formatCurrency(decision?.totalCollections ?? 0) : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-[#8b949e]">Pipeline weighted</p>
+                <p className="mt-1 font-mono text-base text-[#e6edf3]">
+                  {hasData ? formatCurrency(decision?.pipelineWeighted ?? 0) : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-[#8b949e]">Monthly outflow</p>
+                <p className="mt-1 font-mono text-base text-[#e6edf3]">
+                  {hasData ? formatCurrency(decision?.monthlyOutflowModel ?? 0) : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-[#8b949e]">Stale AR weighted</p>
+                <p className="mt-1 font-mono text-base text-[#d29922]">
+                  {hasData ? formatCurrency(decision?.staleWeightedCollections ?? 0) : "—"}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#161b22] border-[#30363d]">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+              Source Notes
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2 text-xs text-[#8b949e]">
+              {(decision?.sourceNotes ?? []).map((note) => (
+                <li key={note} className="flex gap-2">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#58a6ff]" />
+                  <span>{note}</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Expected Collections Table */}
       <Card className="bg-[#161b22] border-[#30363d]">
         <CardHeader>
           <CardTitle className="text-sm font-semibold text-[#e6edf3]">
-            Expected Collections (Next 30 Days)
+            Top Cash Collections (Open Invoices)
           </CardTitle>
         </CardHeader>
         <CardContent>

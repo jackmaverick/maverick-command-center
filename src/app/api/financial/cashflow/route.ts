@@ -6,14 +6,12 @@ import { toUnixSeconds } from "@/lib/dates";
 import {
   addWeeks,
   startOfWeek,
-  endOfWeek,
   subMonths,
   format,
 } from "date-fns";
 import type {
   CashFlowMetrics,
   CashFlowWeek,
-  CashFlowScenario,
   ExpectedCollection,
 } from "@/types";
 
@@ -64,8 +62,8 @@ export async function GET(request: NextRequest) {
       pipelineJobs,
       // QBO outstanding invoices
       qboOutstanding,
-      // Material costs (projected outflows)
-      recentMaterialCosts,
+      // Recent JobNimbus invoice activity (diagnostic, not customer cash balance)
+      recentInvoiceActivity,
     ] = await Promise.all([
       // 1. Bank account balances from QBO
       qboQuery<{
@@ -132,7 +130,7 @@ export async function GET(request: NextRequest) {
          WHERE j.is_active = true
            AND j.is_closed = false
            AND j.is_archived = false
-           AND j.status_name IN ('Estimating', 'Estimate Sent', 'Sold Job', 'Production Ready', 'In Progress')
+           AND j.status_name IN ('Appt Ran', 'Estimating', 'Estimate Sent', 'Sold Job', 'Production Ready', 'In Progress')
            AND j.approved_estimate_total > 0`
       ),
 
@@ -147,7 +145,7 @@ export async function GET(request: NextRequest) {
         TxnDate: string;
       }>("SELECT * FROM Invoice WHERE Balance > '0'"),
 
-      // 6. Recent material costs (trailing 3 months avg for projected outflows)
+      // 6. Recent JobNimbus invoice activity (trailing 3 months avg for model diagnostics)
       query<{ avg_monthly: string }>(
         `SELECT COALESCE(AVG(monthly_cost), 0)::text AS avg_monthly
          FROM (
@@ -230,6 +228,7 @@ export async function GET(request: NextRequest) {
     // Pipeline weighted inflows (stage-based probability)
     const stageWeights: Record<string, number> = {
       Estimating: 0.15,
+      "Appt Ran": 0.10,
       "Estimate Sent": 0.25,
       "Sold Job": 0.7,
       "Production Ready": 0.85,
@@ -247,9 +246,9 @@ export async function GET(request: NextRequest) {
       0
     );
 
-    // 4. Projected outflows from material costs
-    const avgMonthlyMaterials = parseFloat(
-      recentMaterialCosts[0]?.avg_monthly ?? "0"
+    // 4. Diagnostic invoice activity from JobNimbus
+    const avgMonthlyInvoiceActivity = parseFloat(
+      recentInvoiceActivity[0]?.avg_monthly ?? "0"
     );
 
     // ── Build weekly projections ──────────────────────────────────────────
@@ -294,6 +293,29 @@ export async function GET(request: NextRequest) {
     const runwayWeeks =
       weeklyBurn > 0 ? Math.round((currentCash / weeklyBurn) * 10) / 10 : 999;
 
+    // Jack/Brent decision model: show the spendable cash after protecting the safety floor.
+    // Until the sheet/settings layer is wired into this route, keep the same $330k floor from
+    // the original cash-flow planning docs and make the assumption visible in the UI.
+    const safetyFloor = 330000;
+    const realisticEndingCash =
+      realisticProjections[realisticProjections.length - 1]?.runningBalance ??
+      currentCash;
+    const minimumProjectedCash = Math.min(
+      currentCash,
+      ...realisticProjections.map((w) => w.runningBalance)
+    );
+    const availableToSpend = Math.max(0, minimumProjectedCash - safetyFloor);
+    const netCashOverHorizon = realisticEndingCash - currentCash;
+    const totalCollections = expectedCollections.reduce((sum, c) => sum + c.amount, 0);
+    const staleCollections = expectedCollections.reduce(
+      (sum, c) => sum + (c.daysOutstanding > 30 ? c.amount : 0),
+      0
+    );
+    const staleWeightedCollections = expectedCollections.reduce(
+      (sum, c) => sum + (c.daysOutstanding > 30 ? c.weightedAmount : 0),
+      0
+    );
+
     function calcScenarioRunway(projections: CashFlowWeek[]): number {
       for (let i = 0; i < projections.length; i++) {
         if (projections[i].runningBalance <= 0) return i + 1;
@@ -305,6 +327,27 @@ export async function GET(request: NextRequest) {
       currentCash: Math.round(currentCash),
       burnRate: Math.round(burnRate),
       runwayWeeks,
+      decision: {
+        safetyFloor,
+        availableToSpend: Math.round(availableToSpend),
+        minimumProjectedCash: Math.round(minimumProjectedCash),
+        netCashOverHorizon: Math.round(netCashOverHorizon),
+        weightedCollections: Math.round(totalWeightedInflows),
+        totalCollections: Math.round(totalCollections),
+        staleCollections: Math.round(staleCollections),
+        staleWeightedCollections: Math.round(staleWeightedCollections),
+        pipelineWeighted: Math.round(pipelineInflows),
+        monthlyOutflowModel: Math.round(burnRate),
+        dataFreshness: now.toISOString(),
+        sourceNotes: [
+          "Cash balance from active QuickBooks bank accounts",
+          "Collections from open JobNimbus invoices, probability-weighted by age and segment",
+          `QuickBooks open invoice cross-check returned ${qboOutstanding.length} rows`,
+          `Recent JobNimbus invoice activity averages ${Math.round(avgMonthlyInvoiceActivity).toLocaleString()} per month`,
+          "Pipeline uses current open JobNimbus estimate value with conservative stage weights",
+          "Safety floor defaults to $330k until the editable cash-flow settings sheet is connected",
+        ],
+      },
       weeklyProjections: realisticProjections,
       scenarios: {
         optimistic: {
