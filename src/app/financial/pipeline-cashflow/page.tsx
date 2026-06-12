@@ -664,7 +664,7 @@ export default function PipelineCashflowPage() {
                 explanation="For each status gate, Reached is jobs that hit that gate out of the cohort. Rate = reached ÷ cohort. This is historical JobNimbus movement, not a current pipeline dollar number."
               />
             </CardTitle>
-            <p className="mt-1 text-xs text-[#8b949e]">Formerly labeled Conversion Gate Matrix. That name was doing nobody any favors.</p>
+            <p className="mt-1 text-xs text-[#8b949e]">Historical status-gate movement by segment, in normal English instead of dashboard goblin language.</p>
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-72 w-full bg-[#21262d]" /> : (
