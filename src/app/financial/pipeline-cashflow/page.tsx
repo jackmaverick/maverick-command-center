@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/InfoTooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/dates";
 
@@ -136,6 +137,39 @@ type PipelineCashflowData = {
   }[];
 };
 
+type OperatingExpensesData = {
+  generatedAt: string;
+  source: {
+    sheetId: string;
+    tab: string;
+    range: string;
+    url: string;
+  };
+  summary: {
+    totalMonthly: number;
+    totalAnnualized: number;
+    expenseCount: number;
+    highConfidenceCount: number;
+  };
+  byCategory: {
+    category: string;
+    monthlyAmount: number;
+    percentOfTotal: number;
+    rows: number;
+  }[];
+  topExpenses: {
+    name: string;
+    category: string;
+    amount: number;
+    monthlyAmount: number;
+    percentOfTotal: number | null;
+    frequency: string;
+    confidence: string;
+    notes: string;
+  }[];
+  notes: string[];
+};
+
 const horizonLabels: Record<Horizon, string> = {
   next30: "30 days",
   next60: "60 days",
@@ -215,6 +249,19 @@ export default function PipelineCashflowPage() {
       return body;
     },
     refetchInterval: 60_000,
+  });
+
+  const { data: operatingExpenses, isLoading: opexLoading, isError: opexError } = useQuery<OperatingExpensesData>({
+    queryKey: ["pipeline-cashflow-operating-expenses"],
+    queryFn: async () => {
+      const res = await fetch("/api/financial/pipeline-cashflow/operating-expenses");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.error ?? "Failed to fetch operating expenses");
+      }
+      return body;
+    },
+    refetchInterval: 5 * 60_000,
   });
 
   const segmentChart = useMemo(() => {
@@ -302,7 +349,12 @@ export default function PipelineCashflowPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <Card className="bg-[#161b22] border-[#30363d] md:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">Post-sold Expected Cash, {horizonLabels[horizon]}</CardTitle>
+            <CardTitle className="text-xs font-medium text-[#8b949e]">
+              <InfoTooltip
+                label={`Post-sold Expected Cash, ${horizonLabels[horizon]}`}
+                explanation="Weighted AR plus signed/post-sold open work for the selected horizon. Invoiced jobs are counted through AR so the same money is not counted twice."
+              />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-9 w-40 bg-[#21262d]" /> : (
@@ -315,7 +367,12 @@ export default function PipelineCashflowPage() {
         </Card>
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">Weighted AR</CardTitle>
+            <CardTitle className="text-xs font-medium text-[#8b949e]">
+              <InfoTooltip
+                label="Weighted AR"
+                explanation="Open invoice balances, weighted by invoice age. Newer invoices get higher collection weight; older AR is discounted because it is less reliable cash."
+              />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-8 w-24 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#58a6ff]">{formatCurrency(data?.summary.arWeighted ?? 0)}</p>}
@@ -324,7 +381,12 @@ export default function PipelineCashflowPage() {
         </Card>
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">Excluded Pre-sold Pipeline</CardTitle>
+            <CardTitle className="text-xs font-medium text-[#8b949e]">
+              <InfoTooltip
+                label="Excluded Pre-sold Pipeline"
+                explanation="Estimate Sent and Estimating dollars shown as context only. They are deliberately excluded from expected cash until the job is signed/post-sold, because estimates are not payroll money."
+              />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-8 w-24 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#d29922]">{formatCurrency(data?.summary.estimatePipelineValue ?? 0)}</p>}
@@ -335,12 +397,95 @@ export default function PipelineCashflowPage() {
 
       <Card className="bg-[#161b22] border-[#30363d] mb-8">
         <CardHeader>
+          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div>
+              <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+                <InfoTooltip
+                  label="Monthly Operating Expenses"
+                  explanation="Pulled read-only from the Recurring Expenses tab in the cash-flow Google Sheet. Amounts are normalized to monthly run-rate using the Frequency column. This is forecast input, not QBO/bank actuals yet."
+                />
+              </CardTitle>
+              <p className="mt-1 text-xs text-[#8b949e]">
+                Source: Recurring Expenses tab. Edit that sheet tab when Brent/Jack correct the numbers.
+              </p>
+            </div>
+            {operatingExpenses?.source.url && (
+              <a href={operatingExpenses.source.url} target="_blank" rel="noreferrer" className="text-xs text-[#58a6ff] hover:underline">
+                Open sheet tab
+              </a>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {opexLoading ? (
+            <Skeleton className="h-72 w-full bg-[#21262d]" />
+          ) : opexError || !operatingExpenses ? (
+            <div className="rounded-lg border border-[#d29922]/30 bg-[#d29922]/10 p-4 text-sm text-[#d29922]">
+              Operating-expense sheet read is not configured in this environment yet. The page is ready for it, but Vercel needs the Google service-account JSON env var.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
+              <div className="xl:col-span-2 space-y-3">
+                <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
+                  <p className="text-[11px] uppercase tracking-wide text-[#8b949e]">Monthly run-rate</p>
+                  <p className="mt-1 text-3xl font-bold text-[#e6edf3]">{formatCurrency(operatingExpenses.summary.totalMonthly)}</p>
+                  <p className="mt-1 text-xs text-[#8b949e]">
+                    {formatCurrency(operatingExpenses.summary.totalAnnualized)} annualized • {operatingExpenses.summary.expenseCount} rows • {operatingExpenses.summary.highConfidenceCount} high-confidence
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {operatingExpenses.byCategory.slice(0, 6).map((category) => (
+                    <div key={category.category} className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="truncate text-xs font-medium text-[#e6edf3]">{category.category}</p>
+                        <p className="font-mono text-xs text-[#8b949e]">{category.percentOfTotal}%</p>
+                      </div>
+                      <p className="mt-1 font-mono text-sm text-[#3fb950]">{formatCurrency(category.monthlyAmount)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="xl:col-span-3 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-[#30363d] text-[#8b949e]">
+                      <th className="text-left py-2 pr-2 font-medium">Expense</th>
+                      <th className="text-left py-2 px-2 font-medium">Category</th>
+                      <th className="text-right py-2 px-2 font-medium">Monthly</th>
+                      <th className="text-left py-2 pl-2 font-medium">Confidence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {operatingExpenses.topExpenses.map((row) => (
+                      <tr key={`${row.category}-${row.name}`} className="border-b border-[#21262d] hover:bg-[#21262d]/50">
+                        <td className="py-2 pr-2 text-[#e6edf3]">
+                          <div>{row.name}</div>
+                          {row.notes && <div className="mt-0.5 text-[11px] text-[#8b949e]">{row.notes}</div>}
+                        </td>
+                        <td className="py-2 px-2 text-[#8b949e]">{row.category}</td>
+                        <td className="py-2 px-2 text-right font-mono text-[#e6edf3]">{formatCurrency(row.monthlyAmount)}</td>
+                        <td className="py-2 pl-2 text-[#8b949e] capitalize">{row.confidence}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="mt-3 text-xs text-[#8b949e]">
+                  Accuracy note: these are planned recurring expenses from the sheet, not bank/QBO actuals. Good enough for planning once Brent validates the tab, not gospel carved into a spreadsheet-shaped tablet.
+                </p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="bg-[#161b22] border-[#30363d] mb-8">
+        <CardHeader>
           <CardTitle className="text-sm font-semibold text-[#e6edf3]">Reliability Monitor</CardTitle>
         </CardHeader>
         <CardContent>
           {healthLoading ? (
             <Skeleton className="h-28 w-full bg-[#21262d]" />
-          ) : !health ? (
+          ) : !health || !health.freshness || !health.reconciliation || !health.classification || !health.instantAccuracy ? (
             <p className="text-sm text-[#f85149]">Monitor unavailable. The cash number may still load, but trust drops until health checks return.</p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -433,7 +578,12 @@ export default function PipelineCashflowPage() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader>
-            <CardTitle className="text-sm font-semibold text-[#e6edf3]">Pipeline Dollars by Status</CardTitle>
+            <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+              <InfoTooltip
+                label="Pipeline Dollars by Status"
+                explanation="Dollar value by current JobNimbus status. Raw value uses the highest job-level rollup available: approved invoice due, approved invoice total, approved estimate total, parent approved invoice/estimate, latest invoice, or latest estimate. The weighted column applies the selected 30/60/90-day cash probability. Multiple or voided estimates depend on the JobNimbus/Supabase job rollup being current, so row-level estimate selection is the next accuracy upgrade."
+              />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-72 w-full bg-[#21262d]" /> : (
@@ -467,7 +617,12 @@ export default function PipelineCashflowPage() {
 
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader>
-            <CardTitle className="text-sm font-semibold text-[#e6edf3]">Timing Curves</CardTitle>
+            <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+              <InfoTooltip
+                label="Timing Stats"
+                explanation="Historical timing between JobNimbus status gates. N is sample size, Median is the middle job, and P75 means 75% of jobs moved by that many days. P75 is the better operations threshold because averages get weird fast."
+              />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-72 w-full bg-[#21262d]" /> : (
@@ -500,35 +655,16 @@ export default function PipelineCashflowPage() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader>
-            <CardTitle className="text-sm font-semibold text-[#e6edf3]">Stuck Money</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-72 w-full bg-[#21262d]" /> : !data?.stuckMoney.length ? (
-              <p className="text-sm text-[#8b949e]">No high-value jobs are currently past the default p75 stage threshold.</p>
-            ) : (
-              <div className="space-y-2">
-                {data.stuckMoney.slice(0, 10).map((job) => (
-                  <a key={job.jobJnid} href={job.jobUrl} target="_blank" rel="noreferrer" className="block rounded-lg border border-[#30363d] bg-[#0d1117] p-3 hover:border-[#58a6ff]/50 transition-colors">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-[#e6edf3]">{job.jobNumber ? `#${job.jobNumber} ` : ""}{job.jobName}</p>
-                        <p className="text-xs text-[#8b949e] mt-1 capitalize">{displaySegment(job.segment)} • {job.statusName} • {job.daysInStatus}d in status</p>
-                      </div>
-                      <p className="text-sm font-mono text-[#3fb950] whitespace-nowrap">{formatCurrency(job.value)}</p>
-                    </div>
-                  </a>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="bg-[#161b22] border-[#30363d]">
-          <CardHeader>
-            <CardTitle className="text-sm font-semibold text-[#e6edf3]">Conversion Gate Matrix</CardTitle>
+            <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+              <InfoTooltip
+                label="Conversion Stats"
+                explanation="For each status gate, Reached is jobs that hit that gate out of the cohort. Rate = reached ÷ cohort. This is historical JobNimbus movement, not a current pipeline dollar number."
+              />
+            </CardTitle>
+            <p className="mt-1 text-xs text-[#8b949e]">Formerly labeled Conversion Gate Matrix. That name was doing nobody any favors.</p>
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-72 w-full bg-[#21262d]" /> : (

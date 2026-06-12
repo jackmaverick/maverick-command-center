@@ -419,6 +419,9 @@ export async function GET() {
         "JobNimbus/Supabase pipeline values are separate from QBO cash balance.",
         "This page now focuses on signed/post-sold open work: Sold Job/Fully Approved/Future Work, deductible/supplement/approval blockers, Production Ready, Scheduled, and In Production. Invoices are handled in AR and not counted again as pipeline.",
         "Estimate Sent and earlier pipeline is shown as excluded context, not included in expected cash.",
+        "Pipeline dollars use the highest JobNimbus/Supabase job rollup available: approved invoice due, approved invoice total, approved estimate total, parent approved invoice/estimate, latest invoice, or latest estimate.",
+        "If a job has multiple estimates or a voided/replaced estimate, the current page trusts the synced job rollup. Row-level estimate selection is the next accuracy upgrade before calling this accounting-grade.",
+        "Operating expenses are pulled separately from the Recurring Expenses tab in the cash-flow Google Sheet.",
         "Timing coverage begins with job_stage_history around 2026-01-21, so pre-2026 movement is not used.",
       ],
       summary: {
