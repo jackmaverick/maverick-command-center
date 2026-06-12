@@ -52,6 +52,12 @@ type ArRow = {
   over_30_due: string;
 };
 
+type StageCountRow = {
+  cash_stage: string;
+  job_count: string;
+  raw_value: string;
+};
+
 const CASHFLOW_COHORT_START = "2026-01-21";
 const JOBNIMBUS_BASE_URL = "https://app.jobnimbus.com/job/";
 
@@ -60,15 +66,20 @@ const STAGE_CASE = `
     WHEN j.status_name IN ('Lead', 'New', 'Storm Alert', 'Waiting on Claim', 'Claim Review') THEN 'lead'
     WHEN j.status_name IN ('Appointment Scheduled', 'Adjuster Appt Scheduled', 'Needs Rescheduling') THEN 'appointment'
     WHEN j.status_name IN ('Appt Ran', 'Adjuster Appt Ran') THEN 'appt_ran'
-    WHEN j.status_name IN ('Estimating', 'Scope Approval') THEN 'estimating'
+    WHEN j.status_name IN ('Estimating') THEN 'estimating'
     WHEN j.status_name IN ('Estimate Sent') THEN 'estimate_sent'
-    WHEN j.status_name IN ('Sold Job', 'Signed Contract', 'Contingency Signed', 'Fully Approved', 'Insurance Pending/Cont Skipped', 'Deductible Collected', 'Deductible Invoice Sent') THEN 'sold'
-    WHEN j.status_name IN ('Production Ready', 'Job Scheduled', 'City / HOA Approval', 'Pre Production Supplementing', 'Waiting on Supplements', 'In Production', 'In Progress', 'Project Review In Progress') THEN 'production'
+    WHEN j.status_name IN ('Sold Job', 'Fully Approved') THEN 'sold'
+    WHEN j.status_name IN ('Scope Approval', 'City / HOA Approval', 'Waiting on Homeowner') THEN 'approval'
+    WHEN j.status_name IN ('Production Ready') THEN 'production_ready'
+    WHEN j.status_name IN ('Job Scheduled') THEN 'scheduled'
+    WHEN j.status_name IN ('In Production', 'In Progress') THEN 'production'
     WHEN j.status_name IN ('Final Invoicing', 'Final Invoice Sent', 'Invoiced', 'Pending Final Payment', 'Close Out In Progress', 'Work Completed Approved', 'Repair Completed Approved', 'Job Completed', 'Job Close Out') THEN 'invoice'
     WHEN j.status_name = 'Paid & Closed' THEN 'paid'
     ELSE 'other'
   END
 `;
+
+const POST_SOLD_CASH_STAGES = "'sold','approval','production_ready','scheduled','production'";
 
 const VALUE_SQL = `
   GREATEST(
@@ -97,9 +108,10 @@ function round1(value: string | null | undefined): number | null {
 
 export async function GET() {
   try {
-    const [summaryRows, pipelineRows, timingRows, conversionRows, stuckRows, arRows] = await Promise.all([
+    const [summaryRows, pipelineRows, timingRows, conversionRows, stuckRows, arRows, stageCountRows] = await Promise.all([
       query<{
         active_pipeline_value: string;
+        active_job_count: string;
         expected_30: string;
         expected_60: string;
         expected_90: string;
@@ -135,36 +147,40 @@ export async function GET() {
             AND COALESCE(i.due, i.total - COALESCE(i.total_paid, 0)) > 0
         )
         SELECT
-          COALESCE(SUM(value) FILTER (WHERE cash_stage NOT IN ('other')), 0)::text AS active_pipeline_value,
+          COALESCE(SUM(value) FILTER (WHERE cash_stage IN (${POST_SOLD_CASH_STAGES}) AND value > 0), 0)::text AS active_pipeline_value,
+          COUNT(*) FILTER (WHERE cash_stage IN (${POST_SOLD_CASH_STAGES}))::text AS active_job_count,
           (SELECT ar_weighted FROM ar)::text AS ar_weighted,
           (SELECT ar_total FROM ar)::text AS ar_total,
           COALESCE(SUM(value) FILTER (WHERE cash_stage IN ('estimating','estimate_sent')), 0)::text AS estimate_pipeline_value,
-          COALESCE(SUM(value) FILTER (WHERE cash_stage IN ('sold','production','invoice')), 0)::text AS sold_pipeline_value,
+          COALESCE(SUM(value) FILTER (WHERE cash_stage IN (${POST_SOLD_CASH_STAGES}) AND value > 0), 0)::text AS sold_pipeline_value,
           (COALESCE((SELECT ar_weighted FROM ar), 0)
             + COALESCE(SUM(value * CASE
-                WHEN cash_stage = 'invoice' THEN 0.80
-                WHEN cash_stage = 'production' THEN 0.35
-                WHEN cash_stage = 'sold' AND segment = 'retail' THEN 0.30
-                WHEN cash_stage = 'sold' THEN 0.12
+                WHEN cash_stage = 'production' THEN 0.65
+                WHEN cash_stage = 'scheduled' THEN 0.45
+                WHEN cash_stage = 'production_ready' THEN 0.35
+                WHEN cash_stage = 'approval' THEN 0.20
+                WHEN cash_stage = 'sold' AND segment = 'retail' THEN 0.25
+                WHEN cash_stage = 'sold' THEN 0.10
                 ELSE 0
               END), 0))::text AS expected_30,
           (COALESCE((SELECT ar_weighted FROM ar), 0)
             + COALESCE(SUM(value * CASE
-                WHEN cash_stage = 'invoice' THEN 0.90
-                WHEN cash_stage = 'production' THEN 0.70
-                WHEN cash_stage = 'sold' AND segment = 'retail' THEN 0.60
-                WHEN cash_stage = 'sold' THEN 0.30
-                WHEN cash_stage = 'estimate_sent' AND segment = 'retail' THEN 0.12
+                WHEN cash_stage = 'production' THEN 0.85
+                WHEN cash_stage = 'scheduled' THEN 0.75
+                WHEN cash_stage = 'production_ready' THEN 0.65
+                WHEN cash_stage = 'approval' THEN 0.45
+                WHEN cash_stage = 'sold' AND segment = 'retail' THEN 0.55
+                WHEN cash_stage = 'sold' THEN 0.28
                 ELSE 0
               END), 0))::text AS expected_60,
           (COALESCE((SELECT ar_weighted FROM ar), 0)
             + COALESCE(SUM(value * CASE
-                WHEN cash_stage = 'invoice' THEN 0.95
-                WHEN cash_stage = 'production' THEN 0.85
+                WHEN cash_stage = 'production' THEN 0.92
+                WHEN cash_stage = 'scheduled' THEN 0.88
+                WHEN cash_stage = 'production_ready' THEN 0.82
+                WHEN cash_stage = 'approval' THEN 0.70
                 WHEN cash_stage = 'sold' AND segment = 'retail' THEN 0.78
                 WHEN cash_stage = 'sold' THEN 0.55
-                WHEN cash_stage = 'estimate_sent' AND segment = 'retail' THEN 0.25
-                WHEN cash_stage = 'estimate_sent' THEN 0.10
                 ELSE 0
               END), 0))::text AS expected_90
         FROM open_jobs
@@ -186,35 +202,42 @@ export async function GET() {
           COALESCE(SUM(value), 0)::text AS raw_value,
           COALESCE(SUM(value * CASE
             WHEN cash_stage = 'invoice' THEN 0.80
-            WHEN cash_stage = 'production' THEN 0.35
-            WHEN cash_stage = 'sold' AND segment = 'retail' THEN 0.30
-            WHEN cash_stage = 'sold' THEN 0.12
+            WHEN cash_stage = 'production' THEN 0.65
+            WHEN cash_stage = 'scheduled' THEN 0.45
+            WHEN cash_stage = 'production_ready' THEN 0.35
+            WHEN cash_stage = 'approval' THEN 0.20
+            WHEN cash_stage = 'sold' AND segment = 'retail' THEN 0.25
+            WHEN cash_stage = 'sold' THEN 0.10
             ELSE 0
           END), 0)::text AS weighted_30,
           COALESCE(SUM(value * CASE
             WHEN cash_stage = 'invoice' THEN 0.90
-            WHEN cash_stage = 'production' THEN 0.70
-            WHEN cash_stage = 'sold' AND segment = 'retail' THEN 0.60
-            WHEN cash_stage = 'sold' THEN 0.30
-            WHEN cash_stage = 'estimate_sent' AND segment = 'retail' THEN 0.12
+            WHEN cash_stage = 'production' THEN 0.85
+            WHEN cash_stage = 'scheduled' THEN 0.75
+            WHEN cash_stage = 'production_ready' THEN 0.65
+            WHEN cash_stage = 'approval' THEN 0.45
+            WHEN cash_stage = 'sold' AND segment = 'retail' THEN 0.55
+            WHEN cash_stage = 'sold' THEN 0.28
             ELSE 0
           END), 0)::text AS weighted_60,
           COALESCE(SUM(value * CASE
             WHEN cash_stage = 'invoice' THEN 0.95
-            WHEN cash_stage = 'production' THEN 0.85
+            WHEN cash_stage = 'production' THEN 0.92
+            WHEN cash_stage = 'scheduled' THEN 0.88
+            WHEN cash_stage = 'production_ready' THEN 0.82
+            WHEN cash_stage = 'approval' THEN 0.70
             WHEN cash_stage = 'sold' AND segment = 'retail' THEN 0.78
             WHEN cash_stage = 'sold' THEN 0.55
-            WHEN cash_stage = 'estimate_sent' AND segment = 'retail' THEN 0.25
-            WHEN cash_stage = 'estimate_sent' THEN 0.10
             ELSE 0
           END), 0)::text AS weighted_90,
           CASE
-            WHEN cash_stage IN ('invoice') THEN 'high'
-            WHEN cash_stage IN ('sold','production') THEN 'medium'
+            WHEN cash_stage IN ('invoice','production','scheduled') THEN 'high'
+            WHEN cash_stage IN ('sold','approval','production_ready') THEN 'medium'
             ELSE 'low'
           END AS confidence
         FROM open_jobs
         WHERE value > 0
+          AND cash_stage IN (${POST_SOLD_CASH_STAGES})
         GROUP BY segment, status_name, cash_stage
         ORDER BY SUM(value) DESC
         LIMIT 40
@@ -302,10 +325,10 @@ export async function GET() {
             AND COALESCE(j.status_name, '') NOT IN ('Lost', 'Paid & Closed')
         ), thresholds AS (
           SELECT * FROM (VALUES
-            ('retail', 'estimate_sent', 10), ('retail', 'sold', 20), ('retail', 'production', 25), ('retail', 'invoice', 14),
-            ('insurance', 'estimate_sent', 21), ('insurance', 'sold', 45), ('insurance', 'production', 45), ('insurance', 'invoice', 35),
-            ('repairs', 'estimate_sent', 14), ('repairs', 'sold', 20), ('repairs', 'production', 14), ('repairs', 'invoice', 14),
-            ('real_estate', 'estimate_sent', 14), ('real_estate', 'sold', 25), ('real_estate', 'production', 25), ('real_estate', 'invoice', 14)
+            ('retail', 'sold', 14), ('retail', 'approval', 14), ('retail', 'production_ready', 7), ('retail', 'scheduled', 14), ('retail', 'production', 10), ('retail', 'invoice', 14),
+            ('insurance', 'sold', 30), ('insurance', 'approval', 21), ('insurance', 'production_ready', 14), ('insurance', 'scheduled', 21), ('insurance', 'production', 21), ('insurance', 'invoice', 35),
+            ('repairs', 'sold', 14), ('repairs', 'approval', 14), ('repairs', 'production_ready', 7), ('repairs', 'scheduled', 10), ('repairs', 'production', 7), ('repairs', 'invoice', 14),
+            ('real_estate', 'sold', 14), ('real_estate', 'approval', 14), ('real_estate', 'production_ready', 7), ('real_estate', 'scheduled', 14), ('real_estate', 'production', 10), ('real_estate', 'invoice', 14)
           ) AS t(segment, cash_stage, p75_days)
         )
         SELECT
@@ -321,7 +344,7 @@ export async function GET() {
         FROM open_jobs o
         LEFT JOIN thresholds t ON t.segment = o.segment AND t.cash_stage = o.cash_stage
         WHERE o.value >= 2500
-          AND o.cash_stage IN ('estimate_sent','sold','production','invoice')
+          AND o.cash_stage IN (${POST_SOLD_CASH_STAGES})
           AND o.days_in_status > COALESCE(t.p75_days, 21)
         ORDER BY o.value DESC
         LIMIT 25
@@ -349,10 +372,37 @@ export async function GET() {
         GROUP BY segment
         ORDER BY total_due DESC
       `),
+      query<StageCountRow>(`
+        WITH open_jobs AS (
+          SELECT ${STAGE_CASE} AS cash_stage, ${VALUE_SQL} AS value
+          FROM jobs j
+          WHERE j.is_active = true
+            AND j.is_archived = false
+            AND COALESCE(j.deleted_at::text, '') = ''
+            AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|jane tester)'
+            AND COALESCE(j.status_name, '') NOT IN ('Lost', 'Paid & Closed')
+        )
+        SELECT
+          cash_stage,
+          COUNT(*)::text AS job_count,
+          COALESCE(SUM(value), 0)::text AS raw_value
+        FROM open_jobs
+        WHERE cash_stage IN (${POST_SOLD_CASH_STAGES})
+        GROUP BY cash_stage
+        ORDER BY CASE cash_stage
+          WHEN 'sold' THEN 1
+          WHEN 'approval' THEN 2
+          WHEN 'production_ready' THEN 3
+          WHEN 'scheduled' THEN 4
+          WHEN 'production' THEN 5
+          ELSE 99
+        END
+      `),
     ]);
 
     const summary = summaryRows[0] ?? {
       active_pipeline_value: "0",
+      active_job_count: "0",
       expected_30: "0",
       expected_60: "0",
       expected_90: "0",
@@ -367,12 +417,13 @@ export async function GET() {
       cohortStart: CASHFLOW_COHORT_START,
       sourceNotes: [
         "JobNimbus/Supabase pipeline values are separate from QBO cash balance.",
-        "AR is weighted by invoice age; sold/production cash is weighted by record type and stage.",
-        "Estimate pipeline is shown as uncertain money, not spendable cash.",
+        "This page now focuses on signed/post-sold open work: Sold Job/Fully Approved, Scope/HOA/Homeowner blockers, Production Ready, Scheduled, and In Production. Invoices are handled in AR and not counted again as pipeline.",
+        "Estimate Sent and earlier pipeline is shown as excluded context, not included in expected cash.",
         "Timing coverage begins with job_stage_history around 2026-01-21, so pre-2026 movement is not used.",
       ],
       summary: {
         activePipelineValue: toNumber(summary.active_pipeline_value),
+        activeJobCount: parseInt(summary.active_job_count, 10) || 0,
         arTotal: toNumber(summary.ar_total),
         arWeighted: toNumber(summary.ar_weighted),
         estimatePipelineValue: toNumber(summary.estimate_pipeline_value),
@@ -383,6 +434,11 @@ export async function GET() {
           next90: toNumber(summary.expected_90),
         },
       },
+      stageCounts: stageCountRows.map((row) => ({
+        stage: row.cash_stage,
+        jobCount: parseInt(row.job_count, 10) || 0,
+        rawValue: toNumber(row.raw_value),
+      })),
       arBySegment: arRows.map((row) => ({
         segment: row.segment,
         invoiceCount: parseInt(row.invoice_count, 10),

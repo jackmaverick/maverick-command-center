@@ -24,12 +24,18 @@ type PipelineCashflowData = {
   sourceNotes: string[];
   summary: {
     activePipelineValue: number;
+    activeJobCount: number;
     arTotal: number;
     arWeighted: number;
     estimatePipelineValue: number;
     soldPipelineValue: number;
     expectedCash: Record<Horizon, number>;
   };
+  stageCounts: {
+    stage: string;
+    jobCount: number;
+    rawValue: number;
+  }[];
   arBySegment: {
     segment: string;
     invoiceCount: number;
@@ -88,6 +94,17 @@ function pctLabel(value: number) {
 
 function displaySegment(segment: string) {
   return segment.replace("_", " ");
+}
+
+function displayStage(stage: string) {
+  const labels: Record<string, string> = {
+    sold: "Sold / approved",
+    approval: "Blocked approvals",
+    production_ready: "Production ready",
+    scheduled: "Scheduled",
+    production: "In production",
+  };
+  return labels[stage] ?? stage.replaceAll("_", " ");
 }
 
 function displayTransition(key: string) {
@@ -169,7 +186,7 @@ export default function PipelineCashflowPage() {
             </span>
           </div>
           <p className="text-sm text-[#8b949e] max-w-3xl">
-            JobNimbus pipeline timing model: AR, sold work, production, invoices, estimates, and stuck money split by Retail, Insurance, and Repairs.
+            Post-sold JobNimbus cash model: Sold Job/Fully Approved, Scope/HOA/Homeowner blockers, Production Ready, Scheduled, In Production, and AR.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -195,13 +212,13 @@ export default function PipelineCashflowPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <Card className="bg-[#161b22] border-[#30363d] md:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">Expected Cash, {horizonLabels[horizon]}</CardTitle>
+            <CardTitle className="text-xs font-medium text-[#8b949e]">Post-sold Expected Cash, {horizonLabels[horizon]}</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-9 w-40 bg-[#21262d]" /> : (
               <>
                 <p className="text-3xl font-bold text-[#3fb950]">{formatCurrency(data?.summary.expectedCash[horizon] ?? 0)}</p>
-                <p className="text-xs text-[#8b949e] mt-2">Weighted AR plus sold/production pipeline. Estimates stay visible, but they are not spendable cash.</p>
+                <p className="text-xs text-[#8b949e] mt-2">Weighted AR plus signed/post-sold open work. Invoiced work is handled through AR so it is not double-counted.</p>
               </>
             )}
           </CardContent>
@@ -217,19 +234,35 @@ export default function PipelineCashflowPage() {
         </Card>
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">Uncertain Estimate Pipeline</CardTitle>
+            <CardTitle className="text-xs font-medium text-[#8b949e]">Excluded Pre-sold Pipeline</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-8 w-24 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#d29922]">{formatCurrency(data?.summary.estimatePipelineValue ?? 0)}</p>}
-            {!isLoading && <p className="text-xs text-[#8b949e] mt-1">Separate from sold cash.</p>}
+            {!isLoading && <p className="text-xs text-[#8b949e] mt-1">Estimate Sent / estimating context only.</p>}
           </CardContent>
         </Card>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-8">
+        {isLoading ? Array.from({ length: 5 }).map((_, index) => (
+          <Skeleton key={index} className="h-24 bg-[#21262d]" />
+        )) : data?.stageCounts.map((stage) => (
+          <Card key={stage.stage} className="bg-[#161b22] border-[#30363d]">
+            <CardContent className="pt-4">
+              <p className="text-[11px] uppercase tracking-wide text-[#8b949e]">{displayStage(stage.stage)}</p>
+              <div className="flex items-baseline justify-between gap-2 mt-2">
+                <p className="text-2xl font-bold text-[#e6edf3]">{stage.jobCount}</p>
+                <p className="text-xs font-mono text-[#3fb950]">{formatCurrency(stage.rawValue)}</p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 mb-8">
         <Card className="bg-[#161b22] border-[#30363d] xl:col-span-3">
           <CardHeader>
-            <CardTitle className="text-sm font-semibold text-[#e6edf3]">Expected Cash by Segment</CardTitle>
+            <CardTitle className="text-sm font-semibold text-[#e6edf3]">Post-sold Cash by Segment</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-[300px] w-full bg-[#21262d]" /> : (
