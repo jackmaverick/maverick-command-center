@@ -18,6 +18,60 @@ import { formatCurrency } from "@/lib/dates";
 
 type Horizon = "next30" | "next60" | "next90";
 
+type HealthStatus = "green" | "yellow" | "red";
+
+type PipelineHealthData = {
+  generatedAt: string;
+  status: HealthStatus;
+  apiShape: {
+    status: HealthStatus;
+    generatedAt: string | null;
+    checks: { key: string; present: boolean; count: number }[];
+  };
+  freshness: {
+    status: HealthStatus;
+    maxAgeHours: number;
+    sources: {
+      source: string;
+      rowCount: number;
+      latestSourceAt: string | null;
+      latestSyncedAt: string | null;
+      sourceAgeHours: number | null;
+      syncedAgeHours: number | null;
+      ageHours: number | null;
+      redAfterHours: number;
+      status: HealthStatus;
+    }[];
+    syncMode: {
+      current: string;
+      nearInstantRequirement: string;
+    };
+  };
+  reconciliation: {
+    status: HealthStatus;
+    maxVarianceDollars: number;
+    maxVariancePercent: number;
+    comparisons: {
+      label: string;
+      sourceValue: number;
+      apiValue: number | null;
+      varianceDollars: number;
+      variancePercent: number;
+      status: HealthStatus;
+    }[];
+  };
+  classification: {
+    status: HealthStatus;
+    materialUnmapped: { statusName: string; jobCount: number; rawValue: number; material: boolean }[];
+    statusBucketCount: number;
+  };
+  instantAccuracy: {
+    status: HealthStatus;
+    summary: string;
+    nextBestBuild: string;
+  };
+};
+
 type PipelineCashflowData = {
   generatedAt: string;
   cohortStart: string;
@@ -111,6 +165,24 @@ function displayTransition(key: string) {
   return key.replace("_to_", " → ").replaceAll("_", " ");
 }
 
+function statusClasses(status: HealthStatus) {
+  if (status === "green") return "text-[#3fb950] bg-[#3fb950]/10 border-[#3fb950]/20";
+  if (status === "yellow") return "text-[#d29922] bg-[#d29922]/10 border-[#d29922]/20";
+  return "text-[#f85149] bg-[#f85149]/10 border-[#f85149]/20";
+}
+
+function statusLabel(status: HealthStatus) {
+  if (status === "green") return "green";
+  if (status === "yellow") return "watch";
+  return "broken";
+}
+
+function formatAge(hours: number | null) {
+  if (hours === null) return "unknown";
+  if (hours < 1) return `${Math.round(hours * 60)}m`;
+  return `${Math.round(hours * 10) / 10}h`;
+}
+
 function stageWeightedValue(row: PipelineCashflowData["pipelineByStage"][number], horizon: Horizon) {
   if (horizon === "next30") return row.weighted30;
   if (horizon === "next60") return row.weighted60;
@@ -130,6 +202,19 @@ export default function PipelineCashflowPage() {
       }
       return res.json();
     },
+  });
+
+  const { data: health, isLoading: healthLoading } = useQuery<PipelineHealthData>({
+    queryKey: ["pipeline-cashflow-health"],
+    queryFn: async () => {
+      const res = await fetch("/api/financial/pipeline-cashflow/health");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok && !body.status) {
+        throw new Error(body.error ?? "Failed to fetch pipeline cashflow health");
+      }
+      return body;
+    },
+    refetchInterval: 60_000,
   });
 
   const segmentChart = useMemo(() => {
@@ -184,9 +269,14 @@ export default function PipelineCashflowPage() {
             <span className="text-[10px] uppercase tracking-wide text-[#d29922] bg-[#d29922]/10 border border-[#d29922]/20 rounded-full px-2 py-0.5">
               read-only v1
             </span>
+            {health && (
+              <span className={`text-[10px] uppercase tracking-wide border rounded-full px-2 py-0.5 ${statusClasses(health.status)}`}>
+                monitor {statusLabel(health.status)}
+              </span>
+            )}
           </div>
           <p className="text-sm text-[#8b949e] max-w-3xl">
-            Post-sold JobNimbus cash model: Sold Job/Fully Approved, Scope/HOA/Homeowner blockers, Production Ready, Scheduled, In Production, and AR.
+            Post-sold JobNimbus cash model: Sold/Fully Approved/Future Work, deductible/supplement/approval blockers, Production Ready, Scheduled, In Production, and AR.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -242,6 +332,45 @@ export default function PipelineCashflowPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="bg-[#161b22] border-[#30363d] mb-8">
+        <CardHeader>
+          <CardTitle className="text-sm font-semibold text-[#e6edf3]">Reliability Monitor</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {healthLoading ? (
+            <Skeleton className="h-28 w-full bg-[#21262d]" />
+          ) : !health ? (
+            <p className="text-sm text-[#f85149]">Monitor unavailable. The cash number may still load, but trust drops until health checks return.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                <p className="text-[11px] uppercase tracking-wide text-[#8b949e]">Overall</p>
+                <p className={`text-lg font-bold mt-1 ${health.status === "green" ? "text-[#3fb950]" : health.status === "yellow" ? "text-[#d29922]" : "text-[#f85149]"}`}>{statusLabel(health.status)}</p>
+                <p className="text-xs text-[#8b949e] mt-1">API shape, freshness, reconciliation, and classification.</p>
+              </div>
+              <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                <p className="text-[11px] uppercase tracking-wide text-[#8b949e]">Freshness</p>
+                <p className={`text-lg font-bold mt-1 ${health.freshness.status === "green" ? "text-[#3fb950]" : health.freshness.status === "yellow" ? "text-[#d29922]" : "text-[#f85149]"}`}>{formatAge(health.freshness.maxAgeHours)} worst source</p>
+                <p className="text-xs text-[#8b949e] mt-1">Near-instant accuracy depends on the JN → Supabase mirror staying fresh.</p>
+              </div>
+              <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                <p className="text-[11px] uppercase tracking-wide text-[#8b949e]">Reconciliation</p>
+                <p className={`text-lg font-bold mt-1 ${health.reconciliation.status === "green" ? "text-[#3fb950]" : health.reconciliation.status === "yellow" ? "text-[#d29922]" : "text-[#f85149]"}`}>{formatCurrency(health.reconciliation.maxVarianceDollars)}</p>
+                <p className="text-xs text-[#8b949e] mt-1">Max variance between API cards and raw Supabase recalculation.</p>
+              </div>
+              <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                <p className="text-[11px] uppercase tracking-wide text-[#8b949e]">Classification</p>
+                <p className={`text-lg font-bold mt-1 ${health.classification.status === "green" ? "text-[#3fb950]" : "text-[#d29922]"}`}>{health.classification.materialUnmapped.length} material unmapped</p>
+                <p className="text-xs text-[#8b949e] mt-1">High-dollar statuses not mapped into a cash stage.</p>
+              </div>
+              <div className="md:col-span-4 rounded-lg border border-[#30363d] bg-[#0d1117] p-3 text-xs text-[#8b949e]">
+                {health.instantAccuracy.summary} Next: {health.instantAccuracy.nextBestBuild}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-8">
         {isLoading ? Array.from({ length: 5 }).map((_, index) => (
