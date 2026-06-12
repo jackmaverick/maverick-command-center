@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getQBOConnection } from "@/lib/quickbooks";
-import { runFullQboSync } from "@/lib/qbo-sync";
+import { runIncrementalQboSync } from "@/lib/qbo-sync";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -27,7 +27,7 @@ async function handleCron(req: NextRequest) {
       });
     }
 
-    const result = await runFullQboSync();
+    const result = await runIncrementalQboSync(45_000);
     return NextResponse.json({ success: true, source: "qbo-cron", ...result });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);

@@ -1,6 +1,6 @@
 import * as crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { runFullQboSync } from "@/lib/qbo-sync";
+import { runIncrementalQboSync } from "@/lib/qbo-sync";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await runFullQboSync();
+    const result = await runIncrementalQboSync(45_000);
     return NextResponse.json({ success: true, source: "qbo-webhook", eventCount, ...result });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
