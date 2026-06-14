@@ -1,6 +1,8 @@
 # Daily bank balance → cash-flow sheet — setup
 
-**Shipped 2026-06-14** (commit `e96cdc7`). Code is live and deployed but **no-ops until the 4 one-time steps below are done.**
+**LIVE as of 2026-06-14.** Fully wired and verified — `Summary!B5` shows the real QBO balance ($463,758, was $197,500) and the `Daily Bank Balance` tab is appending daily. The setup steps below are already done (service account `cashflow-sheets-client@maverickexteriorskc-com.iam.gserviceaccount.com`, shared with the sheet; Vercel env `GOOGLE_SERVICE_ACCOUNT_JSON` + `CASHFLOW_CASH_CELL=Summary!B5`). Kept here for reference / disaster recovery.
+
+> Note: the "Synced At (QBO)" column reflects when the *account record* last changed in QuickBooks (incremental sync only rewrites changed rows), not the last cron tick. The balance is current; `qbo_connection.last_sync_at` is the real sync heartbeat.
 
 ## What it does
 
