@@ -5,6 +5,10 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/qbo/sheet-sync",
+      "schedule": "10 12 * * *"
+    },
+    {
       "path": "/api/snapshots/generate?type=weekly",
       "schedule": "15 6 * * 1"
     },
