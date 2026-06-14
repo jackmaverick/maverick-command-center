@@ -15,25 +15,52 @@ import { JWT } from "google-auth-library";
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 const SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 
+/**
+ * Resolve service-account credentials from either:
+ *   GOOGLE_SERVICE_ACCOUNT_JSON          — the full key JSON (preferred), or
+ *   GOOGLE_SERVICE_ACCOUNT_EMAIL + _PRIVATE_KEY  — the split pair (fallback).
+ * Returns null when neither is configured.
+ */
+function getCredentials(): { email: string; key: string } | null {
+  const json = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (json) {
+    try {
+      const parsed = JSON.parse(json) as {
+        client_email?: string;
+        private_key?: string;
+      };
+      if (parsed.client_email && parsed.private_key) {
+        return {
+          email: parsed.client_email,
+          key: parsed.private_key.replace(/\\n/g, "\n"),
+        };
+      }
+    } catch {
+      // fall through to the split-pair form
+    }
+  }
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const rawKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  if (email && rawKey) {
+    // Vercel stores multiline secrets with literal \n — normalize to newlines.
+    return { email, key: rawKey.replace(/\\n/g, "\n") };
+  }
+  return null;
+}
+
 export function isSheetsConfigured(): boolean {
-  return Boolean(
-    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
-      process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
-  );
+  return getCredentials() !== null;
 }
 
 let cachedClient: JWT | null = null;
 
 function getClient(): JWT {
   if (cachedClient) return cachedClient;
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const rawKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
-  if (!email || !rawKey) {
+  const creds = getCredentials();
+  if (!creds) {
     throw new Error("Google Sheets service-account env vars not set");
   }
-  // Vercel stores multiline secrets with literal \n — normalize back to newlines.
-  const key = rawKey.replace(/\\n/g, "\n");
-  cachedClient = new JWT({ email, key, scopes: [SCOPE] });
+  cachedClient = new JWT({ email: creds.email, key: creds.key, scopes: [SCOPE] });
   return cachedClient;
 }
 

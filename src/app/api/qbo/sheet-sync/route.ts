@@ -64,8 +64,8 @@ async function handleSync(req: NextRequest) {
       success: true,
       skipped: true,
       reason:
-        "Google service-account env vars not set. Add GOOGLE_SERVICE_ACCOUNT_EMAIL " +
-        "and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, then share the sheet with that email.",
+        "Google service-account env not set. Set GOOGLE_SERVICE_ACCOUNT_JSON (full key " +
+        "JSON), then share the sheet with that service account's email.",
     });
   }
 
