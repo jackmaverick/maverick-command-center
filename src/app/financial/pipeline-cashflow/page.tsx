@@ -217,6 +217,89 @@ function formatAge(hours: number | null) {
   return `${Math.round(hours * 10) / 10}h`;
 }
 
+function formatFreshness(hours: number | null) {
+  if (hours === null) return "no data";
+  if (hours < 0.05) return "just now";
+  if (hours < 1) return `${Math.round(hours * 60)}m ago`;
+  if (hours < 48) return `${Math.round(hours * 10) / 10}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+type FreshnessBadge = {
+  key: string;
+  label: string;
+  status: HealthStatus;
+  ageHours: number | null;
+  detail: string | null;
+};
+
+// JobNimbus mirror tables (everything except QuickBooks and the internal sync_log row).
+const JOBNIMBUS_FRESHNESS_SOURCES = new Set([
+  "jobs",
+  "invoices",
+  "payments",
+  "estimates",
+  "work_orders",
+  "job_stage_history",
+  "tasks",
+  "activities",
+]);
+
+function worstStatusOf(statuses: HealthStatus[]): HealthStatus {
+  if (statuses.includes("red")) return "red";
+  if (statuses.includes("yellow")) return "yellow";
+  return "green";
+}
+
+// Collapse the per-table freshness rows into the three sources a reader cares
+// about: JobNimbus (pipeline/AR), QuickBooks (payments/expenses), and the live
+// Forecast. Each badge reflects the WORST table in its group so a single stale
+// source can't hide behind fresh siblings.
+function buildFreshnessBadges(
+  freshness: PipelineHealthData["freshness"] | undefined,
+  forecastGeneratedAt: string | null | undefined,
+): FreshnessBadge[] {
+  const sources = freshness?.sources ?? [];
+  const badges: FreshnessBadge[] = [];
+
+  const jn = sources.filter((s) => JOBNIMBUS_FRESHNESS_SOURCES.has(s.source));
+  if (jn.length) {
+    const worst = jn.reduce((a, b) => ((b.ageHours ?? -1) > (a.ageHours ?? -1) ? b : a));
+    badges.push({
+      key: "jobnimbus",
+      label: "JobNimbus",
+      status: worstStatusOf(jn.map((s) => s.status)),
+      ageHours: worst.ageHours,
+      detail: worst.status !== "green" ? `${worst.source} lagging` : null,
+    });
+  }
+
+  const qbo = sources.find((s) => s.source === "quickbooks");
+  if (qbo) {
+    badges.push({
+      key: "quickbooks",
+      label: "QuickBooks",
+      status: qbo.status,
+      ageHours: qbo.ageHours,
+      detail: qbo.status === "red" ? "sync stalled or disconnected" : null,
+    });
+  }
+
+  // The forecast is recomputed on every read, so it is as fresh as the page load.
+  const forecastAge = forecastGeneratedAt
+    ? Math.max(0, (Date.now() - new Date(forecastGeneratedAt).getTime()) / 3_600_000)
+    : null;
+  badges.push({ key: "forecast", label: "Forecast", status: "green", ageHours: forecastAge, detail: null });
+
+  return badges;
+}
+
+function freshnessDotClass(status: HealthStatus) {
+  if (status === "green") return "bg-[#3fb950]";
+  if (status === "yellow") return "bg-[#d29922]";
+  return "bg-[#f85149]";
+}
+
 function stageWeightedValue(row: PipelineCashflowData["pipelineByStage"][number], horizon: Horizon) {
   if (horizon === "next30") return row.weighted30;
   if (horizon === "next60") return row.weighted60;
@@ -263,6 +346,11 @@ export default function PipelineCashflowPage() {
     },
     refetchInterval: 5 * 60_000,
   });
+
+  const freshnessBadges = useMemo(
+    () => buildFreshnessBadges(health?.freshness, data?.generatedAt),
+    [health?.freshness, data?.generatedAt],
+  );
 
   const segmentChart = useMemo(() => {
     if (!data) return [];
@@ -345,6 +433,24 @@ export default function PipelineCashflowPage() {
           </Link>
         </div>
       </div>
+
+      {health?.freshness && (
+        <div className="flex flex-wrap items-center gap-2 mb-8">
+          <span className="text-[11px] uppercase tracking-wide text-[#8b949e] mr-1">Data freshness</span>
+          {freshnessBadges.map((badge) => (
+            <span
+              key={badge.key}
+              className={`inline-flex items-center gap-1.5 text-xs border rounded-full px-2.5 py-1 ${statusClasses(badge.status)}`}
+              title={badge.detail ?? `${badge.label} updated ${formatFreshness(badge.ageHours)}`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${freshnessDotClass(badge.status)}`} />
+              <span className="font-medium">{badge.label}</span>
+              <span className="opacity-80">{formatFreshness(badge.ageHours)}</span>
+              {badge.detail && <span className="opacity-70">· {badge.detail}</span>}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <Card className="bg-[#161b22] border-[#30363d] md:col-span-2">
