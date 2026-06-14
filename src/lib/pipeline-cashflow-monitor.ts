@@ -214,6 +214,7 @@ async function getFreshnessRows(): Promise<FreshnessRow[]> {
       UNION ALL SELECT 'job_stage_history', COUNT(*)::text, MAX(changed_at)::text, MAX(created_at)::text FROM job_stage_history
       UNION ALL SELECT 'tasks', COUNT(*)::text, MAX(to_timestamp(NULLIF(jn_date_updated, 0)))::text, MAX(last_synced_at)::text FROM tasks
       UNION ALL SELECT 'activities', COUNT(*)::text, MAX(activity_date)::text, MAX(last_synced_at)::text FROM activities
+      UNION ALL SELECT 'quickbooks', COUNT(*)::text, MAX(last_sync_at)::text, MAX(last_sync_at)::text FROM qbo_connection WHERE status = 'active'
       UNION ALL SELECT 'sync_log', COUNT(*)::text, MAX(COALESCE(completed_at, created_at))::text, MAX(COALESCE(completed_at, created_at))::text FROM sync_log
     ) freshness
   `);
@@ -371,12 +372,16 @@ export async function buildPipelineCashflowReconciliation(apiData: ApiLike | nul
 export async function buildPipelineCashflowFreshness() {
   const rows = await getFreshnessRows();
   const slowCadence = new Set(["job_stage_history", "tasks", "activities"]);
+  // QuickBooks syncs every 15 min via cron, so anything older than a couple
+  // hours means the cron has stalled — the exact failure that went unnoticed
+  // for ~3 months (frozen 2026-03-22 to 2026-06-12) because nothing watched it.
+  const fastCadence = new Set(["quickbooks"]);
 
   const sources = rows.map((row) => {
     const ageHours = hoursSince(row.latest_synced_at ?? row.latest_source_at);
     const sourceAgeHours = hoursSince(row.latest_source_at);
     const syncedAgeHours = hoursSince(row.latest_synced_at);
-    const redAfterHours = slowCadence.has(row.source) ? 72 : 24;
+    const redAfterHours = fastCadence.has(row.source) ? 2 : slowCadence.has(row.source) ? 72 : 24;
     return {
       source: row.source,
       rowCount: parseInt(row.row_count, 10) || 0,
