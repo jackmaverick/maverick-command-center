@@ -20,9 +20,7 @@ const CLOSED_STATUSES = [
   "Warranty Complete",
 ];
 const ACTIVE_REAL_JOB_WHERE = `
-  j.is_active = true
-  AND j.is_archived = false
-  AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|verification|scout_test)'
+  COALESCE(j.name, '') !~* '(test|dummy|demo|sample|verification|scout_test)'
   AND COALESCE(j.primary_contact_name, '') !~* '(test|dummy|demo|sample|verification)'
 `;
 
