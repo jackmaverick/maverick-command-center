@@ -21,6 +21,7 @@ import {
   Wallet,
   GitCompare,
   DollarSign,
+  MapPinned,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -64,6 +65,7 @@ const navGroups = [
     label: "ANALYTICS",
     items: [
       { href: "/lead-sources", label: "Lead Sources", icon: Target },
+      { href: "/direct-mail", label: "Direct Mail Map", icon: MapPinned },
       { href: "/weekly-review", label: "Weekly Review", icon: CalendarDays },
     ],
   },

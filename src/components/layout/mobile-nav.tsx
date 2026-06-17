@@ -18,6 +18,7 @@ const navItems = [
   { href: "/financial/cashflow", label: "Cash Flow" },
   { href: "/financial/pipeline-cashflow", label: "Pipeline Cashflow" },
   { href: "/lead-sources", label: "Lead Sources" },
+  { href: "/direct-mail", label: "Direct Mail Map" },
   { href: "/weekly-review", label: "Weekly Review" },
   { href: "/agents", label: "Agents" },
   { href: "/faq-review", label: "FAQ Review" },
