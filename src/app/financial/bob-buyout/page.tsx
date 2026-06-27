@@ -18,7 +18,7 @@ const MONTHLY_PAYMENT = 8_333;
 const DEFAULT_BUYOUT_AMOUNT = 1_000_000;
 const DEFAULT_INTEREST_FREE_PAID = 100_000;
 const DEFAULT_APR = 6;
-const DEFAULT_MONTHS_SINCE_INTEREST_STARTED = 0;
+const DEFAULT_PAYMENTS_SINCE_JAN_2026 = 6;
 const DEFAULT_EXTRA_THIS_YEAR = 50_000;
 
 interface PayoffResult {
@@ -58,7 +58,7 @@ function numberValue(value: string): number {
   return Number.isFinite(parsed) ? Math.max(parsed, 0) : 0;
 }
 
-function payoffSchedule(balance: number, monthlyPayment: number, apr: number): PayoffResult {
+function payoffSchedule(balance: number, monthlyPrincipalPayment: number, apr: number): PayoffResult {
   if (balance <= 0) {
     return { months: 0, years: 0, totalPaid: 0, totalInterest: 0, finalBalance: 0 };
   }
@@ -71,7 +71,7 @@ function payoffSchedule(balance: number, monthlyPayment: number, apr: number): P
 
   while (remaining > 0.01 && months < 600) {
     const interest = remaining * monthlyRate;
-    const principalPayment = Math.min(monthlyPayment - interest, remaining);
+    const principalPayment = Math.min(monthlyPrincipalPayment, remaining);
 
     if (principalPayment <= 0) {
       return {
@@ -100,7 +100,7 @@ function payoffSchedule(balance: number, monthlyPayment: number, apr: number): P
 
 function monthlySchedule(
   startingBalance: number,
-  monthlyPayment: number,
+  monthlyPrincipalPayment: number,
   apr: number,
   monthsToRun: number,
   startingTotalPaid = 0,
@@ -114,7 +114,7 @@ function monthlySchedule(
 
   for (let month = 1; month <= monthsToRun && balance > 0.01; month += 1) {
     const interest = balance * monthlyRate;
-    const principal = Math.max(Math.min(monthlyPayment - interest, balance), 0);
+    const principal = Math.max(Math.min(monthlyPrincipalPayment, balance), 0);
     const payment = principal + interest;
 
     if (principal <= 0) break;
@@ -191,8 +191,8 @@ function Field({
 export default function BobBuyoutPage() {
   const [buyoutAmount, setBuyoutAmount] = useState(String(DEFAULT_BUYOUT_AMOUNT));
   const [interestFreePaid, setInterestFreePaid] = useState(String(DEFAULT_INTEREST_FREE_PAID));
-  const [monthsSinceInterestStarted, setMonthsSinceInterestStarted] = useState(
-    String(DEFAULT_MONTHS_SINCE_INTEREST_STARTED),
+  const [paymentsSinceJan2026, setPaymentsSinceJan2026] = useState(
+    String(DEFAULT_PAYMENTS_SINCE_JAN_2026),
   );
   const [apr, setApr] = useState(String(DEFAULT_APR));
   const [monthlyPayment, setMonthlyPayment] = useState(String(MONTHLY_PAYMENT));
@@ -202,7 +202,7 @@ export default function BobBuyoutPage() {
     const principal = numberValue(buyoutAmount);
     const yearOnePaid = Math.min(numberValue(interestFreePaid), principal);
     const interestBearingStart = Math.max(principal - yearOnePaid, 0);
-    const elapsedMonths = Math.floor(numberValue(monthsSinceInterestStarted));
+    const elapsedMonths = Math.floor(numberValue(paymentsSinceJan2026));
     const rate = numberValue(apr);
     const payment = numberValue(monthlyPayment);
     const extra = numberValue(extraThisYear);
@@ -244,7 +244,7 @@ export default function BobBuyoutPage() {
       interestSaved: Math.max(baseline.totalInterest - accelerated.totalInterest, 0),
       monthsSaved: Math.max(baseline.months - accelerated.months, 0),
     };
-  }, [buyoutAmount, interestFreePaid, monthsSinceInterestStarted, apr, monthlyPayment, extraThisYear]);
+  }, [buyoutAmount, interestFreePaid, paymentsSinceJan2026, apr, monthlyPayment, extraThisYear]);
 
   const remainingOwed = model.balance;
   const totalPaidIfBase = model.paidToDate + model.baseline.totalPaid;
@@ -261,11 +261,11 @@ export default function BobBuyoutPage() {
           </p>
           <h1 className="text-2xl font-bold text-[#e6edf3]">Bob Buyout Dashboard</h1>
           <p className="mt-1 max-w-3xl text-sm text-[#8b949e]">
-            Tracks the $1M buyout, the $100K no-interest year-one payment, monthly interest after year one, and the $8,333/month payment plan.
+            Tracks the $1M buyout, the $100K no-interest year-one payment, then $8,333/month principal payments plus interest starting January 2026.
           </p>
         </div>
         <div className="rounded-lg border border-[#30363d] bg-[#161b22] px-4 py-3 text-sm text-[#8b949e]">
-          Base payment: <span className="font-semibold text-[#e6edf3]">{dollars(model.payment)}/mo</span>
+          Base principal: <span className="font-semibold text-[#e6edf3]">{dollars(model.payment)}/mo + interest</span>
         </div>
       </div>
 
@@ -366,17 +366,17 @@ export default function BobBuyoutPage() {
             <Field label="Total buyout amount" value={buyoutAmount} onChange={setBuyoutAmount} />
             <Field label="Year-one no-interest paid" value={interestFreePaid} onChange={setInterestFreePaid} />
             <Field
-              label="Months since interest started"
-              value={monthsSinceInterestStarted}
-              onChange={setMonthsSinceInterestStarted}
+              label="Payments made since Jan 2026"
+              value={paymentsSinceJan2026}
+              onChange={setPaymentsSinceJan2026}
               prefix=""
-              suffix="mo"
+              suffix="pmts"
             />
             <Field label="Annual interest rate" value={apr} onChange={setApr} prefix="" suffix="%" />
-            <Field label="Monthly payment" value={monthlyPayment} onChange={setMonthlyPayment} />
+            <Field label="Monthly principal payment" value={monthlyPayment} onChange={setMonthlyPayment} />
             <Field label="Extra added this year" value={extraThisYear} onChange={setExtraThisYear} />
             <p className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3 text-xs leading-5 text-[#8b949e]">
-              Model: $100K is treated as year-one principal paid with no interest. Interest starts on the remaining balance after year one. Each month splits the payment into interest first, then principal.
+              Model: $100K is treated as year-one principal paid with no interest. Starting Jan 2026, each month pays $8,333 toward principal plus that month’s interest.
             </p>
           </CardContent>
         </Card>
