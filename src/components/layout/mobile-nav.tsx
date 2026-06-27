@@ -21,6 +21,7 @@ const navItems = [
   { href: "/lead-sources", label: "Lead Sources" },
   { href: "/direct-mail", label: "Direct Mail Map" },
   { href: "/weekly-review", label: "Weekly Review" },
+  { href: "/skills-dojo", label: "Skills Dojo" },
   { href: "/agents", label: "Agents" },
   { href: "/faq-review", label: "FAQ Review" },
   { href: "/settings", label: "Settings" },

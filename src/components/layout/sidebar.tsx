@@ -23,6 +23,7 @@ import {
   DollarSign,
   MapPinned,
   HandCoins,
+  GraduationCap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -69,6 +70,12 @@ const navGroups = [
       { href: "/lead-sources", label: "Lead Sources", icon: Target },
       { href: "/direct-mail", label: "Direct Mail Map", icon: MapPinned },
       { href: "/weekly-review", label: "Weekly Review", icon: CalendarDays },
+    ],
+  },
+  {
+    label: "OPERATING SYSTEM",
+    items: [
+      { href: "/skills-dojo", label: "Skills Dojo", icon: GraduationCap },
     ],
   },
   {
