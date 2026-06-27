@@ -22,6 +22,7 @@ import {
   GitCompare,
   DollarSign,
   MapPinned,
+  HandCoins,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -57,6 +58,7 @@ const navGroups = [
       { href: "/revenue", label: "Revenue Audit", icon: DollarSign },
       { href: "/financial/cashflow", label: "Cash Flow", icon: Wallet },
       { href: "/financial/pipeline-cashflow", label: "Pipeline Cashflow", icon: GitBranch },
+      { href: "/financial/bob-buyout", label: "Bob Buyout", icon: HandCoins },
       { href: "/financial/reconciliation", label: "Reconciliation", icon: GitCompare },
       { href: "/gross-profit", label: "Gross Profit", icon: DollarSign },
     ],

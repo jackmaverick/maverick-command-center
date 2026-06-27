@@ -17,6 +17,7 @@ const navItems = [
   { href: "/job-types", label: "Job Types" },
   { href: "/financial/cashflow", label: "Cash Flow" },
   { href: "/financial/pipeline-cashflow", label: "Pipeline Cashflow" },
+  { href: "/financial/bob-buyout", label: "Bob Buyout" },
   { href: "/lead-sources", label: "Lead Sources" },
   { href: "/direct-mail", label: "Direct Mail Map" },
   { href: "/weekly-review", label: "Weekly Review" },
