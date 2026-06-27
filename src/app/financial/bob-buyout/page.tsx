@@ -8,14 +8,17 @@ import {
   Clock,
   Gauge,
   PiggyBank,
+  ReceiptText,
   TrendingDown,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 const MONTHLY_PAYMENT = 8_333;
-const DEFAULT_PRINCIPAL = 500_000;
+const DEFAULT_BUYOUT_AMOUNT = 1_000_000;
+const DEFAULT_INTEREST_FREE_PAID = 100_000;
 const DEFAULT_APR = 6;
+const DEFAULT_MONTHS_SINCE_INTEREST_STARTED = 0;
 const DEFAULT_EXTRA_THIS_YEAR = 50_000;
 
 interface PayoffResult {
@@ -24,6 +27,16 @@ interface PayoffResult {
   totalPaid: number;
   totalInterest: number;
   finalBalance: number;
+}
+
+interface MonthlyRow {
+  month: number;
+  payment: number;
+  interest: number;
+  principal: number;
+  endingBalance: number;
+  totalPaid: number;
+  totalInterest: number;
 }
 
 function dollars(value: number): string {
@@ -85,6 +98,45 @@ function payoffSchedule(balance: number, monthlyPayment: number, apr: number): P
   };
 }
 
+function monthlySchedule(
+  startingBalance: number,
+  monthlyPayment: number,
+  apr: number,
+  monthsToRun: number,
+  startingTotalPaid = 0,
+  startingTotalInterest = 0,
+): MonthlyRow[] {
+  const rows: MonthlyRow[] = [];
+  const monthlyRate = Math.max(apr, 0) / 100 / 12;
+  let balance = Math.max(startingBalance, 0);
+  let totalPaid = startingTotalPaid;
+  let totalInterest = startingTotalInterest;
+
+  for (let month = 1; month <= monthsToRun && balance > 0.01; month += 1) {
+    const interest = balance * monthlyRate;
+    const principal = Math.max(Math.min(monthlyPayment - interest, balance), 0);
+    const payment = principal + interest;
+
+    if (principal <= 0) break;
+
+    balance = Math.max(balance - principal, 0);
+    totalPaid += payment;
+    totalInterest += interest;
+
+    rows.push({
+      month,
+      payment,
+      interest,
+      principal,
+      endingBalance: balance,
+      totalPaid,
+      totalInterest,
+    });
+  }
+
+  return rows;
+}
+
 function monthsLabel(months: number): string {
   if (months >= 600) return "No payoff at current payment";
   const years = Math.floor(months / 12);
@@ -137,45 +189,68 @@ function Field({
 }
 
 export default function BobBuyoutPage() {
-  const [originalPrincipal, setOriginalPrincipal] = useState(String(DEFAULT_PRINCIPAL));
-  const [currentBalance, setCurrentBalance] = useState(String(DEFAULT_PRINCIPAL));
+  const [buyoutAmount, setBuyoutAmount] = useState(String(DEFAULT_BUYOUT_AMOUNT));
+  const [interestFreePaid, setInterestFreePaid] = useState(String(DEFAULT_INTEREST_FREE_PAID));
+  const [monthsSinceInterestStarted, setMonthsSinceInterestStarted] = useState(
+    String(DEFAULT_MONTHS_SINCE_INTEREST_STARTED),
+  );
   const [apr, setApr] = useState(String(DEFAULT_APR));
   const [monthlyPayment, setMonthlyPayment] = useState(String(MONTHLY_PAYMENT));
   const [extraThisYear, setExtraThisYear] = useState(String(DEFAULT_EXTRA_THIS_YEAR));
 
   const model = useMemo(() => {
-    const principal = numberValue(originalPrincipal);
-    const balance = Math.min(numberValue(currentBalance), principal || Number.MAX_SAFE_INTEGER);
+    const principal = numberValue(buyoutAmount);
+    const yearOnePaid = Math.min(numberValue(interestFreePaid), principal);
+    const interestBearingStart = Math.max(principal - yearOnePaid, 0);
+    const elapsedMonths = Math.floor(numberValue(monthsSinceInterestStarted));
     const rate = numberValue(apr);
     const payment = numberValue(monthlyPayment);
     const extra = numberValue(extraThisYear);
+
+    const elapsedRows = monthlySchedule(interestBearingStart, payment, rate, elapsedMonths, yearOnePaid, 0);
+    const lastElapsed = elapsedRows.at(-1);
+    const balance = lastElapsed?.endingBalance ?? interestBearingStart;
+    const paidToDate = lastElapsed?.totalPaid ?? yearOnePaid;
+    const interestPaidToDate = lastElapsed?.totalInterest ?? 0;
+    const principalPaid = Math.max(principal - balance, 0);
     const extraBalance = Math.max(balance - extra, 0);
 
     const baseline = payoffSchedule(balance, payment, rate);
     const accelerated = payoffSchedule(extraBalance, payment, rate);
-    const principalPaid = Math.max(principal - balance, 0);
     const progress = principal > 0 ? Math.min((principalPaid / principal) * 100, 100) : 0;
     const remainingProgress = principal > 0 ? Math.min((extraBalance / principal) * 100, 100) : 0;
+    const upcomingRows = monthlySchedule(balance, payment, rate, 12, paidToDate, interestPaidToDate);
+    const nextMonth = upcomingRows[0];
 
     return {
       principal,
-      balance,
+      yearOnePaid,
+      interestBearingStart,
+      elapsedMonths,
       rate,
       payment,
       extra,
+      balance,
+      paidToDate,
+      interestPaidToDate,
+      principalPaid,
       extraBalance,
       baseline,
       accelerated,
-      principalPaid,
       progress,
       remainingProgress,
+      upcomingRows,
+      nextMonth,
       interestSaved: Math.max(baseline.totalInterest - accelerated.totalInterest, 0),
       monthsSaved: Math.max(baseline.months - accelerated.months, 0),
     };
-  }, [originalPrincipal, currentBalance, apr, monthlyPayment, extraThisYear]);
+  }, [buyoutAmount, interestFreePaid, monthsSinceInterestStarted, apr, monthlyPayment, extraThisYear]);
 
-  const monthlyInterest = (model.balance * (model.rate / 100)) / 12;
-  const monthlyPrincipal = Math.max(model.payment - monthlyInterest, 0);
+  const remainingOwed = model.balance;
+  const totalPaidIfBase = model.paidToDate + model.baseline.totalPaid;
+  const totalInterestIfBase = model.interestPaidToDate + model.baseline.totalInterest;
+  const totalPaidIfExtra = model.paidToDate + model.extra + model.accelerated.totalPaid;
+  const totalInterestIfExtra = model.interestPaidToDate + model.accelerated.totalInterest;
 
   return (
     <div>
@@ -186,7 +261,7 @@ export default function BobBuyoutPage() {
           </p>
           <h1 className="text-2xl font-bold text-[#e6edf3]">Bob Buyout Dashboard</h1>
           <p className="mt-1 max-w-3xl text-sm text-[#8b949e]">
-            Tracks the seller-note payoff against the $8,333/month obligation and shows what extra cash this year does to interest and timeline.
+            Tracks the $1M buyout, the $100K no-interest year-one payment, monthly interest after year one, and the $8,333/month payment plan.
           </p>
         </div>
         <div className="rounded-lg border border-[#30363d] bg-[#161b22] px-4 py-3 text-sm text-[#8b949e]">
@@ -210,12 +285,12 @@ export default function BobBuyoutPage() {
         <Card className="border-[#30363d] bg-[#161b22]">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-xs font-medium text-[#8b949e]">
-              <Banknote className="h-4 w-4" /> Remaining Balance
+              <Banknote className="h-4 w-4" /> Amount Owed
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-[#e6edf3]">{compactDollars(model.balance)}</p>
-            <p className="mt-1 text-xs text-[#8b949e]">Before any extra paydown</p>
+            <p className="text-2xl font-bold text-[#e6edf3]">{compactDollars(remainingOwed)}</p>
+            <p className="mt-1 text-xs text-[#8b949e]">After entered monthly adjustments</p>
           </CardContent>
         </Card>
 
@@ -227,7 +302,7 @@ export default function BobBuyoutPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-[#d29922]">{monthsLabel(model.baseline.months)}</p>
-            <p className="mt-1 text-xs text-[#8b949e]">Projected at current terms</p>
+            <p className="mt-1 text-xs text-[#8b949e]">From current owed balance</p>
           </CardContent>
         </Card>
 
@@ -239,19 +314,19 @@ export default function BobBuyoutPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-[#f85149]">{compactDollars(model.baseline.totalInterest)}</p>
-            <p className="mt-1 text-xs text-[#8b949e]">If nothing extra is paid</p>
+            <p className="mt-1 text-xs text-[#8b949e]">Future interest if nothing extra is paid</p>
           </CardContent>
         </Card>
       </div>
 
       <Card className="mb-8 border-[#30363d] bg-[#161b22]">
         <CardHeader>
-          <CardTitle className="text-sm font-semibold text-[#e6edf3]">Distance to Goal</CardTitle>
+          <CardTitle className="text-sm font-semibold text-[#e6edf3]">Paid vs Owed</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="mb-3 flex items-center justify-between text-xs text-[#8b949e]">
-            <span>{dollars(model.principalPaid)} paid</span>
-            <span>{dollars(model.balance)} left</span>
+            <span>{dollars(model.principalPaid)} principal paid</span>
+            <span>{dollars(remainingOwed)} owed</span>
           </div>
           <div className="h-5 overflow-hidden rounded-full bg-[#0d1117] ring-1 ring-[#30363d]">
             <div
@@ -259,24 +334,28 @@ export default function BobBuyoutPage() {
               style={{ width: `${model.progress}%` }}
             />
           </div>
-          <div className="mt-4 grid grid-cols-1 gap-3 text-sm md:grid-cols-3">
+          <div className="mt-4 grid grid-cols-1 gap-3 text-sm md:grid-cols-4">
             <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
-              <p className="text-xs text-[#8b949e]">Original buyout goal</p>
+              <p className="text-xs text-[#8b949e]">Total buyout</p>
               <p className="mt-1 font-semibold text-[#e6edf3]">{dollars(model.principal)}</p>
             </div>
             <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
-              <p className="text-xs text-[#8b949e]">This month’s interest drag</p>
-              <p className="mt-1 font-semibold text-[#f85149]">{dollars(monthlyInterest)}</p>
+              <p className="text-xs text-[#8b949e]">Year-one no-interest paid</p>
+              <p className="mt-1 font-semibold text-[#3fb950]">{dollars(model.yearOnePaid)}</p>
             </div>
             <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
-              <p className="text-xs text-[#8b949e]">This month’s principal reduction</p>
-              <p className="mt-1 font-semibold text-[#3fb950]">{dollars(monthlyPrincipal)}</p>
+              <p className="text-xs text-[#8b949e]">Interest paid to date</p>
+              <p className="mt-1 font-semibold text-[#f85149]">{dollars(model.interestPaidToDate)}</p>
+            </div>
+            <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+              <p className="text-xs text-[#8b949e]">Total paid to date</p>
+              <p className="mt-1 font-semibold text-[#e6edf3]">{dollars(model.paidToDate)}</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[420px_1fr]">
+      <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-[420px_1fr]">
         <Card className="border-[#30363d] bg-[#161b22]">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#e6edf3]">
@@ -284,13 +363,20 @@ export default function BobBuyoutPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Field label="Original buyout amount" value={originalPrincipal} onChange={setOriginalPrincipal} />
-            <Field label="Current balance" value={currentBalance} onChange={setCurrentBalance} />
+            <Field label="Total buyout amount" value={buyoutAmount} onChange={setBuyoutAmount} />
+            <Field label="Year-one no-interest paid" value={interestFreePaid} onChange={setInterestFreePaid} />
+            <Field
+              label="Months since interest started"
+              value={monthsSinceInterestStarted}
+              onChange={setMonthsSinceInterestStarted}
+              prefix=""
+              suffix="mo"
+            />
             <Field label="Annual interest rate" value={apr} onChange={setApr} prefix="" suffix="%" />
             <Field label="Monthly payment" value={monthlyPayment} onChange={setMonthlyPayment} />
             <Field label="Extra added this year" value={extraThisYear} onChange={setExtraThisYear} />
             <p className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3 text-xs leading-5 text-[#8b949e]">
-              Assumption: the extra amount hits principal now. If the actual note compounds differently, this still gets close enough for operating decisions, which is what we need before the spreadsheet goblins arrive.
+              Model: $100K is treated as year-one principal paid with no interest. Interest starts on the remaining balance after year one. Each month splits the payment into interest first, then principal.
             </p>
           </CardContent>
         </Card>
@@ -317,10 +403,10 @@ export default function BobBuyoutPage() {
               </div>
               <div className="rounded-xl border border-[#d29922]/30 bg-[#d29922]/10 p-4">
                 <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[#d29922]">
-                  <ArrowDownRight className="h-4 w-4" /> New balance
+                  <ArrowDownRight className="h-4 w-4" /> New amount owed
                 </div>
                 <p className="mt-3 text-3xl font-bold text-[#d29922]">{compactDollars(model.extraBalance)}</p>
-                <p className="mt-1 text-xs text-[#8b949e]">{model.remainingProgress.toFixed(1)}% of original note left</p>
+                <p className="mt-1 text-xs text-[#8b949e]">{model.remainingProgress.toFixed(1)}% of original buyout left</p>
               </div>
             </div>
 
@@ -329,10 +415,10 @@ export default function BobBuyoutPage() {
                 <thead className="bg-[#0d1117] text-xs uppercase tracking-wide text-[#8b949e]">
                   <tr>
                     <th className="px-4 py-3 font-medium">Scenario</th>
-                    <th className="px-4 py-3 font-medium">Balance</th>
+                    <th className="px-4 py-3 font-medium">Amount owed</th>
                     <th className="px-4 py-3 font-medium">Payoff time</th>
-                    <th className="px-4 py-3 font-medium">Interest paid</th>
-                    <th className="px-4 py-3 font-medium">Total cash out</th>
+                    <th className="px-4 py-3 font-medium">Total interest</th>
+                    <th className="px-4 py-3 font-medium">Total paid</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#30363d] text-[#e6edf3]">
@@ -340,15 +426,15 @@ export default function BobBuyoutPage() {
                     <td className="px-4 py-3 font-medium">Base plan</td>
                     <td className="px-4 py-3">{dollars(model.balance)}</td>
                     <td className="px-4 py-3">{monthsLabel(model.baseline.months)}</td>
-                    <td className="px-4 py-3 text-[#f85149]">{dollars(model.baseline.totalInterest)}</td>
-                    <td className="px-4 py-3">{dollars(model.baseline.totalPaid)}</td>
+                    <td className="px-4 py-3 text-[#f85149]">{dollars(totalInterestIfBase)}</td>
+                    <td className="px-4 py-3">{dollars(totalPaidIfBase)}</td>
                   </tr>
                   <tr className="bg-[#238636]/5">
                     <td className="px-4 py-3 font-medium">With extra this year</td>
                     <td className="px-4 py-3">{dollars(model.extraBalance)}</td>
                     <td className="px-4 py-3">{monthsLabel(model.accelerated.months)}</td>
-                    <td className="px-4 py-3 text-[#3fb950]">{dollars(model.accelerated.totalInterest)}</td>
-                    <td className="px-4 py-3">{dollars(model.extra + model.accelerated.totalPaid)}</td>
+                    <td className="px-4 py-3 text-[#3fb950]">{dollars(totalInterestIfExtra)}</td>
+                    <td className="px-4 py-3">{dollars(totalPaidIfExtra)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -356,6 +442,63 @@ export default function BobBuyoutPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="border-[#30363d] bg-[#161b22]">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#e6edf3]">
+            <ReceiptText className="h-4 w-4" /> Monthly Adjustment
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="mb-4 grid grid-cols-1 gap-3 text-sm md:grid-cols-4">
+            <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+              <p className="text-xs text-[#8b949e]">Next payment</p>
+              <p className="mt-1 font-semibold text-[#e6edf3]">{dollars(model.nextMonth?.payment ?? 0)}</p>
+            </div>
+            <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+              <p className="text-xs text-[#8b949e]">Interest portion</p>
+              <p className="mt-1 font-semibold text-[#f85149]">{dollars(model.nextMonth?.interest ?? 0)}</p>
+            </div>
+            <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+              <p className="text-xs text-[#8b949e]">Principal reduction</p>
+              <p className="mt-1 font-semibold text-[#3fb950]">{dollars(model.nextMonth?.principal ?? 0)}</p>
+            </div>
+            <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+              <p className="text-xs text-[#8b949e]">Owed after next payment</p>
+              <p className="mt-1 font-semibold text-[#e6edf3]">{dollars(model.nextMonth?.endingBalance ?? model.balance)}</p>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-lg border border-[#30363d]">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-[#0d1117] text-xs uppercase tracking-wide text-[#8b949e]">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Month</th>
+                  <th className="px-4 py-3 font-medium">Payment</th>
+                  <th className="px-4 py-3 font-medium">Interest</th>
+                  <th className="px-4 py-3 font-medium">Principal</th>
+                  <th className="px-4 py-3 font-medium">Total paid</th>
+                  <th className="px-4 py-3 font-medium">Total interest</th>
+                  <th className="px-4 py-3 font-medium">Amount owed</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#30363d] text-[#e6edf3]">
+                {model.upcomingRows.map((row) => (
+                  <tr key={row.month}>
+                    <td className="px-4 py-3 font-medium">{model.elapsedMonths + row.month}</td>
+                    <td className="px-4 py-3">{dollars(row.payment)}</td>
+                    <td className="px-4 py-3 text-[#f85149]">{dollars(row.interest)}</td>
+                    <td className="px-4 py-3 text-[#3fb950]">{dollars(row.principal)}</td>
+                    <td className="px-4 py-3">{dollars(row.totalPaid)}</td>
+                    <td className="px-4 py-3">{dollars(row.totalInterest)}</td>
+                    <td className="px-4 py-3">{dollars(row.endingBalance)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
