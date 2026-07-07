@@ -28,6 +28,13 @@ interface LeadSourceEntry {
   closeRate: number;
   revenue: number;
   avgTicket: number;
+  acquisitionCost: number;
+  exactCost: number;
+  allocatedCost: number;
+  costPerLead: number | null;
+  cac: number | null;
+  roas: number | null;
+  costBasis: "exact" | "allocated" | "mixed" | "none";
   segmentBreakdown: Record<string, number>;
 }
 
@@ -39,6 +46,20 @@ interface TopSourceEntry {
 interface LeadSourcesData {
   period: { key: string; label: string };
   sources: LeadSourceEntry[];
+  acquisition: {
+    totalCost: number;
+    recurringMarketingCost: number;
+    oneTimeMarketingCost: number;
+    exactMarketingCost: number;
+    paidLeads: number;
+    paidWonJobs: number;
+    paidRevenue: number;
+    blendedCac: number | null;
+    costPerLead: number | null;
+    roas: number | null;
+    totalMarketingBudget: number;
+    missingExactCostSources: string[];
+  };
   topSources: {
     byVolume: TopSourceEntry[];
     byCloseRate: TopSourceEntry[];
@@ -55,7 +76,11 @@ type SortKey =
   | "lostJobs"
   | "closeRate"
   | "revenue"
-  | "avgTicket";
+  | "avgTicket"
+  | "acquisitionCost"
+  | "costPerLead"
+  | "cac"
+  | "roas";
 
 type SortDir = "asc" | "desc";
 
@@ -91,8 +116,8 @@ function CustomTooltip({
 
 function KPISkeleton() {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-      {[1, 2, 3, 4].map((i) => (
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-8">
+      {[1, 2, 3, 4, 5].map((i) => (
         <div
           key={i}
           className="bg-[#161b22] border border-[#30363d] rounded-lg p-4"
@@ -103,6 +128,28 @@ function KPISkeleton() {
       ))}
     </div>
   );
+}
+
+function formatNullableCurrency(value: number | null): string {
+  return value === null ? "--" : formatCurrency(value);
+}
+
+function formatNullableNumber(value: number | null, suffix = ""): string {
+  return value === null ? "--" : `${value.toFixed(1)}${suffix}`;
+}
+
+function costBasisLabel(source: LeadSourceEntry): string {
+  switch (source.costBasis) {
+    case "exact":
+      return "Exact";
+    case "mixed":
+      return "Mixed";
+    case "allocated":
+      return "Allocated";
+    case "none":
+    default:
+      return "No cost";
+  }
 }
 
 /* -- Main Component -------------------------------------------------------- */
@@ -132,11 +179,11 @@ export default function LeadSourcesPage() {
           : bVal.localeCompare(aVal);
       }
       return sortDir === "asc"
-        ? (aVal as number) - (bVal as number)
-        : (bVal as number) - (aVal as number);
+        ? ((aVal as number | null) ?? -1) - ((bVal as number | null) ?? -1)
+        : ((bVal as number | null) ?? -1) - ((aVal as number | null) ?? -1);
     });
     return sorted;
-  }, [data?.sources, sortKey, sortDir]);
+  }, [data, sortKey, sortDir]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -162,7 +209,7 @@ export default function LeadSourcesPage() {
         totalLeads: s.totalLeads,
         fill: CHART_COLORS[i % CHART_COLORS.length],
       }));
-  }, [data?.sources]);
+  }, [data]);
 
   // Derive KPIs
   const totalSources = data?.sources?.length ?? 0;
@@ -187,7 +234,7 @@ export default function LeadSourcesPage() {
       result[segKey] = entries;
     }
     return result;
-  }, [data?.sources]);
+  }, [data]);
 
   return (
     <div>
@@ -209,7 +256,7 @@ export default function LeadSourcesPage() {
       {isLoading ? (
         <KPISkeleton />
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-8">
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
             <div className="mb-1">
               <InfoTooltip label="Sources Tracked" explanation="Number of distinct lead sources (e.g. Referral, Roofle, Website) with at least one job in this period." />
@@ -252,6 +299,58 @@ export default function LeadSourcesPage() {
               </p>
             )}
           </div>
+          <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
+            <div className="mb-1">
+              <InfoTooltip label="Blended CAC" explanation="Acquisition cost divided by won jobs for paid channels in this period. Exact campaign costs are used when present; otherwise the marketing budget bucket is allocated by lead share." />
+            </div>
+            <p className="text-xl font-bold text-[#d29922]">
+              {formatNullableCurrency(data?.acquisition?.blendedCac ?? null)}
+            </p>
+            <p className="text-xs text-[#8b949e] mt-0.5">
+              {formatCurrency(data?.acquisition?.totalCost ?? 0)} tracked cost
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!isLoading && data?.acquisition && (
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div>
+              <p className="text-xs text-[#8b949e]">Paid Leads</p>
+              <p className="mt-1 font-mono text-lg text-[#e6edf3]">{data.acquisition.paidLeads}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[#8b949e]">Paid Wins</p>
+              <p className="mt-1 font-mono text-lg text-[#3fb950]">{data.acquisition.paidWonJobs}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[#8b949e]">Cost / Lead</p>
+              <p className="mt-1 font-mono text-lg text-[#e6edf3]">
+                {formatNullableCurrency(data.acquisition.costPerLead)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-[#8b949e]">ROAS</p>
+              <p className="mt-1 font-mono text-lg text-[#e6edf3]">
+                {formatNullableNumber(data.acquisition.roas, "x")}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-[#8b949e]">Cost Health</p>
+              <p className="mt-1 font-mono text-lg text-[#e6edf3]">
+                {data.acquisition.missingExactCostSources.length}
+              </p>
+              <p className="text-xs text-[#8b949e]">channels need exact spend</p>
+            </div>
+          </div>
+          <p className="mt-4 text-xs leading-relaxed text-[#8b949e]">
+            Cost basis: {formatCurrency(data.acquisition.exactMarketingCost)} exact campaign/lead cost,
+            {" "}{formatCurrency(data.acquisition.recurringMarketingCost + data.acquisition.oneTimeMarketingCost)} allocated marketing budget.
+            {data.acquisition.missingExactCostSources.length > 0 && (
+              <> Missing exact spend for {data.acquisition.missingExactCostSources.join(", ")}.</>
+            )}
+          </p>
         </div>
       )}
 
@@ -365,6 +464,10 @@ export default function LeadSourcesPage() {
                         { key: "closeRate" as SortKey, label: "Close Rate", align: "right" },
                         { key: "revenue" as SortKey, label: "Revenue", align: "right" },
                         { key: "avgTicket" as SortKey, label: "Avg Ticket", align: "right" },
+                        { key: "acquisitionCost" as SortKey, label: "Cost", align: "right" },
+                        { key: "costPerLead" as SortKey, label: "Cost / Lead", align: "right" },
+                        { key: "cac" as SortKey, label: "CAC", align: "right" },
+                        { key: "roas" as SortKey, label: "ROAS", align: "right" },
                       ] as const
                     ).map((col) => (
                       <th
@@ -406,6 +509,23 @@ export default function LeadSourcesPage() {
                       </td>
                       <td className="py-3 text-right font-mono text-[#8b949e]">
                         {formatCurrency(source.avgTicket)}
+                      </td>
+                      <td className="py-3 text-right">
+                        <div className="font-mono text-[#e6edf3]">
+                          {formatCurrency(source.acquisitionCost)}
+                        </div>
+                        <div className="text-[10px] uppercase tracking-wide text-[#8b949e]">
+                          {costBasisLabel(source)}
+                        </div>
+                      </td>
+                      <td className="py-3 text-right font-mono text-[#8b949e]">
+                        {formatNullableCurrency(source.costPerLead)}
+                      </td>
+                      <td className="py-3 text-right font-mono text-[#d29922]">
+                        {formatNullableCurrency(source.cac)}
+                      </td>
+                      <td className="py-3 text-right font-mono text-[#8b949e]">
+                        {formatNullableNumber(source.roas, "x")}
                       </td>
                     </tr>
                   ))}

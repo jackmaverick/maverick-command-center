@@ -66,6 +66,19 @@ interface SourceSegmentRow {
   count: string;
 }
 
+interface CampaignCostRow {
+  source_name: string;
+  cost: string;
+}
+
+interface MarketingExpenseRow {
+  name: string;
+  amount: string;
+  frequency: string | null;
+  start_date: string | null;
+  end_date: string | null;
+}
+
 interface SourcePerformance {
   source: string;
   totalLeads: number;
@@ -74,7 +87,72 @@ interface SourcePerformance {
   closeRate: number;
   revenue: number;
   avgTicket: number;
+  acquisitionCost: number;
+  exactCost: number;
+  allocatedCost: number;
+  costPerLead: number | null;
+  cac: number | null;
+  roas: number | null;
+  costBasis: "exact" | "allocated" | "mixed" | "none";
   segmentBreakdown: Record<Segment, number>;
+}
+
+const PAID_SOURCE_PATTERNS = [
+  /direct mail/i,
+  /\blsa\b/i,
+  /google/i,
+  /website/i,
+  /roofle/i,
+  /yard sign/i,
+];
+
+function isPaidAcquisitionSource(source: string): boolean {
+  return PAID_SOURCE_PATTERNS.some((pattern) => pattern.test(source));
+}
+
+function sourceNameForChannel(channel: string | null): string {
+  const normalized = (channel ?? "").trim().toLowerCase();
+  if (normalized === "direct_mail" || normalized === "direct mail") return "Direct Mail";
+  if (normalized === "lsa" || normalized === "local services ads") return "LSA";
+  if (normalized.includes("google")) return "Google Search";
+  if (normalized.includes("website")) return "Website";
+  return normalized ? normalized.replace(/_/g, " ") : "Unknown";
+}
+
+function daysBetween(start: Date, end: Date): number {
+  return Math.max(0, Math.ceil((end.getTime() - start.getTime()) / 86_400_000));
+}
+
+function monthlyEquivalent(amount: number, frequency: string | null): number {
+  switch ((frequency ?? "monthly").toLowerCase()) {
+    case "weekly":
+      return amount * 52 / 12;
+    case "biweekly":
+      return amount * 26 / 12;
+    case "quarterly":
+      return amount / 3;
+    case "annual":
+    case "annually":
+    case "yearly":
+      return amount / 12;
+    case "daily":
+      return amount * 30;
+    case "monthly":
+    default:
+      return amount;
+  }
+}
+
+function prorateRecurringExpense(row: MarketingExpenseRow, rangeStart: Date, rangeEnd: Date): number {
+  const expenseStart = row.start_date ? new Date(`${row.start_date}T00:00:00`) : rangeStart;
+  const expenseEnd = row.end_date ? new Date(`${row.end_date}T00:00:00`) : rangeEnd;
+  const overlapStart = new Date(Math.max(rangeStart.getTime(), expenseStart.getTime()));
+  const overlapEnd = new Date(Math.min(rangeEnd.getTime(), expenseEnd.getTime()));
+  const overlapDays = daysBetween(overlapStart, overlapEnd);
+  if (overlapDays <= 0) return 0;
+
+  const monthly = monthlyEquivalent(parseFloat(row.amount), row.frequency);
+  return (monthly * overlapDays) / 30;
 }
 
 // ── GET handler ──────────────────────────────────────────────────────────────
@@ -92,7 +170,15 @@ export async function GET(request: NextRequest) {
 
     // ── Run all queries in parallel ──────────────────────────────────────
 
-    const [sourceRows, revenueRows, segmentRows] = await Promise.all([
+    const [
+      sourceRows,
+      revenueRows,
+      segmentRows,
+      campaignCostRows,
+      lsaCostRows,
+      recurringMarketingRows,
+      oneTimeMarketingRows,
+    ] = await Promise.all([
       // 1. Source performance: leads, won, lost per source
       // $1=start, $2=end, $3=WON_STATUSES, $4=LOSS_STATUSES
       query<SourceRow>(
@@ -142,6 +228,45 @@ export async function GET(request: NextRequest) {
                   (${SEGMENT_SQL})`,
         [startUnix, endUnix]
       ),
+
+      query<CampaignCostRow>(
+        `SELECT
+           channel AS source_name,
+           COALESCE(SUM(total_cost), 0)::text AS cost
+         FROM marketing_campaigns
+         WHERE send_date >= $1::date
+           AND send_date < $2::date
+         GROUP BY channel`,
+        [range.start.toISOString().slice(0, 10), range.end.toISOString().slice(0, 10)]
+      ).catch(() => []),
+
+      query<CampaignCostRow>(
+        `SELECT
+           'LSA' AS source_name,
+           COALESCE(SUM(cost_usd), 0)::text AS cost
+         FROM lsa_leads
+         WHERE COALESCE(event_at, received_at, created_at) >= $1::timestamptz
+           AND COALESCE(event_at, received_at, created_at) < $2::timestamptz`,
+        [range.start.toISOString(), range.end.toISOString()]
+      ).catch(() => []),
+
+      query<MarketingExpenseRow>(
+        `SELECT name, amount::text, frequency, start_date::text, end_date::text
+         FROM app_recurring_expenses
+         WHERE category ILIKE 'Marketing'
+           AND start_date < $2::date
+           AND (end_date IS NULL OR end_date >= $1::date)`,
+        [range.start.toISOString().slice(0, 10), range.end.toISOString().slice(0, 10)]
+      ).catch(() => []),
+
+      query<{ amount: string }>(
+        `SELECT COALESCE(SUM(amount), 0)::text AS amount
+         FROM app_one_time_expenses
+         WHERE category ILIKE 'Marketing'
+           AND expected_date >= $1::date
+           AND expected_date < $2::date`,
+        [range.start.toISOString().slice(0, 10), range.end.toISOString().slice(0, 10)]
+      ).catch(() => [{ amount: "0" }]),
     ]);
 
     // ── Build revenue lookup ─────────────────────────────────────────────
@@ -170,7 +295,32 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const exactCostBySource: Record<string, number> = {};
+    for (const row of campaignCostRows) {
+      const source = sourceNameForChannel(row.source_name);
+      exactCostBySource[source] = round2((exactCostBySource[source] ?? 0) + parseFloat(row.cost));
+    }
+    for (const row of lsaCostRows) {
+      exactCostBySource[row.source_name] = round2(
+        (exactCostBySource[row.source_name] ?? 0) + parseFloat(row.cost)
+      );
+    }
+
+    const recurringMarketingCost = recurringMarketingRows.reduce(
+      (sum, row) => sum + prorateRecurringExpense(row, range.start, range.end),
+      0
+    );
+    const oneTimeMarketingCost = parseFloat(oneTimeMarketingRows[0]?.amount ?? "0");
+    const exactMarketingCost = Object.values(exactCostBySource).reduce((sum, cost) => sum + cost, 0);
+    const totalMarketingBudget = round2(recurringMarketingCost + oneTimeMarketingCost + exactMarketingCost);
+
     // ── Assemble source performance table ────────────────────────────────
+
+    const paidLeadTotal = sourceRows.reduce((sum, row) => {
+      return isPaidAcquisitionSource(row.source_name)
+        ? sum + parseInt(row.total_leads, 10)
+        : sum;
+    }, 0);
 
     const sources: SourcePerformance[] = sourceRows.map((row) => {
       const totalLeads = parseInt(row.total_leads, 10);
@@ -179,6 +329,18 @@ export async function GET(request: NextRequest) {
       const closeRate = totalLeads > 0 ? round1((wonJobs / totalLeads) * 100) : 0;
       const revenue = round2(revenueBySource[row.source_name] ?? 0);
       const avgTicket = wonJobs > 0 ? round2(revenue / wonJobs) : 0;
+      const exactCost = round2(exactCostBySource[row.source_name] ?? 0);
+      const allocatedCost = isPaidAcquisitionSource(row.source_name) && paidLeadTotal > 0
+        ? round2(((recurringMarketingCost + oneTimeMarketingCost) * totalLeads) / paidLeadTotal)
+        : 0;
+      const acquisitionCost = round2(exactCost + allocatedCost);
+      const costBasis = exactCost > 0 && allocatedCost > 0
+        ? "mixed"
+        : exactCost > 0
+          ? "exact"
+          : allocatedCost > 0
+            ? "allocated"
+            : "none";
 
       return {
         source: row.source_name,
@@ -188,6 +350,13 @@ export async function GET(request: NextRequest) {
         closeRate,
         revenue,
         avgTicket,
+        acquisitionCost,
+        exactCost,
+        allocatedCost,
+        costPerLead: totalLeads > 0 && acquisitionCost > 0 ? round2(acquisitionCost / totalLeads) : null,
+        cac: wonJobs > 0 && acquisitionCost > 0 ? round2(acquisitionCost / wonJobs) : null,
+        roas: acquisitionCost > 0 ? round2(revenue / acquisitionCost) : null,
+        costBasis,
         segmentBreakdown: segmentBySource[row.source_name] ?? {
           real_estate: 0,
           retail: 0,
@@ -220,6 +389,13 @@ export async function GET(request: NextRequest) {
     // ── Auto-insights ────────────────────────────────────────────────────
 
     const insights = generateInsights(sources);
+    const paidSources = sources.filter((source) => source.acquisitionCost > 0);
+    const totalAcquisitionCost = round2(
+      paidSources.reduce((sum, source) => sum + source.acquisitionCost, 0)
+    );
+    const paidLeads = paidSources.reduce((sum, source) => sum + source.totalLeads, 0);
+    const paidWonJobs = paidSources.reduce((sum, source) => sum + source.wonJobs, 0);
+    const paidRevenue = round2(paidSources.reduce((sum, source) => sum + source.revenue, 0));
 
     // ── Return response ──────────────────────────────────────────────────
 
@@ -231,6 +407,26 @@ export async function GET(request: NextRequest) {
         end: range.end.toISOString(),
       },
       sources,
+      acquisition: {
+        totalCost: totalAcquisitionCost,
+        recurringMarketingCost: round2(recurringMarketingCost),
+        oneTimeMarketingCost: round2(oneTimeMarketingCost),
+        exactMarketingCost: round2(exactMarketingCost),
+        paidLeads,
+        paidWonJobs,
+        paidRevenue,
+        blendedCac: paidWonJobs > 0 && totalAcquisitionCost > 0
+          ? round2(totalAcquisitionCost / paidWonJobs)
+          : null,
+        costPerLead: paidLeads > 0 && totalAcquisitionCost > 0
+          ? round2(totalAcquisitionCost / paidLeads)
+          : null,
+        roas: totalAcquisitionCost > 0 ? round2(paidRevenue / totalAcquisitionCost) : null,
+        totalMarketingBudget,
+        missingExactCostSources: sources
+          .filter((source) => isPaidAcquisitionSource(source.source) && source.exactCost === 0 && source.totalLeads > 0)
+          .map((source) => source.source),
+      },
       topSources: {
         byVolume: topByVolume,
         byCloseRate: topByCloseRate,
@@ -329,6 +525,16 @@ function generateInsights(sources: SourcePerformance[]): string[] {
         `${topTicket.source} has the highest avg ticket at $${topTicket.avgTicket.toLocaleString("en-US", { maximumFractionDigits: 0 })} (${round1((topTicket.avgTicket / overallAvgTicket - 1) * 100)}% above average)`
       );
     }
+  }
+
+  const cacSources = sources
+    .filter((s) => s.cac !== null)
+    .sort((a, b) => (a.cac ?? Number.MAX_SAFE_INTEGER) - (b.cac ?? Number.MAX_SAFE_INTEGER));
+  if (cacSources.length > 0) {
+    const bestCac = cacSources[0];
+    insights.push(
+      `${bestCac.source} has the lowest measured CAC at $${bestCac.cac!.toLocaleString("en-US", { maximumFractionDigits: 0 })} per won job`
+    );
   }
 
   // Zero-conversion warning for high-volume sources (10+ leads, 0% close rate)
