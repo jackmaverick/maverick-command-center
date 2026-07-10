@@ -16,7 +16,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/dates";
-import type { CashFlowMetrics, CashFlowWeek } from "@/types";
+import type { CashFlowMetrics, CashFlowWeek, MonthlySpendResponse } from "@/types";
 
 type Scenario = "optimistic" | "realistic" | "conservative";
 type Horizon = "30" | "60" | "90";
@@ -62,6 +62,26 @@ export default function CashFlowPage() {
       return res.json();
     },
   });
+
+  const { data: spendData, isLoading: spendLoading } =
+    useQuery<MonthlySpendResponse>({
+      queryKey: ["monthly-spend"],
+      queryFn: async () => {
+        const res = await fetch(`/api/financial/monthly-spend?months=12`);
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error ?? "Failed to fetch monthly spend");
+        }
+        return res.json();
+      },
+    });
+
+  const spendChartData = (spendData?.months ?? [])
+    .slice()
+    .reverse()
+    .map((m) => ({ month: m.month, total: m.total }));
+
+  const topCategoriesThisMonth = spendData?.months?.[0]?.categories ?? [];
 
   const activeProjections: CashFlowWeek[] =
     data?.scenarios[scenario]?.projections ?? data?.weeklyProjections ?? [];
@@ -307,6 +327,112 @@ export default function CashFlowPage() {
                 />
               </ComposedChart>
             </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Monthly Actual Spend */}
+      <Card className="bg-[#161b22] border-[#30363d] mb-8">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+                Monthly Actual Spend
+              </CardTitle>
+              <p className="text-xs text-[#8b949e] mt-1">
+                Cash-basis — what actually left the bank/cards, from QBO
+                purchase transactions. Not the same as accrual expenses on
+                the P&amp;L tab.
+              </p>
+            </div>
+            {spendData && (
+              <div className="text-right">
+                <p className="text-xs text-[#8b949e]">This month vs last</p>
+                <p
+                  className={`text-sm font-medium ${
+                    (spendData.momDeltaPct ?? 0) > 0
+                      ? "text-[#f85149]"
+                      : "text-[#3fb950]"
+                  }`}
+                >
+                  {spendData.momDeltaPct !== null
+                    ? `${spendData.momDeltaPct > 0 ? "+" : ""}${spendData.momDeltaPct.toFixed(1)}%`
+                    : "n/a"}
+                </p>
+              </div>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {spendLoading ? (
+            <div className="h-[260px] flex items-center justify-center">
+              <Skeleton className="h-full w-full bg-[#21262d]" />
+            </div>
+          ) : !spendChartData.length ? (
+            <div className="h-[260px] flex items-center justify-center">
+              <p className="text-sm text-[#8b949e]">No purchase data</p>
+            </div>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={260}>
+                <ComposedChart data={spendChartData}>
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fill: "#8b949e", fontSize: 10 }}
+                    axisLine={{ stroke: "#30363d" }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: "#8b949e", fontSize: 11 }}
+                    axisLine={{ stroke: "#30363d" }}
+                    tickLine={false}
+                    tickFormatter={(v) => formatCurrency(v)}
+                  />
+                  <RechartsTooltip content={<CustomTooltip />} />
+                  {spendData?.avgMonthlySpend ? (
+                    <ReferenceLine
+                      y={spendData.avgMonthlySpend}
+                      stroke="#8b949e"
+                      strokeDasharray="4 4"
+                      label={{
+                        value: "12mo avg",
+                        fill: "#8b949e",
+                        fontSize: 10,
+                        position: "right",
+                      }}
+                    />
+                  ) : null}
+                  <Bar
+                    dataKey="total"
+                    name="Actual Spend"
+                    fill="#f85149"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={32}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+
+              {topCategoriesThisMonth.length > 0 && (
+                <div className="mt-6">
+                  <p className="text-xs font-medium text-[#8b949e] mb-2">
+                    Top Categories — {spendData?.months?.[0]?.month}
+                  </p>
+                  <div className="space-y-2">
+                    {topCategoriesThisMonth.slice(0, 8).map((c, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between text-xs"
+                      >
+                        <span className="text-[#e6edf3]">{c.name}</span>
+                        <span className="font-mono tabular-nums text-[#8b949e]">
+                          {formatCurrency(c.amount)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

@@ -382,6 +382,27 @@ export interface ExpectedCollection {
   segment: string | null;
 }
 
+// Monthly Actual Spend (cash-basis, from QBO Purchase transactions)
+export interface MonthlySpendCategory {
+  name: string;
+  amount: number;
+}
+
+export interface MonthlySpend {
+  month: string;
+  total: number;
+  categories: MonthlySpendCategory[];
+  byAccount: MonthlySpendCategory[];
+}
+
+export interface MonthlySpendResponse {
+  months: MonthlySpend[];
+  currentMonthTotal: number;
+  priorMonthTotal: number;
+  momDeltaPct: number | null;
+  avgMonthlySpend: number;
+}
+
 // Reconciliation
 export interface ReconciliationSummary {
   matched: number;
