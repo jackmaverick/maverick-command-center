@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getQBOConnection } from "@/lib/quickbooks";
 import { runIncrementalQboSync } from "@/lib/qbo-sync";
+import { checkRefreshTokenExpiry } from "@/lib/qbo-token-alert";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -28,7 +29,9 @@ async function handleCron(req: NextRequest) {
     }
 
     const result = await runIncrementalQboSync(45_000);
-    return NextResponse.json({ success: true, source: "qbo-cron", ...result });
+    // Never blocks/breaks sync: internally try/caught, dedupes to 1 email/day
+    const tokenAlert = await checkRefreshTokenExpiry();
+    return NextResponse.json({ success: true, source: "qbo-cron", tokenAlert, ...result });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error("[QBO Cron] Error:", msg);

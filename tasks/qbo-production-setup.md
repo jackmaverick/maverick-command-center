@@ -41,4 +41,4 @@
 - [ ] **Capture `intuit_tid` header** — for QBO support troubleshooting (noted in questionnaire)
 - [ ] **Cash flow model tuning** — refine collection probability weights with historical data after 30 days
 - [ ] **Reconciliation manual actions** — approve/flag matches from the UI (API exists, UI buttons need wiring)
-- [ ] **Refresh token expiry warning** — email/Slack alert when QBO refresh token < 14 days from expiry
+- [x] **Refresh token expiry warning** — `/api/qbo/cron` now checks `qbo_connection.refresh_token_expires_at` every run (`src/lib/qbo-token-alert.ts`); emails jack@maverickexteriorskc.com via Resend when < 14 days out, deduped to 1 email/24h via `qbo_alert_log` table. Requires `RESEND_API_KEY` env var on Vercel.
