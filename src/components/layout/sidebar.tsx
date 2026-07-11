@@ -23,6 +23,7 @@ import {
   DollarSign,
   MapPinned,
   HandCoins,
+  CalendarClock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -60,6 +61,7 @@ const navGroups = [
       { href: "/financial/pipeline-cashflow", label: "Pipeline Cashflow", icon: GitBranch },
       { href: "/financial/bob-buyout", label: "Bob Buyout", icon: HandCoins },
       { href: "/financial/reconciliation", label: "Reconciliation", icon: GitCompare },
+      { href: "/due-dates", label: "Invoice Due Dates", icon: CalendarClock },
       { href: "/gross-profit", label: "Gross Profit", icon: DollarSign },
     ],
   },

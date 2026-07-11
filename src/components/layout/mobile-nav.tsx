@@ -18,6 +18,7 @@ const navItems = [
   { href: "/financial/cashflow", label: "Cash Flow" },
   { href: "/financial/pipeline-cashflow", label: "Pipeline Cashflow" },
   { href: "/financial/bob-buyout", label: "Bob Buyout" },
+  { href: "/due-dates", label: "Invoice Due Dates" },
   { href: "/lead-sources", label: "Lead Sources" },
   { href: "/direct-mail", label: "Direct Mail Map" },
   { href: "/weekly-review", label: "Weekly Review" },
