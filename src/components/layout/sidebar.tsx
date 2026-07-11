@@ -21,6 +21,7 @@ import {
   Wallet,
   GitCompare,
   DollarSign,
+  CalendarClock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -57,6 +58,7 @@ const navGroups = [
       { href: "/financial/cashflow", label: "Cash Flow", icon: Wallet },
       { href: "/financial/pipeline-cashflow", label: "Pipeline Cashflow", icon: GitBranch },
       { href: "/financial/reconciliation", label: "Reconciliation", icon: GitCompare },
+      { href: "/due-dates", label: "Invoice Due Dates", icon: CalendarClock },
       { href: "/gross-profit", label: "Gross Profit", icon: DollarSign },
     ],
   },

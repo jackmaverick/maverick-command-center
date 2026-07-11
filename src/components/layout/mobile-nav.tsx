@@ -17,6 +17,7 @@ const navItems = [
   { href: "/job-types", label: "Job Types" },
   { href: "/financial/cashflow", label: "Cash Flow" },
   { href: "/financial/pipeline-cashflow", label: "Pipeline Cashflow" },
+  { href: "/due-dates", label: "Invoice Due Dates" },
   { href: "/lead-sources", label: "Lead Sources" },
   { href: "/weekly-review", label: "Weekly Review" },
   { href: "/agents", label: "Agents" },
