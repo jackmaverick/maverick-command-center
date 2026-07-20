@@ -395,12 +395,36 @@ export interface MonthlySpend {
   byAccount: MonthlySpendCategory[];
 }
 
+export interface MonthlySpendComparison {
+  month: string;
+  monthLabel: string;
+  currentYearTotal: number | null;
+  priorYearTotal: number | null;
+  variance: number | null;
+  variancePct: number | null;
+}
+
+export interface MonthlySpendProjection {
+  horizonDays: number;
+  monthsCovered: number;
+  currentRunRate: number;
+  lastYearSeasonalTotal: number;
+  lastYearSeasonalMonthlyAvg: number;
+  blendedMonthlyEstimate: number;
+  projectedExpense: number;
+  sourceMonths: string[];
+}
+
 export interface MonthlySpendResponse {
   months: MonthlySpend[];
   currentMonthTotal: number;
   priorMonthTotal: number;
   momDeltaPct: number | null;
   avgMonthlySpend: number;
+  currentYearMonths: MonthlySpend[];
+  priorYearMonths: MonthlySpend[];
+  yearOverYear: MonthlySpendComparison[];
+  projection: MonthlySpendProjection;
 }
 
 // Reconciliation

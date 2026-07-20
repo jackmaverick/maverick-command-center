@@ -7,7 +7,31 @@ import type { MonthlySpend, MonthlySpendCategory } from "@/types";
 // from the accrual-basis "expenses" shown on the P&L tab, which counts
 // costs when incurred rather than when money actually moves.
 
-const DEFAULT_MONTHS = 12;
+const DEFAULT_MONTHS = 24;
+
+function addMonthsKey(month: string, offset: number): string {
+  const [year, monthNum] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, monthNum - 1 + offset, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(month: string): string {
+  const monthNum = Number(month.split("-")[1]);
+  return [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ][monthNum - 1] ?? month;
+}
 
 type PurchaseRow = {
   ym: string;
@@ -27,6 +51,10 @@ export async function GET(request: NextRequest) {
     const months = Math.min(
       24,
       Math.max(1, Number(searchParams.get("months")) || DEFAULT_MONTHS)
+    );
+    const horizonDays = Math.min(
+      90,
+      Math.max(30, Number(searchParams.get("horizon")) || 90)
     );
 
     const byCategory = await query<PurchaseRow>(
@@ -105,12 +133,91 @@ export async function GET(request: NextRequest) {
         ? result.reduce((s, m) => s + m.total, 0) / result.length
         : 0;
 
+    const monthTotals = new Map(result.map((m) => [m.month, m.total]));
+    const latestMonth = currentMonth?.month ?? null;
+    const latestYear = latestMonth ? Number(latestMonth.slice(0, 4)) : null;
+    const currentYearMonths = latestYear
+      ? result
+          .filter((m) => m.month.startsWith(`${latestYear}-`))
+          .sort((a, b) => (a.month > b.month ? 1 : -1))
+      : [];
+    const priorYearMonths = latestYear
+      ? result
+          .filter((m) => m.month.startsWith(`${latestYear - 1}-`))
+          .sort((a, b) => (a.month > b.month ? 1 : -1))
+      : [];
+
+    const yearOverYear = latestYear
+      ? Array.from({ length: 12 }, (_, idx) => {
+          const month = `${latestYear}-${String(idx + 1).padStart(2, "0")}`;
+          const priorMonth = `${latestYear - 1}-${String(idx + 1).padStart(2, "0")}`;
+          const currentYearTotal = monthTotals.get(month) ?? null;
+          const priorYearTotal = monthTotals.get(priorMonth) ?? null;
+          const variance =
+            currentYearTotal !== null && priorYearTotal !== null
+              ? currentYearTotal - priorYearTotal
+              : null;
+          const variancePct =
+            variance !== null && priorYearTotal && priorYearTotal > 0
+              ? (variance / priorYearTotal) * 100
+              : null;
+
+          return {
+            month,
+            monthLabel: monthLabel(month),
+            currentYearTotal,
+            priorYearTotal,
+            variance,
+            variancePct,
+          };
+        })
+      : [];
+
+    const monthsCovered = Math.ceil(horizonDays / 30);
+    const sourceMonths = latestMonth
+      ? Array.from({ length: monthsCovered }, (_, idx) =>
+          addMonthsKey(addMonthsKey(latestMonth, -12), idx)
+        )
+      : [];
+    const lastYearSeasonalTotal = sourceMonths.reduce(
+      (sum, ym) => sum + (monthTotals.get(ym) ?? 0),
+      0
+    );
+    const lastYearSeasonalMonthlyAvg =
+      sourceMonths.length > 0 ? lastYearSeasonalTotal / sourceMonths.length : 0;
+    const recentCompleteMonths = result
+      .filter((m) => m.month !== latestMonth)
+      .slice(0, 3);
+    const currentRunRate =
+      recentCompleteMonths.length > 0
+        ? recentCompleteMonths.reduce((s, m) => s + m.total, 0) /
+          recentCompleteMonths.length
+        : avgMonthlySpend;
+    const blendedMonthlyEstimate =
+      lastYearSeasonalMonthlyAvg > 0
+        ? (currentRunRate + lastYearSeasonalMonthlyAvg) / 2
+        : currentRunRate;
+    const projectedExpense = blendedMonthlyEstimate * (horizonDays / 30);
+
     return NextResponse.json({
       months: result,
       currentMonthTotal: currentMonth?.total ?? 0,
       priorMonthTotal: priorMonth?.total ?? 0,
       momDeltaPct,
       avgMonthlySpend,
+      currentYearMonths,
+      priorYearMonths,
+      yearOverYear,
+      projection: {
+        horizonDays,
+        monthsCovered,
+        currentRunRate,
+        lastYearSeasonalTotal,
+        lastYearSeasonalMonthlyAvg,
+        blendedMonthlyEstimate,
+        projectedExpense,
+        sourceMonths,
+      },
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
