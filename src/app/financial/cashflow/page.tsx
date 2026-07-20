@@ -65,9 +65,11 @@ export default function CashFlowPage() {
 
   const { data: spendData, isLoading: spendLoading } =
     useQuery<MonthlySpendResponse>({
-      queryKey: ["monthly-spend"],
+      queryKey: ["monthly-spend", horizon],
       queryFn: async () => {
-        const res = await fetch(`/api/financial/monthly-spend?months=12`);
+        const res = await fetch(
+          `/api/financial/monthly-spend?months=24&horizon=${horizon}`
+        );
         if (!res.ok) {
           const err = await res.json();
           throw new Error(err.error ?? "Failed to fetch monthly spend");
@@ -76,12 +78,18 @@ export default function CashFlowPage() {
       },
     });
 
-  const spendChartData = (spendData?.months ?? [])
-    .slice()
-    .reverse()
-    .map((m) => ({ month: m.month, total: m.total }));
+  const spendChartData = (spendData?.yearOverYear ?? [])
+    .filter((m) => m.currentYearTotal !== null || m.priorYearTotal !== null)
+    .map((m) => ({
+      month: m.monthLabel,
+      currentYearTotal: m.currentYearTotal,
+      priorYearTotal: m.priorYearTotal,
+      variance: m.variance,
+      variancePct: m.variancePct,
+    }));
 
   const topCategoriesThisMonth = spendData?.months?.[0]?.categories ?? [];
+  const expenseProjection = spendData?.projection;
 
   const activeProjections: CashFlowWeek[] =
     data?.scenarios[scenario]?.projections ?? data?.weeklyProjections ?? [];
@@ -337,27 +345,19 @@ export default function CashFlowPage() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-sm font-semibold text-[#e6edf3]">
-                Monthly Actual Spend
+                Expense Projection Baseline
               </CardTitle>
               <p className="text-xs text-[#8b949e] mt-1">
-                Cash-basis — what actually left the bank/cards, from QBO
-                purchase transactions. Not the same as accrual expenses on
-                the P&amp;L tab.
+                Cash-basis spend from QBO purchases, compared against the same
+                months last year so the forecast accounts for seasonal expense
+                swings.
               </p>
             </div>
             {spendData && (
               <div className="text-right">
-                <p className="text-xs text-[#8b949e]">This month vs last</p>
-                <p
-                  className={`text-sm font-medium ${
-                    (spendData.momDeltaPct ?? 0) > 0
-                      ? "text-[#f85149]"
-                      : "text-[#3fb950]"
-                  }`}
-                >
-                  {spendData.momDeltaPct !== null
-                    ? `${spendData.momDeltaPct > 0 ? "+" : ""}${spendData.momDeltaPct.toFixed(1)}%`
-                    : "n/a"}
+                <p className="text-xs text-[#8b949e]">Projected {horizon}d expenses</p>
+                <p className="text-sm font-medium text-[#f85149]">
+                  {formatCurrency(expenseProjection?.projectedExpense ?? 0)}
                 </p>
               </div>
             )}
@@ -374,6 +374,36 @@ export default function CashFlowPage() {
             </div>
           ) : (
             <>
+              <div className="grid grid-cols-1 gap-3 mb-5 sm:grid-cols-3">
+                <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                  <p className="text-xs text-[#8b949e]">Recent run-rate</p>
+                  <p className="mt-1 font-mono text-lg font-semibold text-[#e6edf3]">
+                    {formatCurrency(expenseProjection?.currentRunRate ?? 0)}
+                  </p>
+                  <p className="mt-1 text-[11px] text-[#8b949e]">
+                    Avg monthly spend from recent complete months.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                  <p className="text-xs text-[#8b949e]">Last-year seasonal avg</p>
+                  <p className="mt-1 font-mono text-lg font-semibold text-[#e6edf3]">
+                    {formatCurrency(expenseProjection?.lastYearSeasonalMonthlyAvg ?? 0)}
+                  </p>
+                  <p className="mt-1 text-[11px] text-[#8b949e]">
+                    From {expenseProjection?.sourceMonths?.join(", ") || "prior-year months"}.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3">
+                  <p className="text-xs text-[#8b949e]">Blended monthly estimate</p>
+                  <p className="mt-1 font-mono text-lg font-semibold text-[#f85149]">
+                    {formatCurrency(expenseProjection?.blendedMonthlyEstimate ?? 0)}
+                  </p>
+                  <p className="mt-1 text-[11px] text-[#8b949e]">
+                    50/50 recent actuals and last-year seasonality.
+                  </p>
+                </div>
+              </div>
+
               <ResponsiveContainer width="100%" height={260}>
                 <ComposedChart data={spendChartData}>
                   <XAxis
@@ -389,13 +419,20 @@ export default function CashFlowPage() {
                     tickFormatter={(v) => formatCurrency(v)}
                   />
                   <RechartsTooltip content={<CustomTooltip />} />
-                  {spendData?.avgMonthlySpend ? (
+                  <Legend
+                    verticalAlign="top"
+                    height={28}
+                    formatter={(value: string) => (
+                      <span className="text-xs text-[#8b949e]">{value}</span>
+                    )}
+                  />
+                  {expenseProjection?.blendedMonthlyEstimate ? (
                     <ReferenceLine
-                      y={spendData.avgMonthlySpend}
+                      y={expenseProjection.blendedMonthlyEstimate}
                       stroke="#8b949e"
                       strokeDasharray="4 4"
                       label={{
-                        value: "12mo avg",
+                        value: "projection avg",
                         fill: "#8b949e",
                         fontSize: 10,
                         position: "right",
@@ -403,11 +440,19 @@ export default function CashFlowPage() {
                     />
                   ) : null}
                   <Bar
-                    dataKey="total"
-                    name="Actual Spend"
+                    dataKey="currentYearTotal"
+                    name="This Year"
                     fill="#f85149"
                     radius={[4, 4, 0, 0]}
                     maxBarSize={32}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="priorYearTotal"
+                    name="Last Year"
+                    stroke="#d29922"
+                    strokeWidth={2}
+                    dot={{ fill: "#d29922", r: 3 }}
                   />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -441,7 +486,7 @@ export default function CashFlowPage() {
       <Card className="bg-[#161b22] border-[#30363d]">
         <CardHeader>
           <CardTitle className="text-sm font-semibold text-[#e6edf3]">
-            Expected Collections (Next 30 Days)
+            Top Cash Collections (Open Invoices)
           </CardTitle>
         </CardHeader>
         <CardContent>
