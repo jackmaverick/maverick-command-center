@@ -15,9 +15,63 @@ import type {
   CashFlowWeek,
   CashFlowScenario,
   ExpectedCollection,
+  EstimateSentForecastGroup,
+  EstimateSentForecastJob,
 } from "@/types";
 
 type Horizon = "30" | "60" | "90";
+const JOBNIMBUS_BASE_URL = "https://app.jobnimbus.com/job/";
+
+type EstimateSentCurrentRow = {
+  job_jnid: string;
+  job_name: string;
+  record_type: string | null;
+  trade: string;
+  estimate_value: string;
+  sent_at: string | null;
+};
+
+type EstimateSentHistoryRow = {
+  record_type: string | null;
+  trade: string;
+  historical_sent: string;
+  historical_sold: string;
+  avg_days_to_close: string | null;
+};
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function cohortKey(recordType: string, trade: string): string {
+  return `${recordType.toLowerCase()}::${trade.toLowerCase()}`;
+}
+
+function confidenceForSample(historicalSent: number): "high" | "medium" | "low" {
+  if (historicalSent >= 30) return "high";
+  if (historicalSent >= 10) return "medium";
+  return "low";
+}
+
+function estimateProbability(closeRate: number, daysSinceSent: number, avgDaysToClose: number | null): number {
+  if (!avgDaysToClose || avgDaysToClose <= 0) return closeRate;
+  if (daysSinceSent <= avgDaysToClose) return closeRate;
+
+  // Once an estimate has lived longer than the historical average close window,
+  // it does not become zero. It decays by age because stale estimates still close,
+  // just not at the same odds as a fresh one.
+  const overAverageBy = daysSinceSent - avgDaysToClose;
+  const halfLives = overAverageBy / Math.max(avgDaysToClose, 7);
+  return clamp(closeRate * Math.pow(0.5, halfLives), 0.05, closeRate);
+}
 
 // Collection probability by days outstanding
 function getCollectionProbability(
@@ -66,6 +120,10 @@ export async function GET(request: NextRequest) {
       qboOutstanding,
       // Material costs (projected outflows)
       recentMaterialCosts,
+      // Open Estimate Sent jobs for probability-weighted revenue forecast
+      estimateSentCurrentRows,
+      // Historical Estimate Sent conversion cohorts by record type + inferred trade
+      estimateSentHistoryRows,
     ] = await Promise.all([
       // 1. Bank account balances from QBO
       qboQuery<{
@@ -161,6 +219,106 @@ export async function GET(request: NextRequest) {
          ) sub`,
         [toUnixSeconds(subMonths(now, 3))]
       ),
+
+      query<EstimateSentCurrentRow>(
+        `WITH latest_estimate AS (
+           SELECT DISTINCT ON (e.job_jnid)
+             e.job_jnid,
+             e.total,
+             e.date_estimate
+           FROM estimates e
+           WHERE e.is_active = true
+             AND e.is_archived = false
+             AND COALESCE(e.status_name, '') IN ('Sent', 'Approved')
+           ORDER BY e.job_jnid, e.date_estimate DESC NULLS LAST, e.jn_date_updated DESC NULLS LAST
+         ), estimate_sent_at AS (
+           SELECT
+             h.job_jnid,
+             MIN(h.changed_at) FILTER (WHERE h.to_stage_name = 'Estimate Sent') AS sent_at
+           FROM job_stage_history h
+           GROUP BY h.job_jnid
+         )
+         SELECT
+           j.jnid AS job_jnid,
+           COALESCE(j.name, j.number, 'Unknown job') AS job_name,
+           COALESCE(j.record_type_name, 'Other') AS record_type,
+           CASE
+             WHEN COALESCE(j.name, '') ~* 'gutter' THEN 'Gutters'
+             WHEN COALESCE(j.name, '') ~* 'siding' THEN 'Siding'
+             WHEN COALESCE(j.name, '') ~* 'window' THEN 'Windows'
+             WHEN COALESCE(j.record_type_name, '') ~* 'repair' OR COALESCE(j.name, '') ~* 'repair' THEN 'Repairs'
+             ELSE 'Roofing'
+           END AS trade,
+           GREATEST(
+             COALESCE(j.approved_estimate_total, 0),
+             COALESCE(j.last_estimate, 0),
+             COALESCE(le.total, 0),
+             0
+           )::text AS estimate_value,
+           COALESCE(esa.sent_at, le.date_estimate, to_timestamp(NULLIF(j.jn_date_status_change, 0)))::text AS sent_at
+         FROM jobs j
+         LEFT JOIN latest_estimate le ON le.job_jnid = j.jnid
+         LEFT JOIN estimate_sent_at esa ON esa.job_jnid = j.jnid
+         WHERE j.is_active = true
+           AND j.is_archived = false
+           AND COALESCE(j.deleted_at::text, '') = ''
+           AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|jane tester)'
+           AND j.status_name = 'Estimate Sent'
+           AND GREATEST(
+             COALESCE(j.approved_estimate_total, 0),
+             COALESCE(j.last_estimate, 0),
+             COALESCE(le.total, 0),
+             0
+           ) > 0
+         ORDER BY GREATEST(
+             COALESCE(j.approved_estimate_total, 0),
+             COALESCE(j.last_estimate, 0),
+             COALESCE(le.total, 0),
+             0
+           ) DESC`
+      ),
+
+      query<EstimateSentHistoryRow>(
+        `WITH job_gates AS (
+           SELECT
+             j.jnid,
+             COALESCE(j.record_type_name, 'Other') AS record_type,
+             CASE
+               WHEN COALESCE(j.name, '') ~* 'gutter' THEN 'Gutters'
+               WHEN COALESCE(j.name, '') ~* 'siding' THEN 'Siding'
+               WHEN COALESCE(j.name, '') ~* 'window' THEN 'Windows'
+               WHEN COALESCE(j.record_type_name, '') ~* 'repair' OR COALESCE(j.name, '') ~* 'repair' THEN 'Repairs'
+               ELSE 'Roofing'
+             END AS trade,
+             MIN(h.changed_at) FILTER (WHERE h.to_stage_name = 'Estimate Sent') AS estimate_sent_at,
+             MIN(h.changed_at) FILTER (
+               WHERE h.to_stage_name IN (
+                 'Sold Job', 'Signed Contract', 'Contingency Signed', 'Fully Approved',
+                 'Production Ready', 'Job Scheduled', 'In Production', 'In Progress', 'Paid & Closed'
+               )
+             ) AS sold_at
+           FROM jobs j
+           LEFT JOIN job_stage_history h ON h.job_jnid = j.jnid
+           WHERE j.is_active = true
+             AND j.is_archived = false
+             AND COALESCE(j.deleted_at::text, '') = ''
+             AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|jane tester)'
+           GROUP BY j.jnid, j.record_type_name, j.name
+         )
+         SELECT
+           record_type,
+           trade,
+           COUNT(*) FILTER (WHERE estimate_sent_at IS NOT NULL)::text AS historical_sent,
+           COUNT(*) FILTER (WHERE estimate_sent_at IS NOT NULL AND sold_at IS NOT NULL AND sold_at > estimate_sent_at)::text AS historical_sold,
+           AVG(EXTRACT(DAY FROM sold_at - estimate_sent_at)) FILTER (
+             WHERE estimate_sent_at IS NOT NULL AND sold_at IS NOT NULL AND sold_at > estimate_sent_at
+           )::text AS avg_days_to_close
+         FROM job_gates
+         WHERE estimate_sent_at IS NOT NULL
+         GROUP BY record_type, trade
+         HAVING COUNT(*) FILTER (WHERE estimate_sent_at IS NOT NULL) > 0
+         ORDER BY historical_sent DESC`
+      ),
     ]);
 
     // ── Process results ───────────────────────────────────────────────────
@@ -236,10 +394,126 @@ export async function GET(request: NextRequest) {
       "In Progress": 0.9,
     };
 
-    const pipelineInflows = pipelineJobs.reduce((sum, job) => {
+    const soldPipelineWeighted = pipelineJobs.reduce((sum, job) => {
+      if (job.status_name === "Estimate Sent" || job.status_name === "Estimating") return sum;
       const weight = stageWeights[job.status_name] ?? 0.1;
       return sum + parseFloat(job.approved_estimate_total) * weight;
     }, 0);
+
+    const historyByGroup = new Map<string, {
+      historicalSent: number;
+      historicalSold: number;
+      closeRate: number;
+      avgDaysToClose: number | null;
+      confidence: "high" | "medium" | "low";
+    }>();
+
+    let overallHistoricalSent = 0;
+    let overallHistoricalSold = 0;
+    let overallWeightedDays = 0;
+    let overallSoldWithDays = 0;
+
+    for (const row of estimateSentHistoryRows) {
+      const recordType = row.record_type ?? "Other";
+      const historicalSent = parseInt(row.historical_sent, 10) || 0;
+      const historicalSold = parseInt(row.historical_sold, 10) || 0;
+      const avgDaysToClose = row.avg_days_to_close === null ? null : parseFloat(row.avg_days_to_close);
+      const closeRate = historicalSent > 0 ? historicalSold / historicalSent : 0.2;
+
+      overallHistoricalSent += historicalSent;
+      overallHistoricalSold += historicalSold;
+      if (avgDaysToClose !== null && historicalSold > 0) {
+        overallWeightedDays += avgDaysToClose * historicalSold;
+        overallSoldWithDays += historicalSold;
+      }
+
+      historyByGroup.set(cohortKey(recordType, row.trade), {
+        historicalSent,
+        historicalSold,
+        closeRate: clamp(closeRate, 0.05, 0.95),
+        avgDaysToClose: avgDaysToClose === null ? null : round1(Math.max(avgDaysToClose, 1)),
+        confidence: confidenceForSample(historicalSent),
+      });
+    }
+
+    const fallbackCloseRate = overallHistoricalSent > 0
+      ? clamp(overallHistoricalSold / overallHistoricalSent, 0.05, 0.95)
+      : 0.2;
+    const fallbackAvgDays = overallSoldWithDays > 0
+      ? round1(overallWeightedDays / overallSoldWithDays)
+      : 14;
+
+    const estimateSentJobs: EstimateSentForecastJob[] = estimateSentCurrentRows.map((row) => {
+      const recordType = row.record_type ?? "Other";
+      const model = historyByGroup.get(cohortKey(recordType, row.trade)) ?? {
+        historicalSent: overallHistoricalSent,
+        historicalSold: overallHistoricalSold,
+        closeRate: fallbackCloseRate,
+        avgDaysToClose: fallbackAvgDays,
+        confidence: confidenceForSample(overallHistoricalSent),
+      };
+      const estimateValue = parseFloat(row.estimate_value) || 0;
+      const sentTime = row.sent_at ? new Date(row.sent_at).getTime() : Date.now();
+      const daysSinceSent = Math.max(0, Math.floor((Date.now() - sentTime) / (1000 * 60 * 60 * 24)));
+      const probability = estimateProbability(model.closeRate, daysSinceSent, model.avgDaysToClose);
+
+      return {
+        jobJnid: row.job_jnid,
+        jobName: row.job_name,
+        recordType,
+        trade: row.trade,
+        estimateValue: roundMoney(estimateValue),
+        daysSinceSent,
+        closeRate: round1(model.closeRate * 100),
+        probability: round1(probability * 100),
+        weightedRevenue: roundMoney(estimateValue * probability),
+        avgDaysToClose: model.avgDaysToClose,
+        isPastAverageCloseDays: model.avgDaysToClose !== null && daysSinceSent > model.avgDaysToClose,
+        jobUrl: `${JOBNIMBUS_BASE_URL}${row.job_jnid}`,
+      };
+    });
+
+    const groupMap = new Map<string, EstimateSentForecastGroup>();
+    for (const job of estimateSentJobs) {
+      const key = cohortKey(job.recordType, job.trade);
+      const model = historyByGroup.get(key) ?? {
+        historicalSent: overallHistoricalSent,
+        historicalSold: overallHistoricalSold,
+        closeRate: fallbackCloseRate,
+        avgDaysToClose: fallbackAvgDays,
+        confidence: confidenceForSample(overallHistoricalSent),
+      };
+      const existing = groupMap.get(key) ?? {
+        recordType: job.recordType,
+        trade: job.trade,
+        estimateCount: 0,
+        estimateValue: 0,
+        weightedRevenue: 0,
+        historicalSent: model.historicalSent,
+        historicalSold: model.historicalSold,
+        closeRate: round1(model.closeRate * 100),
+        avgDaysToClose: model.avgDaysToClose,
+        avgCurrentAgeDays: 0,
+        staleCount: 0,
+        confidence: model.confidence,
+      };
+      existing.estimateCount += 1;
+      existing.estimateValue = roundMoney(existing.estimateValue + job.estimateValue);
+      existing.weightedRevenue = roundMoney(existing.weightedRevenue + job.weightedRevenue);
+      existing.avgCurrentAgeDays += job.daysSinceSent;
+      existing.staleCount += job.isPastAverageCloseDays ? 1 : 0;
+      groupMap.set(key, existing);
+    }
+
+    const estimateSentGroups = Array.from(groupMap.values())
+      .map((group) => ({
+        ...group,
+        avgCurrentAgeDays: group.estimateCount > 0 ? round1(group.avgCurrentAgeDays / group.estimateCount) : 0,
+      }))
+      .sort((a, b) => b.weightedRevenue - a.weightedRevenue);
+
+    const estimateSentWeighted = estimateSentJobs.reduce((sum, job) => sum + job.weightedRevenue, 0);
+    const estimateSentRawValue = estimateSentJobs.reduce((sum, job) => sum + job.estimateValue, 0);
 
     // Total weighted inflows
     const totalWeightedInflows = expectedCollections.reduce(
@@ -268,7 +542,7 @@ export async function GET(request: NextRequest) {
 
         // Distribute weighted collections evenly across weeks (simplified)
         const weeklyInflow =
-          ((totalWeightedInflows + pipelineInflows / 4) /
+          ((totalWeightedInflows + (soldPipelineWeighted + estimateSentWeighted) / 4) /
             Math.ceil(weeks)) *
           inflowMultiplier;
         const weeklyOutflow = weeklyBurn * outflowMultiplier;
@@ -305,6 +579,24 @@ export async function GET(request: NextRequest) {
       currentCash: Math.round(currentCash),
       burnRate: Math.round(burnRate),
       runwayWeeks,
+      revenueForecast: {
+        arWeighted: Math.round(totalWeightedInflows),
+        soldPipelineWeighted: Math.round(soldPipelineWeighted),
+        estimateSentWeighted: Math.round(estimateSentWeighted),
+        projectedRevenue: Math.round(totalWeightedInflows + soldPipelineWeighted + estimateSentWeighted),
+        estimateSentRawValue: Math.round(estimateSentRawValue),
+        estimateSentJobCount: estimateSentJobs.length,
+        modelNotes: [
+          "AR is open JobNimbus invoice balance probability-weighted by invoice age and segment.",
+          "Sold/post-sold work uses current JobNimbus stage weights. It is stronger than Estimate Sent, weaker than AR.",
+          "Estimate Sent revenue uses historical close rate and average days-to-close by record type + inferred trade.",
+          "After an estimate passes its average close window, probability decays by age instead of dropping to zero.",
+        ],
+        estimateSentGroups,
+        estimateSentJobs: estimateSentJobs
+          .sort((a, b) => b.weightedRevenue - a.weightedRevenue)
+          .slice(0, 15),
+      },
       weeklyProjections: realisticProjections,
       scenarios: {
         optimistic: {

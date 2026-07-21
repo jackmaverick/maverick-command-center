@@ -347,6 +347,7 @@ export interface CashFlowMetrics {
   currentCash: number;
   burnRate: number;
   runwayWeeks: number;
+  revenueForecast: CashFlowRevenueForecast;
   weeklyProjections: CashFlowWeek[];
   scenarios: {
     optimistic: CashFlowScenario;
@@ -354,6 +355,48 @@ export interface CashFlowMetrics {
     conservative: CashFlowScenario;
   };
   expectedCollections: ExpectedCollection[];
+}
+
+export interface CashFlowRevenueForecast {
+  arWeighted: number;
+  soldPipelineWeighted: number;
+  estimateSentWeighted: number;
+  projectedRevenue: number;
+  estimateSentRawValue: number;
+  estimateSentJobCount: number;
+  modelNotes: string[];
+  estimateSentGroups: EstimateSentForecastGroup[];
+  estimateSentJobs: EstimateSentForecastJob[];
+}
+
+export interface EstimateSentForecastGroup {
+  recordType: string;
+  trade: string;
+  estimateCount: number;
+  estimateValue: number;
+  weightedRevenue: number;
+  historicalSent: number;
+  historicalSold: number;
+  closeRate: number;
+  avgDaysToClose: number | null;
+  avgCurrentAgeDays: number;
+  staleCount: number;
+  confidence: "high" | "medium" | "low";
+}
+
+export interface EstimateSentForecastJob {
+  jobJnid: string;
+  jobName: string;
+  recordType: string;
+  trade: string;
+  estimateValue: number;
+  daysSinceSent: number;
+  closeRate: number;
+  probability: number;
+  weightedRevenue: number;
+  avgDaysToClose: number | null;
+  isPastAverageCloseDays: boolean;
+  jobUrl: string;
 }
 
 export interface CashFlowWeek {

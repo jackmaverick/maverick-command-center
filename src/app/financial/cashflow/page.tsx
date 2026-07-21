@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { InfoTooltip } from "@/components/InfoTooltip";
 import { formatCurrency } from "@/lib/dates";
 import type { CashFlowMetrics, CashFlowWeek, MonthlySpendResponse } from "@/types";
 
@@ -45,6 +46,11 @@ function CustomTooltip({
       ))}
     </div>
   );
+}
+
+function formatPercent(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "n/a";
+  return `${value.toFixed(1)}%`;
 }
 
 export default function CashFlowPage() {
@@ -90,6 +96,9 @@ export default function CashFlowPage() {
 
   const topCategoriesThisMonth = spendData?.months?.[0]?.categories ?? [];
   const expenseProjection = spendData?.projection;
+  const expectedExpenses = expenseProjection?.projectedExpense ?? 0;
+  const expectedRevenue = data?.revenueForecast?.projectedRevenue ?? 0;
+  const netForecast = expectedRevenue - expectedExpenses;
 
   const activeProjections: CashFlowWeek[] =
     data?.scenarios[scenario]?.projections ?? data?.weeklyProjections ?? [];
@@ -187,6 +196,83 @@ export default function CashFlowPage() {
                 {(data?.runwayWeeks ?? 0) > 52
                   ? "52+ weeks"
                   : `${data?.runwayWeeks ?? 0} weeks`}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Forward Model Cards */}
+      <div className="grid grid-cols-1 gap-4 mb-8 lg:grid-cols-3">
+        <Card className="bg-[#161b22] border-[#30363d]">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-[#8b949e]">
+              <InfoTooltip
+                label="Expected Revenue"
+                explanation="Equation: weighted AR + weighted sold/post-sold work + weighted Estimate Sent revenue. Estimate Sent is based on historical close rate, average days to close, record type, and inferred trade."
+              />
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-8 w-24 bg-[#21262d]" />
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-[#3fb950]">
+                  {formatCurrency(expectedRevenue)}
+                </p>
+                <p className="mt-1 text-xs text-[#8b949e]">
+                  AR {formatCurrency(data?.revenueForecast?.arWeighted ?? 0)} + sold work {formatCurrency(data?.revenueForecast?.soldPipelineWeighted ?? 0)} + sent estimates {formatCurrency(data?.revenueForecast?.estimateSentWeighted ?? 0)}
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#161b22] border-[#30363d]">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-[#8b949e]">
+              <InfoTooltip
+                label="Expected Expenses"
+                explanation="Equation: blended monthly expense estimate multiplied by the selected 30/60/90 day horizon. Blended monthly estimate = 50% recent complete-month run-rate + 50% same-period last-year seasonal average."
+              />
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {spendLoading ? (
+              <Skeleton className="h-8 w-24 bg-[#21262d]" />
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-[#f85149]">
+                  {formatCurrency(expectedExpenses)}
+                </p>
+                <p className="mt-1 text-xs text-[#8b949e]">
+                  {formatCurrency(expenseProjection?.blendedMonthlyEstimate ?? 0)} monthly model × {horizon}d
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#161b22] border-[#30363d]">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-[#8b949e]">
+              <InfoTooltip
+                label="Net Forecast"
+                explanation="Equation: Expected Revenue minus Expected Expenses for the selected horizon. This is operating forecast, not cash in bank."
+              />
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading || spendLoading ? (
+              <Skeleton className="h-8 w-24 bg-[#21262d]" />
+            ) : (
+              <p
+                className={`text-2xl font-bold ${
+                  netForecast >= 0 ? "text-[#3fb950]" : "text-[#f85149]"
+                }`}
+              >
+                {formatCurrency(netForecast)}
               </p>
             )}
           </CardContent>
@@ -338,6 +424,133 @@ export default function CashFlowPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Estimate Sent Forecast */}
+      <div className="grid grid-cols-1 gap-4 mb-8 xl:grid-cols-3">
+        <Card className="bg-[#161b22] border-[#30363d] xl:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+              <InfoTooltip
+                label="Estimate Sent Revenue Forecast"
+                explanation="Equation per row: estimate value × adjusted probability. Base probability is historical close rate for the record type and inferred trade. If current age is past average close days, probability decays by age."
+              />
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-8 w-full bg-[#21262d]" />
+                ))}
+              </div>
+            ) : !data?.revenueForecast?.estimateSentGroups?.length ? (
+              <p className="text-sm text-[#8b949e]">No open Estimate Sent jobs with value.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-[#30363d]">
+                      <th className="py-2 px-2 text-left font-medium text-[#8b949e]">Cohort</th>
+                      <th className="py-2 px-2 text-right font-medium text-[#8b949e]">Sent $</th>
+                      <th className="py-2 px-2 text-right font-medium text-[#8b949e]">Close %</th>
+                      <th className="py-2 px-2 text-right font-medium text-[#8b949e]">Avg close</th>
+                      <th className="py-2 px-2 text-right font-medium text-[#8b949e]">Age</th>
+                      <th className="py-2 px-2 text-right font-medium text-[#8b949e]">Weighted $</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.revenueForecast.estimateSentGroups.map((group) => (
+                      <tr key={`${group.recordType}-${group.trade}`} className="border-b border-[#21262d]">
+                        <td className="py-2 px-2 text-[#e6edf3]">
+                          {group.recordType} · {group.trade}
+                          <p className="text-[11px] text-[#8b949e]">
+                            {group.estimateCount} open, {group.historicalSold}/{group.historicalSent} historical closed, {group.confidence} confidence
+                          </p>
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono tabular-nums text-[#e6edf3]">{formatCurrency(group.estimateValue)}</td>
+                        <td className="py-2 px-2 text-right font-mono tabular-nums text-[#8b949e]">{formatPercent(group.closeRate)}</td>
+                        <td className="py-2 px-2 text-right font-mono tabular-nums text-[#8b949e]">{group.avgDaysToClose === null ? "n/a" : `${group.avgDaysToClose}d`}</td>
+                        <td className={`py-2 px-2 text-right font-mono tabular-nums ${group.staleCount > 0 ? "text-[#d29922]" : "text-[#8b949e]"}`}>
+                          {group.avgCurrentAgeDays}d
+                          {group.staleCount > 0 ? ` (${group.staleCount} stale)` : ""}
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono tabular-nums text-[#3fb950]">{formatCurrency(group.weightedRevenue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#161b22] border-[#30363d]">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+              <InfoTooltip
+                label="How the Estimate Model Updates"
+                explanation="This recalculates on every page/API load from live JobNimbus/Supabase data. If a job moves to Sold, it leaves Estimate Sent and strengthens the historical model. If it sits past the average close window, its probability decays and the row flags stale."
+              />
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 text-xs text-[#8b949e]">
+              {(data?.revenueForecast?.modelNotes ?? []).map((note) => (
+                <div key={note} className="flex gap-2">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#58a6ff]" />
+                  <span>{note}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {data?.revenueForecast?.estimateSentJobs?.length ? (
+        <Card className="bg-[#161b22] border-[#30363d] mb-8">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+              Estimate Sent Jobs Behind the Forecast
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-[#30363d]">
+                    <th className="py-2 px-2 text-left font-medium text-[#8b949e]">Job</th>
+                    <th className="py-2 px-2 text-right font-medium text-[#8b949e]">Estimate</th>
+                    <th className="py-2 px-2 text-right font-medium text-[#8b949e]">Age</th>
+                    <th className="py-2 px-2 text-right font-medium text-[#8b949e]">Probability</th>
+                    <th className="py-2 px-2 text-right font-medium text-[#8b949e]">Weighted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.revenueForecast.estimateSentJobs.slice(0, 10).map((job) => (
+                    <tr key={job.jobJnid} className="border-b border-[#21262d]">
+                      <td className="py-2 px-2 text-[#e6edf3]">
+                        <a href={job.jobUrl} target="_blank" rel="noreferrer" className="text-[#58a6ff] hover:underline">
+                          {job.jobName}
+                        </a>
+                        <p className="text-[11px] text-[#8b949e]">{job.recordType} · {job.trade}</p>
+                      </td>
+                      <td className="py-2 px-2 text-right font-mono tabular-nums text-[#e6edf3]">{formatCurrency(job.estimateValue)}</td>
+                      <td className={`py-2 px-2 text-right font-mono tabular-nums ${job.isPastAverageCloseDays ? "text-[#d29922]" : "text-[#8b949e]"}`}>
+                        {job.daysSinceSent}d
+                        {job.isPastAverageCloseDays ? " past avg" : ""}
+                      </td>
+                      <td className="py-2 px-2 text-right font-mono tabular-nums text-[#8b949e]">
+                        {formatPercent(job.probability)}
+                      </td>
+                      <td className="py-2 px-2 text-right font-mono tabular-nums text-[#3fb950]">{formatCurrency(job.weightedRevenue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Monthly Actual Spend */}
       <Card className="bg-[#161b22] border-[#30363d] mb-8">
