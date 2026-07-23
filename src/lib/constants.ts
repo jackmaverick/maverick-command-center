@@ -27,6 +27,7 @@ export type Segment = keyof typeof SEGMENTS;
 export const STAGES = [
   "Lead",
   "Appointment Scheduled",
+  "Appt Ran",
   "Estimating",
   "Sold",
   "Production",
@@ -44,6 +45,7 @@ export const STATUS_TO_STAGE: Record<string, Stage> = {
   "Cold Lead": "Lead",
   Cold: "Lead",
   "Appointment Scheduled": "Appointment Scheduled",
+  "Appt Ran": "Appt Ran",
   // Estimating stage
   Estimating: "Estimating",
   "Estimate Sent": "Estimating",
@@ -73,8 +75,11 @@ export const STATUS_TO_STAGE: Record<string, Stage> = {
 export const STATUS_CONVERSIONS = [
   { from: "Lead", to: "Appointment Scheduled", label: "Lead → Appointment" },
   { from: "Lead", to: "Estimating", label: "Lead → Estimating (Direct)" },
-  { from: "Appointment Scheduled", to: "Estimating", label: "Appointment → Estimating" },
+  { from: "Appointment Scheduled", to: "Appt Ran", label: "Appointment → Appt Ran" },
+  { from: "Appointment Scheduled", to: "Estimating", label: "Appointment → Estimating (Direct)" },
+  { from: "Appt Ran", to: "Estimating", label: "Appt Ran → Estimating" },
   { from: "Appointment Scheduled", to: ["Lost", "Cold", "Dead", "Cold Lead"], label: "Appointment → Lost/Cold/Dead" },
+  { from: "Appt Ran", to: ["Lost", "Cold", "Dead", "Cold Lead", "Needs Rescheduling"], label: "Appt Ran → Lost/Cold/Needs Rescheduling" },
   { from: "Estimating", to: "Estimate Sent", label: "Estimating → Estimate Sent" },
   { from: "Estimate Sent", to: "Sold Job", label: "Estimate Sent → Sold Job" },
   { from: "Estimate Sent", to: ["Lost", "Cold", "Dead", "Cold Lead"], label: "Estimate Sent → Lost/Cold/Dead" },
@@ -86,6 +91,7 @@ export const ORDERED_STATUSES = [
   "New",
   "Cold Lead",
   "Appointment Scheduled",
+  "Appt Ran",
   "Estimating",
   "Estimate Sent",
   "Sold Job",

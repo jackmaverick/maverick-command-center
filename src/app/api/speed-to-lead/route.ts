@@ -44,6 +44,8 @@ const MISSED_THRESHOLD_MIN = 1440;
 /** Pipeline velocity stage transitions to measure. */
 const VELOCITY_TRANSITIONS: [string, string][] = [
   ["Lead", "Appointment Scheduled"],
+  ["Appointment Scheduled", "Appt Ran"],
+  ["Appt Ran", "Estimating"],
   ["Appointment Scheduled", "Estimating"],
   ["Estimating", "Estimate Sent"],
   ["Estimate Sent", "Sold Job"],
@@ -148,7 +150,7 @@ export async function GET(request: NextRequest) {
     // -- 1. Aggregate response times --
     const responseTimes: number[] = [];
     let missedCount = 0;
-    let totalInbound = responseTimeRows.length;
+    const totalInbound = responseTimeRows.length;
 
     for (const row of responseTimeRows) {
       if (row.response_minutes !== null) {
@@ -551,10 +553,11 @@ async function queryPipelineVelocity(
       CASE from_stage
         WHEN 'Lead' THEN 1
         WHEN 'Appointment Scheduled' THEN 2
-        WHEN 'Estimating' THEN 3
-        WHEN 'Estimate Sent' THEN 4
-        WHEN 'Sold Job' THEN 5
-        ELSE 6
+        WHEN 'Appt Ran' THEN 3
+        WHEN 'Estimating' THEN 4
+        WHEN 'Estimate Sent' THEN 5
+        WHEN 'Sold Job' THEN 6
+        ELSE 7
       END
   `;
 

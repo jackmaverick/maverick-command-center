@@ -199,7 +199,7 @@ export default function DashboardPage() {
         {/* Pipeline */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <InfoTooltip label="Pipeline Value" explanation="Total estimate value of all active jobs currently in Estimating through Invoiced stages (live snapshot, not period-filtered)">
+            <InfoTooltip label="Pipeline Value" explanation="Total estimate value of all active jobs currently in Appt Ran through Invoiced stages (live snapshot, not period-filtered)">
               <CardTitle className="text-xs font-medium text-[#8b949e]">Pipeline Value</CardTitle>
             </InfoTooltip>
           </CardHeader>

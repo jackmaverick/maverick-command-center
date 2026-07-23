@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -93,6 +94,12 @@ export default function CashFlowPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Link
+            href="/financial/pipeline-cashflow"
+            className="rounded-lg border border-[#30363d] bg-[#161b22] px-3 py-2 text-xs font-medium text-[#58a6ff] transition-colors hover:border-[#58a6ff]/60 hover:bg-[#58a6ff]/10"
+          >
+            Pipeline Timing Model
+          </Link>
           {/* Horizon selector */}
           <div className="flex gap-1 bg-[#161b22] border border-[#30363d] rounded-lg p-1">
             {(["30", "60", "90"] as Horizon[]).map((h) => (

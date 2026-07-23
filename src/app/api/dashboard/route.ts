@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
            AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|verification|scout_test)'
            AND COALESCE(j.primary_contact_name, '') !~* '(test|dummy|demo|sample|verification)'
            AND j.status_name IN (
-             'Estimating', 'Estimate Sent', 'Sold Job',
+             'Appt Ran', 'Estimating', 'Estimate Sent', 'Sold Job',
              'Production Ready', 'In Progress',
              'Insurance Pending', 'Invoiced'
            )`,
@@ -221,7 +221,7 @@ export async function GET(request: NextRequest) {
          WHERE ${ACTIVE_REAL_JOB_WHERE}
            AND j.jn_date_created >= $1
            AND j.jn_date_created < $2
-           AND j.status_name IN ('Lead', 'New', 'Cold Lead', 'Appointment Scheduled', 'Estimating', 'Estimate Sent')
+           AND j.status_name IN ('Lead', 'New', 'Cold Lead', 'Appointment Scheduled', 'Appt Ran', 'Estimating', 'Estimate Sent')
          GROUP BY segment
          ORDER BY count DESC`,
         [startUnix, endUnix]

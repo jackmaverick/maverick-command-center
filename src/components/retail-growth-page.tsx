@@ -231,7 +231,7 @@ export function RetailGrowthPage() {
             <Card label="Sold Value" value={formatCurrency(data.summary.soldValue)} sub={`${data.summary.soldJobs} jobs moved sold this period`} tone="good" />
             <Card label="Open Retail Pipeline" value={formatCurrency(data.summary.openPipelineValue)} sub={`${data.summary.openRetailJobs} open retail jobs`} />
             <Card label="Next 14 Days Scheduled" value={formatCurrency(data.summary.scheduled14Value)} sub={`${data.summary.scheduled14Jobs} scheduled retail jobs`} tone="warn" />
-            <Card label="Open Estimate Value" value={formatCurrency(data.summary.openEstimateValue)} sub="Estimating + Estimate Sent" />
+            <Card label="Open Estimate Value" value={formatCurrency(data.summary.openEstimateValue)} sub="Appt Ran + Estimating + Estimate Sent" />
             <Card label="Avg Sold Ticket" value={formatCurrency(data.summary.avgTicket)} sub="Sold value divided by sold jobs" />
             <Card label="Closed GP" value={formatCurrency(data.summary.closedGrossProfit)} sub="From v_job_total_costs" tone={data.summary.closedGrossProfit >= 0 ? "good" : "bad"} />
             <Card label="Closed Margin" value={data.summary.closedMarginPct === null ? "n/a" : formatPercent(data.summary.closedMarginPct)} sub="Cost coverage dependent" tone={(data.summary.closedMarginPct ?? 0) >= 25 ? "good" : "warn"} />

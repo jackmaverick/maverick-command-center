@@ -87,6 +87,7 @@ interface PipelineData {
 const STAGE_COLORS: Record<string, string> = {
   Lead: "#58a6ff",
   "Appointment Scheduled": "#79c0ff",
+  "Appt Ran": "#a371f7",
   Estimating: "#a371f7",
   Sold: "#d29922",
   Production: "#f0883e",
@@ -261,7 +262,7 @@ export default function PipelinePage() {
         {/* Pipeline Value */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <InfoTooltip label="Pipeline Value" explanation="Sum of estimate totals on active jobs in Estimating through Invoiced stages. Shows potential revenue in the pipeline.">
+            <InfoTooltip label="Pipeline Value" explanation="Sum of estimate totals on active jobs in Appt Ran through Invoiced stages. Shows potential revenue in the pipeline.">
               <CardTitle className="text-xs font-medium text-[#8b949e]">Pipeline Value</CardTitle>
             </InfoTooltip>
           </CardHeader>

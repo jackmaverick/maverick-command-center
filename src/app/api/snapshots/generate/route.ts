@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
            AND j.is_closed = false
            AND j.is_archived = false
            AND j.status_name IN (
-             'Estimating', 'Estimate Sent', 'Sold Job',
+             'Appt Ran', 'Estimating', 'Estimate Sent', 'Sold Job',
              'Production Ready', 'In Progress',
              'Insurance Pending', 'Invoiced'
            )`,
@@ -586,7 +586,7 @@ export async function POST(request: NextRequest) {
          JOIN jobs j ON j.jnid = h.job_jnid
          WHERE j.jn_date_created >= $1
            AND j.jn_date_created <= $2
-           AND h.to_stage_name IN ('Estimate Sent', 'Appointment Scheduled')
+           AND h.to_stage_name IN ('Estimate Sent', 'Appointment Scheduled', 'Appt Ran')
          GROUP BY h.job_jnid, h.to_stage_name
        ),
        followup_counts AS (
@@ -616,7 +616,7 @@ export async function POST(request: NextRequest) {
           parseFloat(row.avg_followups)
         );
         metrics.followUps.jobsWithZeroFollowup += parseInt(row.zero_count, 10);
-      } else if (row.milestone === "Appointment Scheduled") {
+      } else if (row.milestone === "Appointment Scheduled" || row.milestone === "Appt Ran") {
         metrics.followUps.avgAfterAppointment = round1(
           parseFloat(row.avg_followups)
         );

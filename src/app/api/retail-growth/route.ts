@@ -190,6 +190,7 @@ export async function GET(request: NextRequest) {
            COALESCE(CASE
              WHEN j.status_name IN ('Lead', 'New', 'Cold Lead', 'Cold') THEN 'Lead'
              WHEN j.status_name = 'Appointment Scheduled' THEN 'Appointment Scheduled'
+             WHEN j.status_name = 'Appt Ran' THEN 'Appt Ran'
              WHEN j.status_name IN ('Estimating', 'Estimate Sent') THEN 'Estimating'
              WHEN j.status_name = 'Sold Job' THEN 'Sold'
              WHEN j.status_name IN ('Production Ready', 'In Progress', 'Job Scheduled', 'Insurance Pending', 'Future Work', 'Needs Rescheduling') THEN 'Production'
@@ -216,7 +217,7 @@ export async function GET(request: NextRequest) {
            COALESCE(SUM(CASE WHEN j.is_closed = false THEN COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), NULLIF(j.approved_invoice_total, 0), 0) ELSE 0 END), 0)::text AS open_pipeline,
            COALESCE(SUM(CASE WHEN j.status_name = ANY($3::text[]) AND j.jn_date_status_change >= $1 AND j.jn_date_status_change < $2 THEN COALESCE(NULLIF(j.approved_invoice_total, 0), NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_invoice, 0), NULLIF(j.last_estimate, 0), 0) ELSE 0 END), 0)::text AS sold_value,
            COALESCE(SUM(CASE WHEN i.date_invoice >= $1 AND i.date_invoice < $2 AND i.is_active = true THEN i.total ELSE 0 END), 0)::text AS invoiced_revenue,
-           AVG(CASE WHEN j.status_name IN ('Estimate Sent', 'Estimating') THEN GREATEST(0, ($5 - COALESCE(j.jn_date_status_change, j.jn_date_created)) / 86400.0) END)::text AS avg_followup_days
+           AVG(CASE WHEN j.status_name IN ('Estimate Sent', 'Estimating', 'Appt Ran') THEN GREATEST(0, ($5 - COALESCE(j.jn_date_status_change, j.jn_date_created)) / 86400.0) END)::text AS avg_followup_days
          FROM jobs j
          LEFT JOIN invoices i ON i.job_jnid = j.jnid
          WHERE ${RETAIL_WHERE}
@@ -243,6 +244,7 @@ export async function GET(request: NextRequest) {
              NULL::text AS invoice_number,
              GREATEST(0, (($1 - COALESCE(j.jn_date_status_change, j.jn_date_created)) / 86400.0)) AS age_days,
              CASE
+               WHEN j.status_name = 'Appt Ran' AND (($1 - COALESCE(j.jn_date_status_change, j.jn_date_created)) / 86400.0) >= 1 THEN 'Appointment ran: confirm next step / estimate path'
                WHEN j.status_name = 'Estimating' AND (($1 - COALESCE(j.jn_date_status_change, j.jn_date_created)) / 86400.0) >= 2 THEN 'Estimate needs to go out'
                WHEN j.status_name = 'Estimate Sent' AND (($1 - COALESCE(j.jn_date_status_change, j.jn_date_created)) / 86400.0) >= 2 THEN 'Follow up on open estimate'
                WHEN j.status_name = 'Sold Job' AND (($1 - COALESCE(j.jn_date_status_change, j.jn_date_created)) / 86400.0) >= 2 THEN 'Sold retail job needs scheduling'
@@ -252,6 +254,7 @@ export async function GET(request: NextRequest) {
              END AS reason,
              CASE
                WHEN j.status_name = 'Estimate Sent' AND (($1 - COALESCE(j.jn_date_status_change, j.jn_date_created)) / 86400.0) >= 7 THEN 'high'
+               WHEN j.status_name = 'Appt Ran' AND (($1 - COALESCE(j.jn_date_status_change, j.jn_date_created)) / 86400.0) >= 3 THEN 'high'
                WHEN j.status_name = 'Estimating' AND (($1 - COALESCE(j.jn_date_status_change, j.jn_date_created)) / 86400.0) >= 4 THEN 'high'
                WHEN j.status_name IN ('All Work Complete', 'All Work Completed') THEN 'high'
                ELSE 'medium'

@@ -277,7 +277,7 @@ export default function SegmentPage() {
             {/* Pipeline Value */}
             <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
               <div className="mb-1">
-                <InfoTooltip label="Pipeline Value" explanation="Sum of active estimate totals on open jobs in this segment, from Estimating through Invoiced stages." />
+                <InfoTooltip label="Pipeline Value" explanation="Sum of active estimate totals on open jobs in this segment, from Appt Ran through Invoiced stages." />
               </div>
               <p className="text-xl font-bold text-[#e6edf3]">
                 {formatCurrency(summary?.pipelineValue ?? 0)}
