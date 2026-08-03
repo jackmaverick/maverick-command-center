@@ -157,7 +157,11 @@ export const loopRegistry: LoopRegistryEntry[] = [
         kind: "file",
         path: "/Users/maverick_ai/supabase-maverick-exteriors/reports/michelle-daily-touch-list/vercel-app/data/dashboard.json",
         freshnessHours: 36,
-        failurePatterns: ["Traceback", "HTTP 500", "failed"],
+        failurePatterns: [
+          "Traceback",
+          "HTTP 500",
+          "gutter_invoice_reconciliation_fetch_failed",
+        ],
         successPatterns: [
           "gutter_invoice_reconciliation",
           "No gutter vendor invoice found",
