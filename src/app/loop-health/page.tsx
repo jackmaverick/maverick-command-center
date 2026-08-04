@@ -10,6 +10,7 @@ import {
   ExternalLink,
   FileSearch,
   FolderGit2,
+  ListChecks,
   Radio,
   ShieldCheck,
   TerminalSquare,
@@ -36,6 +37,12 @@ type LoopHealthEntry = {
   businessPromise: string;
   owner: string;
   sourceRepoPath: string;
+  actionSurface: {
+    name: string;
+    purpose: string;
+    pathOrUrl: string;
+    actions: string[];
+  };
   codexProject: {
     projectName: string;
     mode: "Local";
@@ -193,6 +200,34 @@ function SourceBadge({ loop }: { loop: LoopHealthEntry }) {
       <Radio className="h-3.5 w-3.5" />
       {isLive ? "Live snapshot" : "Local fallback"}
     </span>
+  );
+}
+
+function ActionSurfacePanel({ loop }: { loop: LoopHealthEntry }) {
+  return (
+    <div className="mb-4 rounded-md border border-[#30363d] bg-[#0d1117] p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <ListChecks className="h-4 w-4 text-[#d29922]" />
+        <p className="text-sm font-medium text-[#e6edf3]">Action surface</p>
+      </div>
+      <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+        <div>
+          <p className="text-[#8b949e]">Where the work happens</p>
+          <p className="mt-1 text-[#e6edf3]">{loop.actionSurface.name}</p>
+        </div>
+        <div>
+          <p className="text-[#8b949e]">Allowed actions</p>
+          <p className="mt-1 text-[#e6edf3]">{loop.actionSurface.actions.join(" / ")}</p>
+        </div>
+        <div className="sm:col-span-2">
+          <p className="text-[#8b949e]">Path or URL</p>
+          <p className="mt-1 break-all font-mono text-[#e6edf3]">
+            {shortPath(loop.actionSurface.pathOrUrl)}
+          </p>
+        </div>
+      </div>
+      <p className="mt-3 text-xs text-[#8b949e]">{loop.actionSurface.purpose}</p>
+    </div>
   );
 }
 
@@ -368,6 +403,8 @@ export default function LoopHealthPage() {
               <p className="text-sm text-[#e6edf3]">{loop.nextAction}</p>
             </div>
 
+            <ActionSurfacePanel loop={loop} />
+
             <div className="mb-4 rounded-md border border-[#30363d] bg-[#0d1117] p-3">
               <p className="mb-1 text-xs text-[#8b949e]">Make healthy</p>
               <p className="text-sm text-[#e6edf3]">
@@ -398,12 +435,13 @@ export default function LoopHealthPage() {
           <h2 className="text-lg font-semibold text-[#e6edf3]">Registry</h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-left text-sm">
+          <table className="w-full min-w-[1120px] text-left text-sm">
             <thead className="border-b border-[#30363d] text-xs text-[#8b949e]">
               <tr>
                 <th className="py-3 pr-4 font-medium">Loop</th>
                 <th className="py-3 pr-4 font-medium">Promise</th>
                 <th className="py-3 pr-4 font-medium">Owner</th>
+                <th className="py-3 pr-4 font-medium">Action surface</th>
                 <th className="py-3 pr-4 font-medium">Source</th>
                 <th className="py-3 pr-4 font-medium">Status</th>
                 <th className="py-3 pr-4 font-medium">Health source</th>
@@ -416,6 +454,10 @@ export default function LoopHealthPage() {
                   <td className="py-3 pr-4 font-medium text-[#e6edf3]">{loop.name}</td>
                   <td className="max-w-sm py-3 pr-4 text-xs text-[#8b949e]">{loop.businessPromise}</td>
                   <td className="py-3 pr-4 text-xs text-[#c9d1d9]">{loop.owner}</td>
+                  <td className="py-3 pr-4 text-xs text-[#c9d1d9]">
+                    <p className="font-medium text-[#e6edf3]">{loop.actionSurface.name}</p>
+                    <p className="mt-1 text-[#8b949e]">{loop.actionSurface.actions.join(" / ")}</p>
+                  </td>
                   <td className="py-3 pr-4">
                     <span className="inline-flex items-center gap-1 font-mono text-xs text-[#8b949e]">
                       {shortPath(loop.sourceRepoPath)}

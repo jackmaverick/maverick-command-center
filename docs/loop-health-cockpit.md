@@ -28,6 +28,7 @@ Returns:
 - `dataSources`
 - summary counts for `healthy`, `warning`, `failing`, and `unknown`
 - one row per registered loop with owner, source path, last run, last proof, status, next action, approval requirement, and proof details
+- `actionSurface`, which tells Jack where the human team actually works the loop
 
 The route returns `207` when at least one loop is failing so dashboards can distinguish "the API loaded" from "every loop is fine".
 
@@ -111,6 +112,7 @@ Each loop records:
 - business promise
 - owner
 - source repo/path
+- action surface for the human work queue or investigation surface
 - last-run proof source
 - last-proof source
 - status rules
@@ -118,6 +120,24 @@ Each loop records:
 - approval requirement
 
 When a real source is unavailable, the cockpit labels the loop `unknown` rather than filling in fake proof.
+
+## Action Surfaces
+
+The cockpit is the health board, not the work queue. Each loop now declares where the work actually happens.
+
+Common surfaces:
+
+- `Michelle Daily Touch List`: team-facing task queue with `Approve`, `Deny`, `Wrong`, and `Done`.
+- `Ops automation Codex session`: investigation/repair surface for automation code and dry-run proof.
+- `Website Growth worktree`: SEO/indexing/content work surface.
+- `Command Center cockpit worktree`: cockpit registry, UI, and health plumbing.
+
+For loops such as `Gutter invoice reconciliation loop`, the intended flow is:
+
+1. Cockpit shows health, last proof, and next action.
+2. Michelle/team works the generated tasks in the Daily Touch List.
+3. The ops loop refreshes proof and publishes a new health snapshot.
+4. Cockpit reports whether the task surface is fresh and healthy.
 
 ## Indexing Loop
 

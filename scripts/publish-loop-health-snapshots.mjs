@@ -103,6 +103,7 @@ async function publish(pool, health) {
             owner: loop.owner,
             cadence: loop.cadence,
             businessPromise: loop.businessPromise,
+            actionSurface: loop.actionSurface,
             sourceGeneratedAt: health.generatedAt,
             localProofs: loop.proofs,
           }),

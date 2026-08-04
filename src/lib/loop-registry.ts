@@ -18,11 +18,46 @@ export interface LoopRegistryEntry {
   businessPromise: string;
   owner: string;
   sourceRepoPath: string;
+  actionSurface: {
+    name: string;
+    purpose: string;
+    pathOrUrl: string;
+    actions: string[];
+  };
   cadence: LoopCadence;
   approvalRequired: boolean;
   nextAction: string;
   proofSources: LoopProofSource[];
 }
+
+const dailyTouchListActionSurface = {
+  name: "Michelle Daily Touch List",
+  purpose: "Team work queue for reviewing, approving, denying, marking wrong, or completing admin tasks.",
+  pathOrUrl:
+    "/Users/maverick_ai/supabase-maverick-exteriors/reports/michelle-daily-touch-list",
+  actions: ["Approve", "Deny", "Wrong", "Done"],
+};
+
+const opsInvestigationActionSurface = {
+  name: "Ops automation Codex session",
+  purpose: "Investigate proof, repair the loop, and publish a fresh health snapshot. Live customer actions stay approval-gated.",
+  pathOrUrl: "/Users/maverick_ai/worktrees/ops-automation-loop-fixes",
+  actions: ["Investigate", "Dry run", "Publish snapshot"],
+};
+
+const websiteGrowthActionSurface = {
+  name: "Website Growth worktree",
+  purpose: "Investigate SEO/indexing proof, create draft-only website work, and publish health snapshots after approval.",
+  pathOrUrl: "/Users/maverick_ai/worktrees/website-growth-loop",
+  actions: ["Investigate", "Draft", "Verify", "Publish snapshot"],
+};
+
+const commandCenterActionSurface = {
+  name: "Command Center cockpit worktree",
+  purpose: "Maintain loop registry, cockpit UI, and health snapshot plumbing.",
+  pathOrUrl: "/Users/maverick_ai/worktrees/loop-health-cockpit",
+  actions: ["Investigate", "Update registry", "Deploy cockpit"],
+};
 
 export const loopRegistry: LoopRegistryEntry[] = [
   {
@@ -32,6 +67,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
       "Homeowners get timely install, schedule-change, and production-status updates without unapproved live sends.",
     owner: "Jack / Michael",
     sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors/daily-production-check",
+    actionSurface: dailyTouchListActionSurface,
     cadence: "daily",
     approvalRequired: true,
     nextAction:
@@ -61,6 +97,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
       "Sales and production teammates get the same install-date and work-order movement signals the automation sees.",
     owner: "Production / Bob-facing update loop",
     sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors/daily-production-check",
+    actionSurface: dailyTouchListActionSurface,
     cadence: "daily",
     approvalRequired: false,
     nextAction:
@@ -90,6 +127,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
       "Jobs that sit too long in the wrong JobNimbus status are surfaced with owner, evidence, and next step.",
     owner: "Michelle / Jack",
     sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors/reports/status-transition-intelligence",
+    actionSurface: dailyTouchListActionSurface,
     cadence: "daily",
     approvalRequired: false,
     nextAction:
@@ -119,6 +157,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
     owner: "Michelle / Jack",
     sourceRepoPath:
       "/Users/maverick_ai/supabase-maverick-exteriors/reports/michelle-daily-touch-list",
+    actionSurface: dailyTouchListActionSurface,
     cadence: "daily",
     approvalRequired: false,
     nextAction:
@@ -147,6 +186,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
     owner: "Michelle / Finance",
     sourceRepoPath:
       "/Users/maverick_ai/supabase-maverick-exteriors/reports/michelle-daily-touch-list/vercel-app/data/dashboard.json",
+    actionSurface: dailyTouchListActionSurface,
     cadence: "daily",
     approvalRequired: false,
     nextAction:
@@ -178,6 +218,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
       "Final-payment follow-up is previewed safely with repair/retail eligibility counts before any customer send.",
     owner: "Jack / Finance",
     sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors",
+    actionSurface: dailyTouchListActionSurface,
     cadence: "daily",
     approvalRequired: true,
     nextAction:
@@ -208,6 +249,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
       "SEO and content opportunities are turned into approval-gated work without publishing or ClickFlow writes by accident.",
     owner: "Jack / Website Growth",
     sourceRepoPath: "/Users/maverick_ai/website",
+    actionSurface: websiteGrowthActionSurface,
     cadence: "weekly",
     approvalRequired: true,
     nextAction:
@@ -234,6 +276,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
       "Google can crawl the live site, read the sitemap, and surface priority money pages without hidden crawl/index blockers.",
     owner: "Jack / Website Growth",
     sourceRepoPath: "/Users/maverick_ai/worktrees/website-growth-loop",
+    actionSurface: websiteGrowthActionSurface,
     cadence: "daily",
     approvalRequired: true,
     nextAction:
@@ -271,6 +314,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
       "Completed happy customers are asked for Google reviews at the right time, without over-messaging or sending without approval.",
     owner: "Jack / Sales / Production",
     sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors",
+    actionSurface: dailyTouchListActionSurface,
     cadence: "daily",
     approvalRequired: true,
     nextAction:
@@ -303,6 +347,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
     owner: "Sales / Repair / Jack",
     sourceRepoPath:
       "/Users/maverick_ai/supabase-maverick-exteriors/reports/appointment-prep-daily-email",
+    actionSurface: dailyTouchListActionSurface,
     cadence: "daily",
     approvalRequired: false,
     nextAction:
@@ -326,6 +371,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
       "Qualified JobNimbus appointment tasks queue confirmation, 24-hour, and 2-hour homeowner reminder texts with previewable proof before live sends.",
     owner: "Sales / Admin / Jack",
     sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors",
+    actionSurface: opsInvestigationActionSurface,
     cadence: "continuous",
     approvalRequired: true,
     nextAction:
@@ -361,6 +407,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
       "Roofing permit packets are staged for Mia only when required inputs are present, city rules are respected, and submit/payment stays review-gated.",
     owner: "Mia / Jack",
     sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors/reports",
+    actionSurface: dailyTouchListActionSurface,
     cadence: "daily",
     approvalRequired: true,
     nextAction:
@@ -399,6 +446,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
       "Confirmed homeowner shingle-color decisions are found from conversations and safely reflected in material/order review without cross-customer writes.",
     owner: "Production / Mia",
     sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors",
+    actionSurface: opsInvestigationActionSurface,
     cadence: "daily",
     approvalRequired: true,
     nextAction:
@@ -421,6 +469,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
       "Richards material invoices are downloaded, matched, line-synced, uploaded to JobNimbus, and counted in gross profit without forcing weak matches.",
     owner: "Finance / Jack",
     sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors",
+    actionSurface: dailyTouchListActionSurface,
     cadence: "daily",
     approvalRequired: false,
     nextAction:
@@ -444,6 +493,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
     owner: "Production / Admin",
     sourceRepoPath:
       "/Users/maverick_ai/supabase-maverick-exteriors/reports/manufacturer-warranty-loop",
+    actionSurface: dailyTouchListActionSurface,
     cadence: "daily",
     approvalRequired: false,
     nextAction:
@@ -467,6 +517,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
       "Supplier invoice coverage, line totals, exception queues, and material costs stay visible before gross-profit numbers are trusted.",
     owner: "Finance / Jack",
     sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors/reports/invoice-ledger-health",
+    actionSurface: dailyTouchListActionSurface,
     cadence: "weekly",
     approvalRequired: false,
     nextAction:
@@ -498,6 +549,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
     owner: "Jack / AI Ops",
     sourceRepoPath:
       "/Users/maverick_ai/supabase-maverick-exteriors/reports/weekly-learning-scorecard",
+    actionSurface: opsInvestigationActionSurface,
     cadence: "weekly",
     approvalRequired: false,
     nextAction:
@@ -528,6 +580,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
       "Jack can see whether the local work surfaces are clean enough to trust before starting new automation work.",
     owner: "Jack / Codex",
     sourceRepoPath: "/Users/maverick_ai/worktrees/loop-health-cockpit",
+    actionSurface: commandCenterActionSurface,
     cadence: "continuous",
     approvalRequired: false,
     nextAction:

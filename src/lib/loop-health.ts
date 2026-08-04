@@ -26,6 +26,7 @@ export interface LoopHealthEntry {
   businessPromise: string;
   owner: string;
   sourceRepoPath: string;
+  actionSurface: LoopRegistryEntry["actionSurface"];
   codexProject: LoopCodexProject;
   lastRun: string;
   lastProof: string;
@@ -395,6 +396,7 @@ function codexProjectFor(entry: LoopRegistryEntry): LoopCodexProject {
       "First confirm pwd, git remote, branch, and dirty file count.",
       `Expected repo: ${repo}. Expected branch/worktree: ${branch}.`,
       `Business promise: ${entry.businessPromise}`,
+      `Human action surface: ${entry.actionSurface.name} (${entry.actionSurface.pathOrUrl}). Expected actions: ${entry.actionSurface.actions.join(", ")}.`,
       `Current next action: ${entry.nextAction}`,
       `Canonical source/proof path to inspect: ${entry.sourceRepoPath}`,
       "Do not send texts, emails, publish website changes, mutate JobNimbus/OpenPhone/Supabase, or deploy unless I explicitly approve it.",
@@ -438,6 +440,7 @@ export async function buildLoopHealth(options: { includeSnapshots?: boolean } = 
         businessPromise: entry.businessPromise,
         owner: entry.owner,
         sourceRepoPath: snapshot?.sourceRepoPath ?? entry.sourceRepoPath,
+        actionSurface: entry.actionSurface,
         codexProject: codexProjectFor(entry),
         lastRun: snapshot ? formatTimestamp(snapshot.ranAt ?? snapshot.checkedAt) : formatLastRun(localProofs),
         lastProof: snapshot?.lastProof ?? formatLastProof(localProofs),
