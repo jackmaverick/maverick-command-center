@@ -198,7 +198,7 @@ const stageFormula = "status_name mapped to stage from the API status map";
 const openJobFilter = "active + not archived + not deleted + not test/demo + status not Lost/Dead/No Damage/Internal Supplementing/Paid & Closed";
 
 function stageValueFormula(stage: string) {
-  if (stage === "Accounts Receivable") return "sum(approved_invoice_due or parent_approved_invoice_due)";
+  if (stage === "Accounts Receivable") return "sum(active Sent/Open/Closed invoice balance due)";
   return "sum(max approved invoice, approved estimate, parent invoice/estimate, last invoice, last estimate)";
 }
 
@@ -353,8 +353,8 @@ export default function PipelinePage() {
             </div>
             <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-[#8b949e]">AR Due</p>
-              <p className="mt-2 font-mono text-lg text-[#e6edf3]">sum(approved_invoice_due)</p>
-              <p className="mt-2 text-xs text-[#8b949e]">Uses parent approved invoice due if the child job field is empty. This is collectible balance due, not full job size.</p>
+              <p className="mt-2 font-mono text-lg text-[#e6edf3]">sum(invoice balance due)</p>
+              <p className="mt-2 text-xs text-[#8b949e]">Counts active JobNimbus invoices in Sent, Open, and Closed with balance due. This is collectible balance due, not full job size.</p>
             </div>
           </div>
 

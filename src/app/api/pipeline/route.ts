@@ -43,10 +43,15 @@ const VALUE_SQL = `
 `;
 
 const AR_DUE_SQL = `
-  GREATEST(
-    COALESCE(j.approved_invoice_due, 0),
-    COALESCE(j.parent_approved_invoice_due, 0),
-    0
+  (
+    SELECT COALESCE(SUM(GREATEST(COALESCE(i.due, COALESCE(i.total, 0) - COALESCE(i.total_paid, 0)), 0)), 0)
+    FROM invoices i
+    WHERE i.job_jnid = j.jnid
+      AND i.is_active = true
+      AND i.is_archived = false
+      AND COALESCE(i.deleted_at::text, '') = ''
+      AND COALESCE(i.status_name, i.status::text, '') IN ('Sent', 'Open', 'Closed')
+      AND COALESCE(i.due, COALESCE(i.total, 0) - COALESCE(i.total_paid, 0)) > 0
   )
 `;
 
@@ -524,7 +529,7 @@ export async function GET(request: NextRequest) {
         "Revenue is JobNimbus only. QuickBooks is intentionally not used on this page.",
         "Current pipeline counts are active, non-archived JobNimbus jobs by current status right now, not a period cohort.",
         "Timing and conversion rates use JobNimbus job_stage_history from 2026-01-21 forward.",
-        "Accounts Receivable value uses collectible AR due, not the full historical job/invoice value, so close-out rows with no balance do not inflate the pipeline.",
+        "Accounts Receivable value uses collectible invoice balance due from active JobNimbus invoices in Sent/Open/Closed, not the job-level approved_invoice_due fallback or full historical job value.",
         "Forecast buckets are conservative V1 weights from current JobNimbus stage. Timing and conversion tables are shown so the model can be calibrated against real movement history."
       ],
       summary: {
