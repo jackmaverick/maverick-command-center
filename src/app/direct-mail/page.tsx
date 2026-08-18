@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import {
   AlertTriangle,
+  BarChart3 as BarChart3Icon,
   CheckCircle2,
   Clock3,
   ExternalLink,
@@ -15,9 +16,25 @@ import {
   RadioTower,
 } from "lucide-react";
 import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
   DIRECT_MAIL_BATCH,
   DIRECT_MAIL_CAMPAIGNS,
+  DIRECT_MAIL_PERFORMANCE,
+  DIRECT_MAIL_PROCESS_STEPS,
   DirectMailCampaignCell,
+  DirectMailPerformanceCell,
+  getDirectMailPerformanceSummary,
   getDirectMailSummary,
 } from "@/lib/direct-mail/june-2026-olathe-hail";
 import { cn } from "@/lib/utils";
@@ -73,6 +90,19 @@ const campaignColors = [
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: value >= 1000 ? 0 : 2,
+  }).format(value);
+}
+
+function formatPercent(value: number | null) {
+  if (value === null || Number.isNaN(value)) return "Pending";
+  return `${value.toFixed(value >= 100 ? 0 : 1)}%`;
 }
 
 function formatDateTime(value: string | null) {
@@ -283,8 +313,237 @@ function CampaignDetail({ campaign }: { campaign: DirectMailCampaignCell }) {
   );
 }
 
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number; color?: string }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 shadow-xl">
+      <div className="mb-1 text-xs font-medium text-[#e6edf3]">{label}</div>
+      <div className="space-y-1">
+        {payload.map((item) => (
+          <div key={`${item.name}-${item.value}`} className="flex items-center gap-2 text-xs">
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: item.color ?? "#58a6ff" }}
+            />
+            <span className="text-[#8b949e]">{item.name}</span>
+            <span className="font-mono text-[#e6edf3]">
+              {typeof item.value === "number" ? formatNumber(item.value) : item.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MoneyTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number; color?: string }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 shadow-xl">
+      <div className="mb-1 text-xs font-medium text-[#e6edf3]">{label}</div>
+      <div className="space-y-1">
+        {payload.map((item) => (
+          <div key={`${item.name}-${item.value}`} className="flex items-center gap-2 text-xs">
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: item.color ?? "#3fb950" }}
+            />
+            <span className="text-[#8b949e]">{item.name}</span>
+            <span className="font-mono text-[#e6edf3]">
+              {typeof item.value === "number" ? formatCurrency(item.value) : item.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DirectMailProcessGraph() {
+  return (
+    <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="font-semibold text-[#e6edf3]">Whole Loop: Target → Revenue</h2>
+          <p className="mt-1 text-xs text-[#8b949e]">
+            This is the actual direct-mail operating chain, not a lonely postcard scoreboard.
+          </p>
+        </div>
+        <span className="rounded-full border border-[#d29922]/30 bg-[#d29922]/10 px-3 py-1 text-xs text-[#d29922]">
+          Read-only attribution run · Aug 18
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-6">
+        {DIRECT_MAIL_PROCESS_STEPS.map((step, index) => (
+          <div key={step.step} className="relative rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
+            {index < DIRECT_MAIL_PROCESS_STEPS.length - 1 ? (
+              <div className="absolute right-[-14px] top-1/2 z-10 hidden h-px w-7 bg-[#30363d] lg:block" />
+            ) : null}
+            <div className="text-xs uppercase tracking-wide text-[#8b949e]">{step.step}</div>
+            <div className="mt-2 text-lg font-semibold text-[#e6edf3]">{step.metric}</div>
+            <div className="mt-2 text-xs leading-5 text-[#8b949e]">{step.detail}</div>
+            <div className="mt-3 inline-flex rounded-full border border-[#30363d] px-2 py-1 text-[11px] text-[#58a6ff]">
+              {step.status}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DirectMailPerformanceCharts() {
+  const chartData = DIRECT_MAIL_PERFORMANCE.map((campaign) => ({
+    ...campaign,
+    shortName: campaign.name.replace("Carriage ", "Car. ").replace("Hunter's ", "Hun. "),
+    responseRate: campaign.targetCount > 0 ? (campaign.matchedContacts / campaign.targetCount) * 100 : 0,
+    returnMultiple: campaign.costAllocated > 0 ? campaign.matchedRevenue / campaign.costAllocated : 0,
+  }));
+
+  const funnelData = [
+    { stage: "Targets", count: 1418 },
+    { stage: "Matched Contacts", count: 11 },
+    { stage: "Matched Jobs", count: 16 },
+    { stage: "Sold Jobs", count: 2 },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+      <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
+        <h2 className="font-semibold text-[#e6edf3]">Attribution Funnel</h2>
+        <p className="mt-1 text-xs text-[#8b949e]">
+          Loaded campaign rows down to matched revenue proof. This makes drop-off visible.
+        </p>
+        <div className="mt-5 h-[280px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={funnelData} margin={{ top: 10, right: 10, bottom: 20, left: 0 }}>
+              <CartesianGrid stroke="#30363d" strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="stage" tick={{ fill: "#8b949e", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#8b949e", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(88,166,255,0.08)" }} />
+              <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
+                {funnelData.map((entry, index) => (
+                  <Cell key={entry.stage} fill={campaignColors[index % campaignColors.length]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
+        <h2 className="font-semibold text-[#e6edf3]">Revenue vs Spend by Campaign</h2>
+        <p className="mt-1 text-xs text-[#8b949e]">
+          Shows where money came back, and where the mailbox goblin is still just eating postage.
+        </p>
+        <div className="mt-5 h-[280px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 10, right: 10, bottom: 20, left: 0 }}>
+              <CartesianGrid stroke="#30363d" strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="shortName" tick={{ fill: "#8b949e", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#8b949e", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <Tooltip content={<MoneyTooltip />} cursor={{ fill: "rgba(63,185,80,0.08)" }} />
+              <Bar dataKey="matchedRevenue" name="Matched revenue" radius={[4, 4, 0, 0]} fill="#3fb950" />
+              <Bar dataKey="costAllocated" name="Allocated cost" radius={[4, 4, 0, 0]} fill="#d29922" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
+        <h2 className="font-semibold text-[#e6edf3]">Response Rate by Neighborhood</h2>
+        <p className="mt-1 text-xs text-[#8b949e]">
+          Matched contacts divided by campaign target count. Good roofing direct mail usually wants this above 2%.
+        </p>
+        <div className="mt-5 h-[260px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 10, right: 15, bottom: 20, left: 0 }}>
+              <CartesianGrid stroke="#30363d" strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="shortName" tick={{ fill: "#8b949e", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#8b949e", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value) => `${value}%`} />
+              <Tooltip
+                content={({ active, payload, label }) => {
+                  if (!active || !payload?.length) return null;
+                  const value = payload[0]?.value;
+                  return (
+                    <div className="rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 shadow-xl">
+                      <div className="text-xs font-medium text-[#e6edf3]">{label}</div>
+                      <div className="mt-1 text-xs text-[#8b949e]">
+                        Response rate: <span className="font-mono text-[#e6edf3]">{typeof value === "number" ? formatPercent(value) : value}</span>
+                      </div>
+                    </div>
+                  );
+                }}
+              />
+              <Line type="monotone" dataKey="responseRate" name="Response rate" stroke="#58a6ff" strokeWidth={3} dot={{ r: 4, fill: "#58a6ff" }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
+        <h2 className="font-semibold text-[#e6edf3]">Campaign Economics</h2>
+        <p className="mt-1 text-xs text-[#8b949e]">
+          Cost per matched lead and return multiple. Pending values mean no sold job or no matched lead yet.
+        </p>
+        <div className="mt-4 space-y-3">
+          {DIRECT_MAIL_PERFORMANCE.map((campaign: DirectMailPerformanceCell) => {
+            const returnMultiple = campaign.costAllocated > 0 ? campaign.matchedRevenue / campaign.costAllocated : 0;
+            return (
+              <div key={campaign.id} className="rounded-md border border-[#30363d] bg-[#0d1117] p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-[#e6edf3]">{campaign.name}</div>
+                    <div className="mt-1 text-xs text-[#8b949e]">{campaign.attributionNotes}</div>
+                  </div>
+                  <div className="text-right font-mono text-sm text-[#3fb950]">
+                    {returnMultiple > 0 ? `${returnMultiple.toFixed(1)}x` : "Pending"}
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <div className="text-[#8b949e]">Cost / lead</div>
+                    <div className="font-mono text-[#e6edf3]">{campaign.costPerMatchedLead === null ? "Pending" : formatCurrency(campaign.costPerMatchedLead)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[#8b949e]">Sold jobs</div>
+                    <div className="font-mono text-[#e6edf3]">{campaign.matchedSoldJobs}</div>
+                  </div>
+                  <div>
+                    <div className="text-[#8b949e]">ROI</div>
+                    <div className="font-mono text-[#e6edf3]">{formatPercent(campaign.roiPercent)}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DirectMailPage() {
   const summary = getDirectMailSummary();
+  const performanceSummary = getDirectMailPerformanceSummary();
   const [selectedId, setSelectedId] = useState(DIRECT_MAIL_CAMPAIGNS[0]?.id ?? "");
   const [query, setQuery] = useState("");
 
@@ -318,13 +577,12 @@ export default function DirectMailPage() {
             Direct Mail Operating System
           </div>
           <h1 className="mt-2 text-2xl font-bold text-[#e6edf3]">
-            Direct Mail Map
+            Direct Mail Loop
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[#8b949e]">
-            Team-facing send map for the April 26 hail direct-mail batch. It shows
-            which neighborhood cells were sent to Ron / Mail Works, when each handoff
-            happened, recipient counts, and which cells still need final postal-drop
-            confirmation before we treat them as fully mailed.
+            Team-facing view of the full direct mail process: target lists, mailhouse
+            handoff, cost, call/source attribution, matched jobs, sold revenue, and
+            which campaign cells still need final postal-drop confirmation.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -380,6 +638,47 @@ export default function DirectMailPage() {
           detail="Waiting on final mailhouse confirmation"
           icon={Clock3}
         />
+      </div>
+
+      <div className="mb-8 grid grid-cols-2 gap-4 xl:grid-cols-5">
+        <StatCard
+          label="Matched targets"
+          value={formatNumber(performanceSummary.totalTargets)}
+          detail="Campaign rows in the current scorecard"
+          icon={MapPin}
+        />
+        <StatCard
+          label="Matched contacts"
+          value={formatNumber(performanceSummary.totalMatchedContacts)}
+          detail={`${formatPercent(performanceSummary.responseRate)} response rate`}
+          icon={RadioTower}
+        />
+        <StatCard
+          label="Matched jobs"
+          value={formatNumber(performanceSummary.totalMatchedJobs)}
+          detail={`${formatNumber(performanceSummary.totalSoldJobs)} sold jobs attributed`}
+          icon={CheckCircle2}
+        />
+        <StatCard
+          label="Matched revenue"
+          value={formatCurrency(performanceSummary.totalRevenue)}
+          detail={`${performanceSummary.returnMultiple.toFixed(1)}x return on known spend`}
+          icon={BarChart3Icon}
+        />
+        <StatCard
+          label="Known spend"
+          value={formatCurrency(performanceSummary.totalCost)}
+          detail="Loaded Mail Works cost allocation"
+          icon={Printer}
+        />
+      </div>
+
+      <div className="mb-8">
+        <DirectMailProcessGraph />
+      </div>
+
+      <div className="mb-8">
+        <DirectMailPerformanceCharts />
       </div>
 
       <div className="mb-8 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
