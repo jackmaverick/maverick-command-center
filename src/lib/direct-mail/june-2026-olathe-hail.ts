@@ -280,6 +280,180 @@ export const DIRECT_MAIL_CAMPAIGNS: DirectMailCampaignCell[] = [
   },
 ];
 
+export interface DirectMailPerformanceCell {
+  id: string;
+  name: string;
+  city: string;
+  targetCount: number;
+  matchedContacts: number;
+  matchedJobs: number;
+  matchedSoldJobs: number;
+  matchedRevenue: number;
+  costAllocated: number;
+  costPerPiece: number;
+  costPerMatchedLead: number | null;
+  costPerSoldJob: number | null;
+  roiPercent: number | null;
+  callsMentioningMailer: number;
+  attributionNotes: string;
+}
+
+export const DIRECT_MAIL_PERFORMANCE: DirectMailPerformanceCell[] = [
+  {
+    id: "carriage-crossing",
+    name: "Carriage Crossing",
+    city: "Leawood",
+    targetCount: 390,
+    matchedContacts: 9,
+    matchedJobs: 13,
+    matchedSoldJobs: 2,
+    matchedRevenue: 40895.35,
+    costAllocated: 652.71,
+    costPerPiece: 0.4986,
+    costPerMatchedLead: 29.67,
+    costPerSoldJob: 326.35,
+    roiPercent: 6165.5,
+    callsMentioningMailer: 74,
+    attributionNotes: "Strongest current matched campaign: 2 sold jobs and $40.9k matched revenue.",
+  },
+  {
+    id: "hunter-s-ridge",
+    name: "Hunter's Ridge",
+    city: "Leawood",
+    targetCount: 569,
+    matchedContacts: 2,
+    matchedJobs: 2,
+    matchedSoldJobs: 0,
+    matchedRevenue: 0,
+    costAllocated: 952.28,
+    costPerPiece: 0.4986,
+    costPerMatchedLead: 238.07,
+    costPerSoldJob: null,
+    roiPercent: null,
+    callsMentioningMailer: 74,
+    attributionNotes: "Response exists, but no sold revenue is matched yet.",
+  },
+  {
+    id: "notting-creek",
+    name: "Notting Creek",
+    city: "Olathe",
+    targetCount: 246,
+    matchedContacts: 0,
+    matchedJobs: 1,
+    matchedSoldJobs: 0,
+    matchedRevenue: 0,
+    costAllocated: 411.71,
+    costPerPiece: 0.4986,
+    costPerMatchedLead: 411.71,
+    costPerSoldJob: null,
+    roiPercent: null,
+    callsMentioningMailer: 74,
+    attributionNotes: "One matched job signal, but no contact or sold-job attribution yet.",
+  },
+  {
+    id: "wynnewood",
+    name: "Wynnewood",
+    city: "Leawood",
+    targetCount: 213,
+    matchedContacts: 0,
+    matchedJobs: 0,
+    matchedSoldJobs: 0,
+    matchedRevenue: 0,
+    costAllocated: 356.48,
+    costPerPiece: 0.4986,
+    costPerMatchedLead: null,
+    costPerSoldJob: null,
+    roiPercent: null,
+    callsMentioningMailer: 74,
+    attributionNotes: "No matched response yet; keep in watchlist before repeating.",
+  },
+];
+
+export const DIRECT_MAIL_PROCESS_STEPS = [
+  {
+    step: "Target",
+    metric: "2,400 rows scanned",
+    value: 2400,
+    detail: "Raw mailer target rows from loaded neighborhood files.",
+    status: "Loaded",
+  },
+  {
+    step: "Clean",
+    metric: "1,418 usable campaign rows",
+    value: 1418,
+    detail: "Deduped campaign target rows visible in the current scorecard.",
+    status: "Tracked",
+  },
+  {
+    step: "Spend",
+    metric: "$2,373 allocated",
+    value: 2373,
+    detail: "Known Mail Works spend allocated to campaigns with loaded costs.",
+    status: "Partial cost ledger",
+  },
+  {
+    step: "Listen",
+    metric: "5,361 calls scanned",
+    value: 5361,
+    detail: "OpenPhone calls scanned for mailer/direct-mail language.",
+    status: "Read-only",
+  },
+  {
+    step: "Attribute",
+    metric: "24 direct-source contacts",
+    value: 24,
+    detail: "Contacts with direct-mail source/tag signals in the current run.",
+    status: "Matched",
+  },
+  {
+    step: "Close",
+    metric: "$40.9k matched revenue",
+    value: 40895,
+    detail: "Revenue currently matched back to direct-mail campaign addresses.",
+    status: "Revenue proof",
+  },
+];
+
+export function getDirectMailPerformanceSummary() {
+  const totalTargets = DIRECT_MAIL_PERFORMANCE.reduce(
+    (sum, campaign) => sum + campaign.targetCount,
+    0
+  );
+  const totalMatchedContacts = DIRECT_MAIL_PERFORMANCE.reduce(
+    (sum, campaign) => sum + campaign.matchedContacts,
+    0
+  );
+  const totalMatchedJobs = DIRECT_MAIL_PERFORMANCE.reduce(
+    (sum, campaign) => sum + campaign.matchedJobs,
+    0
+  );
+  const totalSoldJobs = DIRECT_MAIL_PERFORMANCE.reduce(
+    (sum, campaign) => sum + campaign.matchedSoldJobs,
+    0
+  );
+  const totalRevenue = DIRECT_MAIL_PERFORMANCE.reduce(
+    (sum, campaign) => sum + campaign.matchedRevenue,
+    0
+  );
+  const totalCost = DIRECT_MAIL_PERFORMANCE.reduce(
+    (sum, campaign) => sum + campaign.costAllocated,
+    0
+  );
+  const responseRate = totalTargets > 0 ? (totalMatchedContacts / totalTargets) * 100 : 0;
+  const returnMultiple = totalCost > 0 ? totalRevenue / totalCost : 0;
+
+  return {
+    totalTargets,
+    totalMatchedContacts,
+    totalMatchedJobs,
+    totalSoldJobs,
+    totalRevenue,
+    totalCost,
+    responseRate,
+    returnMultiple,
+  };
+}
+
 export function getDirectMailSummary() {
   const totalSheetRows = DIRECT_MAIL_CAMPAIGNS.reduce(
     (sum, campaign) => sum + campaign.sheetRows,
