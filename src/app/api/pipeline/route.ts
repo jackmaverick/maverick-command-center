@@ -1,196 +1,609 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { SEGMENT_SQL, segmentWhereClause } from "@/lib/segment";
-import { getDateRange, isValidPeriodKey, toUnixSeconds, type PeriodKey } from "@/lib/dates";
-import {
-  STATUS_TO_STAGE,
-  ORDERED_STATUSES,
-  LOSS_STATUSES,
-  STAGES,
-  type Stage,
-  type Segment,
-} from "@/lib/constants";
+import { ORDERED_STATUSES, STATUS_TO_STAGE, type Stage } from "@/lib/constants";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+const TIMING_COHORT_START = "2026-01-21";
+const JOBNIMBUS_BASE_URL = "https://app.jobnimbus.com/job/";
 
-interface StageCount {
-  stage: Stage;
-  count: number;
+const RECORD_TYPE_SQL = `
+  CASE
+    WHEN lower(COALESCE(j.record_type_name, '')) LIKE '%repair%' THEN 'repairs'
+    WHEN lower(COALESCE(j.record_type_name, '')) LIKE '%insurance%' THEN 'insurance'
+    WHEN lower(COALESCE(j.record_type_name, '')) LIKE '%retail%' THEN 'retail'
+    WHEN lower(COALESCE(j.record_type_name, '')) LIKE '%commercial%' THEN 'light_commercial'
+    ELSE 'other'
+  END
+`;
+
+const ACTIVE_REAL_JOB_WHERE = `
+  j.is_active = true
+  AND j.is_archived = false
+  AND COALESCE(j.deleted_at::text, '') = ''
+  AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|verification|jane tester|scout_test)'
+  AND COALESCE(j.primary_contact_name, '') !~* '(test|dummy|demo|sample|verification)'
+`;
+
+const OPEN_PIPELINE_WHERE = `
+  ${ACTIVE_REAL_JOB_WHERE}
+  AND COALESCE(j.status_name, '') NOT IN ('Lost', 'Dead', 'No Damage', 'Internal Supplementing', 'Paid & Closed')
+`;
+
+const VALUE_SQL = `
+  GREATEST(
+    COALESCE(j.approved_invoice_due, 0),
+    COALESCE(j.approved_invoice_total, 0),
+    COALESCE(j.approved_estimate_total, 0),
+    COALESCE(j.parent_approved_invoice_due, 0),
+    COALESCE(j.parent_approved_invoice_total, 0),
+    COALESCE(j.parent_approved_estimate_total, 0),
+    COALESCE(j.last_invoice, 0),
+    COALESCE(j.last_estimate, 0),
+    0
+  )
+`;
+
+const STAGE_SQL = `
+  CASE
+    WHEN COALESCE(j.status_name, '') IN ('Lead', 'New', 'Cold Lead', 'Storm Alert') THEN 'Lead'
+    WHEN COALESCE(j.status_name, '') IN ('Appointment Scheduled', 'Adjuster Appt Scheduled') THEN 'Appointment Scheduled'
+    WHEN COALESCE(j.status_name, '') IN ('Appt Ran', 'Appointment Ran', 'Adjuster Appt Ran') THEN 'Appointment Ran'
+    WHEN COALESCE(j.status_name, '') IN ('Estimating', 'Estimate Sent', 'Claim Review', 'Scope Approval', 'Waiting on Claim') THEN 'Estimating'
+    WHEN COALESCE(j.status_name, '') IN ('Invoiced', 'Final Invoicing', 'Deductible Invoice Sent', 'Final Invoice Sent', 'Pending Final Payment', 'Job Close Out', 'Close Out In Progress', 'Project Review In Progress', 'Back End Job Audit') THEN 'Accounts Receivable'
+    WHEN COALESCE(j.status_name, '') IN ('Sold Job', 'Signed Contract', 'Fully Approved', 'Deductible Collected', 'Production Ready', 'Job Scheduled', 'In Progress', 'In Production', 'Insurance Pending', 'Insurance Pending/Cont Skipped', 'Pre Production Supplementing', 'Future Work', 'Needs Rescheduling', 'City / HOA Approval') THEN 'Production'
+    ELSE 'Other'
+  END
+`;
+
+const STAGE_ORDER: Record<string, number> = {
+  Lead: 1,
+  "Appointment Scheduled": 2,
+  "Appointment Ran": 3,
+  Estimating: 4,
+  Production: 5,
+  "Accounts Receivable": 6,
+  Other: 99,
+};
+
+const RECORD_TYPE_LABELS: Record<string, string> = {
+  retail: "Retail",
+  insurance: "Insurance",
+  repairs: "Repairs",
+  light_commercial: "Light Commercial",
+  other: "Other",
+};
+
+const TRACKED_RECORD_TYPES = ["repairs", "insurance", "retail", "light_commercial", "other"];
+
+const q = (value: string) => `'${value.replace(/'/g, "''")}'`;
+const STATUS_TRANSITIONS = ORDERED_STATUSES.slice(0, -1).map((from, index) => ({
+  from,
+  to: ORDERED_STATUSES[index + 1],
+  index,
+}));
+const STATUS_TRANSITION_VALUES = STATUS_TRANSITIONS.map(
+  (transition) => `(${transition.index}, ${q(transition.from)}, ${q(transition.to)})`
+).join(",\n");
+
+interface CurrentStageRow {
+  pipeline_stage: string;
+  job_count: string;
+  pipeline_value: string;
+  ar_due: string;
+  avg_days_in_status: string | null;
 }
 
-interface StatusCount {
+interface CurrentStatusRow {
+  record_type: string;
+  pipeline_stage: string;
   status_name: string;
-  count: number;
+  job_count: string;
+  pipeline_value: string;
+  ar_due: string;
+  avg_days_in_status: string | null;
 }
 
-interface KeyConversion {
-  from: string;
-  to: string;
-  rate: number;
-  fromCount: number;
-  toCount: number;
+interface RecordTypeRow {
+  record_type: string;
+  active_jobs: string;
+  pipeline_value: string;
+  ar_due: string;
+  lead_count: string;
+  appointment_scheduled_count: string;
+  appointment_ran_count: string;
+  estimating_count: string;
+  production_count: string;
+  ar_job_count: string;
 }
 
-interface LossByStage {
-  stage: string;
-  count: number;
-  rate: number;
+interface TimingRow {
+  record_type: string;
+  from_status: string;
+  to_status: string;
+  sample_count: string;
+  avg_days: string | null;
+  median_days: string | null;
+  p75_days: string | null;
+  p90_days: string | null;
 }
 
-interface PipelineValueByStage {
-  stage: Stage;
-  value: number;
+interface StageTimingRow {
+  record_type: string;
+  from_stage: string;
+  to_stage: string;
+  sample_count: string;
+  avg_days: string | null;
+  median_days: string | null;
+  p75_days: string | null;
+  p90_days: string | null;
 }
 
-interface SegmentComparison {
-  segment: Segment;
-  activeJobs: number;
-  overallConversion: number;
-  avgCycleTimeDays: number | null;
-  pipelineValue: number;
-  revenue: number;
-  leadToEstimateRate: number;
-  estimateToSoldRate: number;
-  soldToInvoicedRate: number;
+interface ConversionRow {
+  record_type: string;
+  from_status: string;
+  to_status: string;
+  from_count: string;
+  converted_count: string;
 }
 
-interface PipelineResponse {
-  period: { key: PeriodKey; label: string; start: string; end: string };
-  segment: Segment | null;
-  stageCounts: StageCount[];
-  statusCounts: StatusCount[];
-  overallConversion: { rate: number; convertedJobs: number; totalJobs: number };
-  keyConversions: KeyConversion[];
-  lossByStage: LossByStage[];
-  lostJobsCount: number;
-  avgCycleTimeDays: number | null;
-  pipelineValueByStage: PipelineValueByStage[];
-  segmentComparison: SegmentComparison[];
-  revenueInPeriod: number;
+interface ForecastRow {
+  bucket: string;
+  raw_value: string;
+  weighted_value: string;
+  job_count: string;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const VALID_PERIODS: PeriodKey[] = [
-  "week",
-  "last_week",
-  "month",
-  "last_month",
-  "quarter",
-  "ytd",
-  "all",
-];
-
-const VALID_SEGMENTS: Segment[] = [
-  "real_estate",
-  "retail",
-  "insurance",
-  "repairs",
-  "warranty",
-];
-
-/** Index of a status in the ordered pipeline (higher = further along). */
-const STATUS_INDEX = Object.fromEntries(
-  ORDERED_STATUSES.map((s, i) => [s, i])
-) as Record<string, number>;
-
-/** The index of Sold Job -- anything >= this is "converted". */
-const SOLD_JOB_IDX = STATUS_INDEX["Sold Job"];
-
-/**
- * Build the optional segment WHERE fragment and push the param if needed.
- * Returns the SQL fragment (empty string if no segment filter).
- */
-function buildSegmentFilter(
-  segment: Segment | null,
-  params: unknown[]
-): string {
-  if (!segment) return "";
-  params.push(segment);
-  return ` AND ${segmentWhereClause(params.length)}`;
+interface JobRow {
+  job_jnid: string;
+  job_number: string | null;
+  job_name: string;
+  record_type: string;
+  pipeline_stage: string;
+  status_name: string;
+  value: string;
+  ar_due: string;
+  days_in_status: string;
+  job_url: string;
 }
 
-// ---------------------------------------------------------------------------
-// GET /api/pipeline
-// ---------------------------------------------------------------------------
+function toNumber(value: string | number | null | undefined): number {
+  const parsed = typeof value === "number" ? value : parseFloat(value ?? "0");
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0;
+}
+
+function toInteger(value: string | number | null | undefined): number {
+  const parsed = typeof value === "number" ? value : parseInt(value ?? "0", 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toDays(value: string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = parseFloat(value);
+  return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : null;
+}
+
+function stageSort(stage: string): number {
+  return STAGE_ORDER[stage] ?? 99;
+}
+
+function recordTypeLabel(recordType: string): string {
+  return RECORD_TYPE_LABELS[recordType] ?? recordType.replaceAll("_", " ");
+}
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = request.nextUrl;
+    const recordTypeParam = request.nextUrl.searchParams.get("recordType");
+    const recordType = recordTypeParam && TRACKED_RECORD_TYPES.includes(recordTypeParam)
+      ? recordTypeParam
+      : null;
+    const recordTypeFilter = recordType ? "AND record_type = $1" : "";
+    const recordTypeParams = recordType ? [recordType] : [];
 
-    // -- Parse & validate period --
-    const periodParam = (searchParams.get("period") ?? "month") as PeriodKey;
-    if (!isValidPeriodKey(periodParam)) {
-      return NextResponse.json(
-        { error: `Invalid period. Must be one of: ${VALID_PERIODS.join(", ")}` },
-        { status: 400 }
-      );
-    }
-    const range = getDateRange(periodParam);
-    const startUnix = toUnixSeconds(range.start);
-    const endUnix = toUnixSeconds(range.end);
-
-    // -- Parse & validate segment --
-    const segmentParam = searchParams.get("segment") as Segment | null;
-    if (segmentParam && !VALID_SEGMENTS.includes(segmentParam)) {
-      return NextResponse.json(
-        {
-          error: `Invalid segment. Must be one of: ${VALID_SEGMENTS.join(", ")}`,
-        },
-        { status: 400 }
-      );
-    }
-
-    // Run all independent queries in parallel
     const [
-      stageCounts,
-      statusCounts,
-      conversionData,
-      keyConversions,
-      lossByStage,
-      lostJobsCount,
-      avgCycleTime,
-      pipelineValue,
-      segmentComparison,
-      revenueInPeriod,
+      currentStages,
+      currentStatuses,
+      recordTypes,
+      timing,
+      stageTiming,
+      conversions,
+      forecast,
+      topJobs,
     ] = await Promise.all([
-      queryStageCounts(startUnix, endUnix, segmentParam),
-      queryStatusCounts(startUnix, endUnix, segmentParam),
-      queryOverallConversion(startUnix, endUnix, segmentParam),
-      queryKeyConversions(startUnix, endUnix, segmentParam),
-      queryLossByStage(startUnix, endUnix, segmentParam),
-      queryLostJobsCount(startUnix, endUnix, segmentParam),
-      queryAvgCycleTime(startUnix, endUnix, segmentParam),
-      queryPipelineValueByStage(segmentParam),
-      querySegmentComparison(startUnix, endUnix),
-      queryRevenueInPeriod(startUnix, endUnix, segmentParam),
+      query<CurrentStageRow>(`
+        WITH open_jobs AS (
+          SELECT
+            ${STAGE_SQL} AS pipeline_stage,
+            ${VALUE_SQL} AS value,
+            COALESCE(j.approved_invoice_due, j.parent_approved_invoice_due, 0) AS ar_due,
+            GREATEST(0, EXTRACT(EPOCH FROM (now() - to_timestamp(COALESCE(j.jn_date_status_change, j.jn_date_created)))) / 86400.0) AS days_in_status,
+            ${RECORD_TYPE_SQL} AS record_type
+          FROM jobs j
+          WHERE ${OPEN_PIPELINE_WHERE}
+        )
+        SELECT
+          pipeline_stage,
+          COUNT(*)::text AS job_count,
+          COALESCE(SUM(value), 0)::text AS pipeline_value,
+          COALESCE(SUM(ar_due), 0)::text AS ar_due,
+          AVG(days_in_status)::text AS avg_days_in_status
+        FROM open_jobs
+        WHERE pipeline_stage <> 'Other'
+          ${recordTypeFilter}
+        GROUP BY pipeline_stage
+      `, recordTypeParams),
+      query<CurrentStatusRow>(`
+        WITH open_jobs AS (
+          SELECT
+            ${RECORD_TYPE_SQL} AS record_type,
+            ${STAGE_SQL} AS pipeline_stage,
+            COALESCE(j.status_name, 'Unknown') AS status_name,
+            ${VALUE_SQL} AS value,
+            COALESCE(j.approved_invoice_due, j.parent_approved_invoice_due, 0) AS ar_due,
+            GREATEST(0, EXTRACT(EPOCH FROM (now() - to_timestamp(COALESCE(j.jn_date_status_change, j.jn_date_created)))) / 86400.0) AS days_in_status
+          FROM jobs j
+          WHERE ${OPEN_PIPELINE_WHERE}
+        )
+        SELECT
+          record_type,
+          pipeline_stage,
+          status_name,
+          COUNT(*)::text AS job_count,
+          COALESCE(SUM(value), 0)::text AS pipeline_value,
+          COALESCE(SUM(ar_due), 0)::text AS ar_due,
+          AVG(days_in_status)::text AS avg_days_in_status
+        FROM open_jobs
+        WHERE pipeline_stage <> 'Other'
+          ${recordTypeFilter}
+        GROUP BY record_type, pipeline_stage, status_name
+        ORDER BY pipeline_stage, SUM(value) DESC, COUNT(*) DESC
+      `, recordTypeParams),
+      query<RecordTypeRow>(`
+        WITH open_jobs AS (
+          SELECT
+            ${RECORD_TYPE_SQL} AS record_type,
+            ${STAGE_SQL} AS pipeline_stage,
+            ${VALUE_SQL} AS value,
+            COALESCE(j.approved_invoice_due, j.parent_approved_invoice_due, 0) AS ar_due
+          FROM jobs j
+          WHERE ${OPEN_PIPELINE_WHERE}
+        )
+        SELECT
+          record_type,
+          COUNT(*)::text AS active_jobs,
+          COALESCE(SUM(value), 0)::text AS pipeline_value,
+          COALESCE(SUM(ar_due), 0)::text AS ar_due,
+          COUNT(*) FILTER (WHERE pipeline_stage = 'Lead')::text AS lead_count,
+          COUNT(*) FILTER (WHERE pipeline_stage = 'Appointment Scheduled')::text AS appointment_scheduled_count,
+          COUNT(*) FILTER (WHERE pipeline_stage = 'Appointment Ran')::text AS appointment_ran_count,
+          COUNT(*) FILTER (WHERE pipeline_stage = 'Estimating')::text AS estimating_count,
+          COUNT(*) FILTER (WHERE pipeline_stage = 'Production')::text AS production_count,
+          COUNT(*) FILTER (WHERE pipeline_stage = 'Accounts Receivable')::text AS ar_job_count
+        FROM open_jobs
+        WHERE pipeline_stage <> 'Other'
+        GROUP BY record_type
+        ORDER BY SUM(value) DESC
+      `),
+      query<TimingRow>(`
+        SELECT
+          ${RECORD_TYPE_SQL} AS record_type,
+          COALESCE(h.from_stage_name, 'Unknown') AS from_status,
+          COALESCE(h.to_stage_name, 'Unknown') AS to_status,
+          COUNT(*)::text AS sample_count,
+          AVG(EXTRACT(EPOCH FROM h.duration_in_previous_stage) / 86400.0)::text AS avg_days,
+          percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM h.duration_in_previous_stage) / 86400.0)::text AS median_days,
+          percentile_cont(0.75) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM h.duration_in_previous_stage) / 86400.0)::text AS p75_days,
+          percentile_cont(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM h.duration_in_previous_stage) / 86400.0)::text AS p90_days
+        FROM job_stage_history h
+        JOIN jobs j ON j.jnid = h.job_jnid
+        WHERE h.changed_at >= DATE '${TIMING_COHORT_START}'
+          AND h.duration_in_previous_stage IS NOT NULL
+          AND EXTRACT(EPOCH FROM h.duration_in_previous_stage) >= 0
+          AND EXTRACT(EPOCH FROM h.duration_in_previous_stage) <= 365 * 86400
+          AND ${ACTIVE_REAL_JOB_WHERE}
+        GROUP BY record_type, h.from_stage_name, h.to_stage_name
+        HAVING COUNT(*) >= 2
+        ORDER BY record_type, from_status, to_status
+      `),
+      query<StageTimingRow>(`
+        WITH transitions AS (
+          SELECT
+            ${RECORD_TYPE_SQL} AS record_type,
+            CASE ${Object.entries(STATUS_TO_STAGE).map(([status, stage]) => `WHEN h.from_stage_name = ${q(status)} THEN ${q(stage)}`).join(" ")} ELSE 'Other' END AS from_stage,
+            CASE ${Object.entries(STATUS_TO_STAGE).map(([status, stage]) => `WHEN h.to_stage_name = ${q(status)} THEN ${q(stage)}`).join(" ")} ELSE 'Other' END AS to_stage,
+            EXTRACT(EPOCH FROM h.duration_in_previous_stage) / 86400.0 AS days
+          FROM job_stage_history h
+          JOIN jobs j ON j.jnid = h.job_jnid
+          WHERE h.changed_at >= DATE '${TIMING_COHORT_START}'
+            AND h.duration_in_previous_stage IS NOT NULL
+            AND EXTRACT(EPOCH FROM h.duration_in_previous_stage) >= 0
+            AND EXTRACT(EPOCH FROM h.duration_in_previous_stage) <= 365 * 86400
+            AND ${ACTIVE_REAL_JOB_WHERE}
+        )
+        SELECT
+          record_type,
+          from_stage,
+          to_stage,
+          COUNT(*)::text AS sample_count,
+          AVG(days)::text AS avg_days,
+          percentile_cont(0.5) WITHIN GROUP (ORDER BY days)::text AS median_days,
+          percentile_cont(0.75) WITHIN GROUP (ORDER BY days)::text AS p75_days,
+          percentile_cont(0.9) WITHIN GROUP (ORDER BY days)::text AS p90_days
+        FROM transitions
+        WHERE from_stage <> 'Other'
+          AND to_stage <> 'Other'
+          AND from_stage <> to_stage
+        GROUP BY record_type, from_stage, to_stage
+        HAVING COUNT(*) >= 2
+        ORDER BY record_type, from_stage, to_stage
+      `),
+      query<ConversionRow>(`
+        WITH transition_defs(sort_order, from_status, to_status) AS (
+          VALUES ${STATUS_TRANSITION_VALUES}
+        ), cohort AS (
+          SELECT j.id, j.jnid, j.status_name, ${RECORD_TYPE_SQL} AS record_type
+          FROM jobs j
+          WHERE j.jn_date_created >= EXTRACT(EPOCH FROM DATE '${TIMING_COHORT_START}')
+            AND ${ACTIVE_REAL_JOB_WHERE}
+        ), from_counts AS (
+          SELECT
+            c.record_type,
+            d.from_status,
+            d.to_status,
+            d.sort_order,
+            COUNT(DISTINCT c.id)::text AS from_count
+          FROM cohort c
+          JOIN transition_defs d ON (
+            c.status_name = d.from_status
+            OR EXISTS (
+              SELECT 1
+              FROM job_stage_history h
+              WHERE h.job_jnid = c.jnid
+                AND (h.from_stage_name = d.from_status OR h.to_stage_name = d.from_status)
+            )
+          )
+          GROUP BY c.record_type, d.from_status, d.to_status, d.sort_order
+        ), converted AS (
+          SELECT
+            c.record_type,
+            d.from_status,
+            d.to_status,
+            COUNT(DISTINCT c.id)::text AS converted_count
+          FROM cohort c
+          JOIN transition_defs d ON EXISTS (
+            SELECT 1
+            FROM job_stage_history h
+            WHERE h.job_jnid = c.jnid
+              AND h.from_stage_name = d.from_status
+              AND h.to_stage_name = d.to_status
+          )
+          GROUP BY c.record_type, d.from_status, d.to_status
+        )
+        SELECT
+          f.record_type,
+          f.from_status,
+          f.to_status,
+          f.from_count,
+          COALESCE(c.converted_count, '0') AS converted_count
+        FROM from_counts f
+        LEFT JOIN converted c ON c.record_type = f.record_type AND c.from_status = f.from_status AND c.to_status = f.to_status
+        WHERE f.from_count::int >= 2
+        ORDER BY f.record_type, f.sort_order
+      `),
+      query<ForecastRow>(`
+        WITH open_jobs AS (
+          SELECT
+            ${STAGE_SQL} AS pipeline_stage,
+            ${RECORD_TYPE_SQL} AS record_type,
+            ${VALUE_SQL} AS value,
+            COALESCE(j.approved_invoice_due, j.parent_approved_invoice_due, 0) AS ar_due
+          FROM jobs j
+          WHERE ${OPEN_PIPELINE_WHERE}
+        ), scored AS (
+          SELECT
+            CASE
+              WHEN pipeline_stage = 'Accounts Receivable' THEN 'Bank cash now / collecting'
+              WHEN pipeline_stage = 'Production' THEN 'Production money now / soon'
+              WHEN pipeline_stage = 'Estimating' THEN 'Potential production after sold'
+              WHEN pipeline_stage IN ('Appointment Scheduled', 'Appointment Ran') THEN 'Early pipeline'
+              WHEN pipeline_stage = 'Lead' THEN 'Raw leads'
+              ELSE 'Other'
+            END AS bucket,
+            value,
+            ar_due,
+            CASE
+              WHEN pipeline_stage = 'Accounts Receivable' THEN GREATEST(ar_due, value) * 0.85
+              WHEN pipeline_stage = 'Production' AND record_type IN ('retail', 'repairs', 'light_commercial') THEN value * 0.70
+              WHEN pipeline_stage = 'Production' AND record_type = 'insurance' THEN value * 0.50
+              WHEN pipeline_stage = 'Estimating' AND record_type IN ('retail', 'repairs', 'light_commercial') THEN value * 0.28
+              WHEN pipeline_stage = 'Estimating' AND record_type = 'insurance' THEN value * 0.18
+              WHEN pipeline_stage IN ('Appointment Scheduled', 'Appointment Ran') THEN value * 0.08
+              WHEN pipeline_stage = 'Lead' THEN value * 0.03
+              ELSE 0
+            END AS weighted_value
+          FROM open_jobs
+          WHERE pipeline_stage <> 'Other'
+        )
+        SELECT
+          bucket,
+          COALESCE(SUM(GREATEST(ar_due, value)), 0)::text AS raw_value,
+          COALESCE(SUM(weighted_value), 0)::text AS weighted_value,
+          COUNT(*)::text AS job_count
+        FROM scored
+        GROUP BY bucket
+        ORDER BY CASE bucket
+          WHEN 'Bank cash now / collecting' THEN 1
+          WHEN 'Production money now / soon' THEN 2
+          WHEN 'Potential production after sold' THEN 3
+          WHEN 'Early pipeline' THEN 4
+          WHEN 'Raw leads' THEN 5
+          ELSE 99
+        END
+      `),
+      query<JobRow>(`
+        WITH open_jobs AS (
+          SELECT
+            j.jnid AS job_jnid,
+            j.number AS job_number,
+            j.name AS job_name,
+            ${RECORD_TYPE_SQL} AS record_type,
+            ${STAGE_SQL} AS pipeline_stage,
+            COALESCE(j.status_name, 'Unknown') AS status_name,
+            ${VALUE_SQL} AS value,
+            COALESCE(j.approved_invoice_due, j.parent_approved_invoice_due, 0) AS ar_due,
+            GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - to_timestamp(COALESCE(j.jn_date_status_change, j.jn_date_created)))) / 86400)) AS days_in_status
+          FROM jobs j
+          WHERE ${OPEN_PIPELINE_WHERE}
+        )
+        SELECT
+          job_jnid,
+          job_number,
+          job_name,
+          record_type,
+          pipeline_stage,
+          status_name,
+          value::text,
+          ar_due::text,
+          days_in_status::text,
+          CONCAT('${JOBNIMBUS_BASE_URL}', job_jnid) AS job_url
+        FROM open_jobs
+        WHERE pipeline_stage <> 'Other'
+          AND (value > 0 OR ar_due > 0 OR pipeline_stage IN ('Lead', 'Appointment Scheduled', 'Appointment Ran'))
+          ${recordTypeFilter}
+        ORDER BY GREATEST(value, ar_due) DESC, days_in_status DESC
+        LIMIT 75
+      `, recordTypeParams),
     ]);
 
-    const response: PipelineResponse = {
-      period: {
-        key: periodParam,
-        label: range.label,
-        start: range.start.toISOString(),
-        end: range.end.toISOString(),
-      },
-      segment: segmentParam,
-      stageCounts,
-      statusCounts,
-      overallConversion: conversionData,
-      keyConversions,
-      lossByStage,
-      lostJobsCount,
-      avgCycleTimeDays: avgCycleTime,
-      pipelineValueByStage: pipelineValue,
-      segmentComparison,
-      revenueInPeriod,
-    };
+    const normalizedStages = currentStages
+      .map((row) => ({
+        stage: row.pipeline_stage as Stage | "Accounts Receivable" | "Other",
+        jobCount: toInteger(row.job_count),
+        pipelineValue: toNumber(row.pipeline_value),
+        arDue: toNumber(row.ar_due),
+        avgDaysInStatus: toDays(row.avg_days_in_status),
+      }))
+      .sort((a, b) => stageSort(a.stage) - stageSort(b.stage));
 
-    return NextResponse.json(response);
+    const summary = normalizedStages.reduce(
+      (acc, row) => {
+        acc.activeJobs += row.jobCount;
+        acc.pipelineValue += row.pipelineValue;
+        acc.arDue += row.arDue;
+        if (row.stage === "Lead") acc.leads = row.jobCount;
+        if (row.stage === "Appointment Scheduled") acc.appointmentsScheduled = row.jobCount;
+        if (row.stage === "Appointment Ran") acc.appointmentsRan = row.jobCount;
+        if (row.stage === "Production") acc.productionJobs = row.jobCount;
+        if (row.stage === "Accounts Receivable") acc.accountsReceivableJobs = row.jobCount;
+        return acc;
+      },
+      {
+        activeJobs: 0,
+        pipelineValue: 0,
+        arDue: 0,
+        leads: 0,
+        appointmentsScheduled: 0,
+        appointmentsRan: 0,
+        productionJobs: 0,
+        accountsReceivableJobs: 0,
+      }
+    );
+
+    return NextResponse.json({
+      generatedAt: new Date().toISOString(),
+      mode: "current_pipeline_snapshot",
+      cohortStart: TIMING_COHORT_START,
+      recordTypeFilter: recordType,
+      sourceNotes: [
+        "Revenue is JobNimbus only. QuickBooks is intentionally not used on this page.",
+        "Current pipeline counts are active, non-archived JobNimbus jobs by current status right now, not a period cohort.",
+        "Timing and conversion rates use JobNimbus job_stage_history from 2026-01-21 forward.",
+        "Forecast buckets are conservative V1 weights from current JobNimbus stage. Timing and conversion tables are shown so the model can be calibrated against real movement history."
+      ],
+      summary: {
+        ...summary,
+        pipelineValue: toNumber(summary.pipelineValue),
+        arDue: toNumber(summary.arDue),
+      },
+      currentStages: normalizedStages,
+      currentStatuses: currentStatuses.map((row) => ({
+        recordType: row.record_type,
+        recordTypeLabel: recordTypeLabel(row.record_type),
+        stage: row.pipeline_stage,
+        statusName: row.status_name,
+        jobCount: toInteger(row.job_count),
+        pipelineValue: toNumber(row.pipeline_value),
+        arDue: toNumber(row.ar_due),
+        avgDaysInStatus: toDays(row.avg_days_in_status),
+      })),
+      recordTypes: recordTypes.map((row) => ({
+        recordType: row.record_type,
+        label: recordTypeLabel(row.record_type),
+        activeJobs: toInteger(row.active_jobs),
+        pipelineValue: toNumber(row.pipeline_value),
+        arDue: toNumber(row.ar_due),
+        stageCounts: {
+          leads: toInteger(row.lead_count),
+          appointmentsScheduled: toInteger(row.appointment_scheduled_count),
+          appointmentsRan: toInteger(row.appointment_ran_count),
+          estimating: toInteger(row.estimating_count),
+          production: toInteger(row.production_count),
+          accountsReceivable: toInteger(row.ar_job_count),
+        },
+      })),
+      stageTiming: stageTiming.map((row) => ({
+        recordType: row.record_type,
+        recordTypeLabel: recordTypeLabel(row.record_type),
+        fromStage: row.from_stage,
+        toStage: row.to_stage,
+        sampleCount: toInteger(row.sample_count),
+        avgDays: toDays(row.avg_days),
+        medianDays: toDays(row.median_days),
+        p75Days: toDays(row.p75_days),
+        p90Days: toDays(row.p90_days),
+      })),
+      statusTiming: timing.map((row) => ({
+        recordType: row.record_type,
+        recordTypeLabel: recordTypeLabel(row.record_type),
+        fromStatus: row.from_status,
+        toStatus: row.to_status,
+        sampleCount: toInteger(row.sample_count),
+        avgDays: toDays(row.avg_days),
+        medianDays: toDays(row.median_days),
+        p75Days: toDays(row.p75_days),
+        p90Days: toDays(row.p90_days),
+      })),
+      statusConversions: conversions.map((row) => {
+        const fromCount = toInteger(row.from_count);
+        const convertedCount = toInteger(row.converted_count);
+        return {
+          recordType: row.record_type,
+          recordTypeLabel: recordTypeLabel(row.record_type),
+          fromStatus: row.from_status,
+          toStatus: row.to_status,
+          fromCount,
+          convertedCount,
+          conversionRate: fromCount > 0 ? Math.round((convertedCount / fromCount) * 1000) / 10 : 0,
+        };
+      }),
+      forecastBuckets: forecast.map((row) => ({
+        bucket: row.bucket,
+        jobCount: toInteger(row.job_count),
+        rawValue: toNumber(row.raw_value),
+        weightedValue: toNumber(row.weighted_value),
+      })),
+      topJobs: topJobs.map((row) => ({
+        jobJnid: row.job_jnid,
+        jobNumber: row.job_number,
+        jobName: row.job_name,
+        recordType: row.record_type,
+        recordTypeLabel: recordTypeLabel(row.record_type),
+        stage: row.pipeline_stage,
+        statusName: row.status_name,
+        value: toNumber(row.value),
+        arDue: toNumber(row.ar_due),
+        daysInStatus: toInteger(row.days_in_status),
+        jobUrl: row.job_url,
+      })),
+    });
   } catch (err) {
     console.error("[Pipeline API] Error:", err);
     return NextResponse.json(
@@ -198,667 +611,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// ---------------------------------------------------------------------------
-// Query: Stage counts (active pipeline snapshot)
-// ---------------------------------------------------------------------------
-
-async function queryStageCounts(
-  startUnix: number,
-  endUnix: number,
-  segment: Segment | null
-): Promise<StageCount[]> {
-  // Inflow/cohort approach: for each stage, count jobs created in period that have REACHED or PASSED that stage
-  // Define "at or beyond" status lists for each stage
-  const stageStatusMap: Record<string, string[]> = {
-    Lead: [...ORDERED_STATUSES], // Every job starts here
-    "Appointment Scheduled": ORDERED_STATUSES.filter(
-      (s) => STATUS_INDEX[s] >= STATUS_INDEX["Appointment Scheduled"]
-    ) as string[],
-    "Appointment Ran": ORDERED_STATUSES.filter(
-      (s) => STATUS_INDEX[s] >= STATUS_INDEX["Appt Ran"]
-    ) as string[],
-    Estimating: ORDERED_STATUSES.filter(
-      (s) => STATUS_INDEX[s] >= STATUS_INDEX["Estimating"]
-    ) as string[],
-    Sold: ORDERED_STATUSES.filter((s) => STATUS_INDEX[s] >= SOLD_JOB_IDX) as string[],
-    Production: ORDERED_STATUSES.filter(
-      (s) => STATUS_INDEX[s] >= STATUS_INDEX["Production Ready"]
-    ) as string[],
-    Invoicing: ORDERED_STATUSES.filter(
-      (s) => STATUS_INDEX[s] >= STATUS_INDEX["Invoiced"]
-    ) as string[],
-    Completed: ORDERED_STATUSES.filter(
-      (s) => STATUS_INDEX[s] >= STATUS_INDEX["Paid & Closed"]
-    ) as string[],
-  };
-
-  // Run all stage queries in parallel
-  const stageQueries = STAGES.map((stage) => {
-    const statuses = stageStatusMap[stage] ?? [];
-    const params: unknown[] = [startUnix, endUnix];
-    const segFilter = buildSegmentFilter(segment, params);
-    const placeholders = statuses.map((_, i) => `$${params.length + i + 1}`);
-    params.push(...statuses);
-
-    return query<{ cnt: string }>(
-      `SELECT COUNT(DISTINCT j.id)::text AS cnt
-       FROM jobs j
-       WHERE j.jn_date_created >= $1
-         AND j.jn_date_created <= $2
-         AND j.is_active = true
-         AND j.is_archived = false
-         ${segFilter}
-         AND (
-           j.status_name IN (${placeholders.join(", ")})
-           OR EXISTS (
-             SELECT 1 FROM job_stage_history h
-             WHERE h.job_id = j.id
-               AND h.to_stage_name IN (${placeholders.join(", ")})
-           )
-         )`,
-      params
-    ).then((rows) => ({
-      stage,
-      count: parseInt(rows[0]?.cnt ?? "0", 10),
-    }));
-  });
-
-  return Promise.all(stageQueries);
-}
-
-// ---------------------------------------------------------------------------
-// Query: Status counts (granular, every JN status)
-// ---------------------------------------------------------------------------
-
-async function queryStatusCounts(
-  startUnix: number,
-  endUnix: number,
-  segment: Segment | null
-): Promise<StatusCount[]> {
-  const params: unknown[] = [startUnix, endUnix];
-  const segFilter = buildSegmentFilter(segment, params);
-
-  const rows = await query<{ status_name: string; cnt: string }>(
-    `SELECT j.status_name, COUNT(*)::text AS cnt
-     FROM jobs j
-     WHERE j.is_active = true
-       AND j.is_archived = false
-       AND j.jn_date_created >= $1
-       AND j.jn_date_created < $2
-       ${segFilter}
-     GROUP BY j.status_name
-     ORDER BY COUNT(*) DESC`,
-    params
-  );
-
-  return rows.map((r) => ({
-    status_name: r.status_name,
-    count: parseInt(r.cnt, 10),
-  }));
-}
-
-// ---------------------------------------------------------------------------
-// Query: Overall conversion (reached Sold Job or beyond / total)
-// ---------------------------------------------------------------------------
-
-async function queryOverallConversion(
-  startUnix: number,
-  endUnix: number,
-  segment: Segment | null
-): Promise<{ rate: number; convertedJobs: number; totalJobs: number }> {
-  const params: unknown[] = [startUnix, endUnix];
-  const segFilter = buildSegmentFilter(segment, params);
-
-  // Total jobs created in period (active, non-archived)
-  const totalRows = await query<{ cnt: string }>(
-    `SELECT COUNT(*)::text AS cnt
-     FROM jobs j
-     WHERE j.jn_date_created >= $1
-       AND j.jn_date_created < $2
-       AND j.is_active = true
-       AND j.is_archived = false
-       ${segFilter}`,
-    params
-  );
-  const totalJobs = parseInt(totalRows[0]?.cnt ?? "0", 10);
-
-  // Build the list of statuses at or beyond Sold Job
-  const convertedStatuses = ORDERED_STATUSES.filter(
-    (s) => STATUS_INDEX[s] >= SOLD_JOB_IDX
-  );
-
-  // Jobs that either currently are at a converted status or have history of reaching one
-  const convParams: unknown[] = [startUnix, endUnix];
-  const segFilterConv = buildSegmentFilter(segment, convParams);
-  const placeholders = convertedStatuses.map((_, i) => `$${convParams.length + i + 1}`);
-  convParams.push(...convertedStatuses);
-
-  const convRows = await query<{ cnt: string }>(
-    `SELECT COUNT(DISTINCT j.id)::text AS cnt
-     FROM jobs j
-     WHERE j.jn_date_created >= $1
-       AND j.jn_date_created <= $2
-       ${segFilterConv}
-       AND (
-         j.status_name IN (${placeholders.join(", ")})
-         OR EXISTS (
-           SELECT 1 FROM job_stage_history h
-           WHERE h.job_id = j.id
-             AND h.to_stage_name IN (${placeholders.join(", ")})
-         )
-       )`,
-    convParams
-  );
-  const convertedJobs = parseInt(convRows[0]?.cnt ?? "0", 10);
-
-  return {
-    rate: totalJobs > 0 ? (convertedJobs / totalJobs) * 100 : 0,
-    convertedJobs,
-    totalJobs,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Query: Key conversions (Lead→Estimate Sent, Estimate Sent→Signed, Signed→Invoiced)
-// ---------------------------------------------------------------------------
-
-async function queryKeyConversions(
-  startUnix: number,
-  endUnix: number,
-  segment: Segment | null
-): Promise<KeyConversion[]> {
-  const transitions: [string, string][] = [
-    ["Lead", "Estimate Sent"],
-    ["Estimate Sent", "Sold Job"],
-    ["Sold Job", "Paid & Closed"],
-  ];
-
-  const results: KeyConversion[] = [];
-
-  for (const [from, to] of transitions) {
-    // "From" count: jobs that reached the "from" status (or beyond) in the period
-    const fromStatuses = ORDERED_STATUSES.filter(
-      (s) => STATUS_INDEX[s] >= STATUS_INDEX[from]
-    );
-    const toStatuses = ORDERED_STATUSES.filter(
-      (s) => STATUS_INDEX[s] >= STATUS_INDEX[to]
-    );
-
-    const fromParams: unknown[] = [startUnix, endUnix];
-    const segFilterFrom = buildSegmentFilter(segment, fromParams);
-    const fromPlaceholders = fromStatuses.map(
-      (_, i) => `$${fromParams.length + i + 1}`
-    );
-    fromParams.push(...fromStatuses);
-
-    const fromRows = await query<{ cnt: string }>(
-      `SELECT COUNT(DISTINCT j.id)::text AS cnt
-       FROM jobs j
-       WHERE j.jn_date_created >= $1
-         AND j.jn_date_created <= $2
-         ${segFilterFrom}
-         AND (
-           j.status_name IN (${fromPlaceholders.join(", ")})
-           OR EXISTS (
-             SELECT 1 FROM job_stage_history h
-             WHERE h.job_id = j.id
-               AND h.to_stage_name IN (${fromPlaceholders.join(", ")})
-           )
-         )`,
-      fromParams
-    );
-    const fromCount = parseInt(fromRows[0]?.cnt ?? "0", 10);
-
-    const toParams: unknown[] = [startUnix, endUnix];
-    const segFilterTo = buildSegmentFilter(segment, toParams);
-    const toPlaceholders = toStatuses.map(
-      (_, i) => `$${toParams.length + i + 1}`
-    );
-    toParams.push(...toStatuses);
-
-    const toRows = await query<{ cnt: string }>(
-      `SELECT COUNT(DISTINCT j.id)::text AS cnt
-       FROM jobs j
-       WHERE j.jn_date_created >= $1
-         AND j.jn_date_created <= $2
-         ${segFilterTo}
-         AND (
-           j.status_name IN (${toPlaceholders.join(", ")})
-           OR EXISTS (
-             SELECT 1 FROM job_stage_history h
-             WHERE h.job_id = j.id
-               AND h.to_stage_name IN (${toPlaceholders.join(", ")})
-           )
-         )`,
-      toParams
-    );
-    const toCount = parseInt(toRows[0]?.cnt ?? "0", 10);
-
-    results.push({
-      from,
-      to,
-      rate: fromCount > 0 ? (toCount / fromCount) * 100 : 0,
-      fromCount,
-      toCount,
-    });
-  }
-
-  return results;
-}
-
-// ---------------------------------------------------------------------------
-// Query: Loss rate by stage (which stage did lost jobs fall out of?)
-// ---------------------------------------------------------------------------
-
-async function queryLossByStage(
-  startUnix: number,
-  endUnix: number,
-  segment: Segment | null
-): Promise<LossByStage[]> {
-  const params: unknown[] = [startUnix, endUnix];
-  const segFilter = buildSegmentFilter(segment, params);
-
-  const lossStatusPlaceholders = LOSS_STATUSES.map(
-    (_, i) => `$${params.length + i + 1}`
-  );
-  params.push(...LOSS_STATUSES);
-
-  // For each lost job, find the last non-loss status from stage history
-  const rows = await query<{ last_stage: string; cnt: string }>(
-    `WITH lost_jobs AS (
-       SELECT j.id, j.status_name
-       FROM jobs j
-       WHERE j.jn_date_created >= $1
-         AND j.jn_date_created <= $2
-         AND j.status_name IN (${lossStatusPlaceholders.join(", ")})
-         ${segFilter}
-     ),
-     last_active_status AS (
-       SELECT DISTINCT ON (lj.id)
-         lj.id,
-         h.from_stage_name AS last_status
-       FROM lost_jobs lj
-       JOIN job_stage_history h ON h.job_id = lj.id
-       WHERE h.to_stage_name IN (${lossStatusPlaceholders.join(", ")})
-       ORDER BY lj.id, h.changed_at DESC
-     )
-     SELECT
-       COALESCE(las.last_status, 'Unknown') AS last_stage,
-       COUNT(*)::text AS cnt
-     FROM lost_jobs lj
-     LEFT JOIN last_active_status las ON las.id = lj.id
-     GROUP BY COALESCE(las.last_status, 'Unknown')
-     ORDER BY COUNT(*) DESC`,
-    params
-  );
-
-  // Total lost for rate calculation
-  const totalLost = rows.reduce((sum, r) => sum + parseInt(r.cnt, 10), 0);
-
-  return rows.map((r) => {
-    const count = parseInt(r.cnt, 10);
-    // Map the raw status to a stage name for cleaner output
-    const stage = STATUS_TO_STAGE[r.last_stage] ?? r.last_stage;
-    return {
-      stage,
-      count,
-      rate: totalLost > 0 ? (count / totalLost) * 100 : 0,
-    };
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Query: Lost/Cold/Dead jobs count
-// ---------------------------------------------------------------------------
-
-async function queryLostJobsCount(
-  startUnix: number,
-  endUnix: number,
-  segment: Segment | null
-): Promise<number> {
-  const params: unknown[] = [startUnix, endUnix];
-  const segFilter = buildSegmentFilter(segment, params);
-
-  const lossStatusPlaceholders = LOSS_STATUSES.map(
-    (_, i) => `$${params.length + i + 1}`
-  );
-  params.push(...LOSS_STATUSES);
-
-  const rows = await query<{ cnt: string }>(
-    `SELECT COUNT(*)::text AS cnt
-     FROM jobs j
-     WHERE j.jn_date_created >= $1
-       AND j.jn_date_created <= $2
-       AND j.is_active = true
-       AND (j.status_name IN (${lossStatusPlaceholders.join(", ")}) OR j.is_archived = true)
-       ${segFilter}`,
-    params
-  );
-
-  return parseInt(rows[0]?.cnt ?? "0", 10);
-}
-
-// ---------------------------------------------------------------------------
-// Query: Avg cycle time (job creation → Paid & Closed)
-// ---------------------------------------------------------------------------
-
-async function queryAvgCycleTime(
-  startUnix: number,
-  endUnix: number,
-  segment: Segment | null
-): Promise<number | null> {
-  const params: unknown[] = [startUnix, endUnix];
-  const segFilter = buildSegmentFilter(segment, params);
-
-  const rows = await query<{ avg_days: string | null }>(
-    `SELECT
-       AVG(
-         EXTRACT(EPOCH FROM h.changed_at) / 86400.0
-         - j.jn_date_created / 86400.0
-       )::text AS avg_days
-     FROM jobs j
-     JOIN job_stage_history h ON h.job_id = j.id
-     WHERE j.jn_date_created >= $1
-       AND j.jn_date_created <= $2
-       AND h.to_stage_name = 'Paid & Closed'
-       ${segFilter}`,
-    params
-  );
-
-  const val = rows[0]?.avg_days;
-  return val ? parseFloat(parseFloat(val).toFixed(1)) : null;
-}
-
-// ---------------------------------------------------------------------------
-// Query: Pipeline value by stage (current active pipeline snapshot)
-// ---------------------------------------------------------------------------
-
-async function queryPipelineValueByStage(
-  segment: Segment | null
-): Promise<PipelineValueByStage[]> {
-  const params: unknown[] = [];
-  const segFilter = segment
-    ? (() => {
-        params.push(segment);
-        return ` AND ${segmentWhereClause(params.length)}`;
-      })()
-    : "";
-
-  const rows = await query<{ status_name: string; total_value: string }>(
-    `SELECT j.status_name, COALESCE(SUM(j.approved_estimate_total), 0)::text AS total_value
-     FROM jobs j
-     WHERE j.is_active = true
-       AND j.is_archived = false
-       ${segFilter}
-     GROUP BY j.status_name`,
-    params
-  );
-
-  // Aggregate by stage
-  const stageMap: Record<string, number> = {};
-  for (const s of STAGES) stageMap[s] = 0;
-
-  for (const row of rows) {
-    const stage = STATUS_TO_STAGE[row.status_name];
-    if (stage) {
-      stageMap[stage] += parseFloat(row.total_value);
-    }
-  }
-
-  return STAGES.map((stage) => ({
-    stage,
-    value: parseFloat((stageMap[stage] ?? 0).toFixed(2)),
-  }));
-}
-
-// ---------------------------------------------------------------------------
-// Query: Segment comparison (all 4 segments side by side)
-// ---------------------------------------------------------------------------
-
-async function querySegmentComparison(
-  startUnix: number,
-  endUnix: number
-): Promise<SegmentComparison[]> {
-  // Active job counts + pipeline value by segment
-  const activeRows = await query<{
-    segment: Segment;
-    active_count: string;
-    pipeline_value: string;
-  }>(
-    `SELECT
-       (${SEGMENT_SQL}) AS segment,
-       COUNT(*)::text AS active_count,
-       COALESCE(SUM(j.approved_estimate_total), 0)::text AS pipeline_value
-     FROM jobs j
-     WHERE j.is_active = true AND j.is_archived = false
-     GROUP BY (${SEGMENT_SQL})`,
-    []
-  );
-
-  // Total jobs per segment in period
-  const totalRows = await query<{ segment: Segment; cnt: string }>(
-    `SELECT (${SEGMENT_SQL}) AS segment, COUNT(*)::text AS cnt
-     FROM jobs j
-     WHERE j.jn_date_created >= $1 AND j.jn_date_created <= $2
-     GROUP BY (${SEGMENT_SQL})`,
-    [startUnix, endUnix]
-  );
-
-  // Build the converted statuses list
-  const convertedStatuses = ORDERED_STATUSES.filter(
-    (s) => STATUS_INDEX[s] >= SOLD_JOB_IDX
-  );
-  const convPlaceholders = convertedStatuses.map((_, i) => `$${i + 3}`);
-
-  // Converted jobs per segment in period
-  const convRows = await query<{ segment: Segment; cnt: string }>(
-    `SELECT (${SEGMENT_SQL}) AS segment, COUNT(DISTINCT j.id)::text AS cnt
-     FROM jobs j
-     WHERE j.jn_date_created >= $1
-       AND j.jn_date_created <= $2
-       AND (
-         j.status_name IN (${convPlaceholders.join(", ")})
-         OR EXISTS (
-           SELECT 1 FROM job_stage_history h
-           WHERE h.job_id = j.id
-             AND h.to_stage_name IN (${convPlaceholders.join(", ")})
-         )
-       )
-     GROUP BY (${SEGMENT_SQL})`,
-    [startUnix, endUnix, ...convertedStatuses]
-  );
-
-  // Avg cycle time per segment
-  const cycleRows = await query<{
-    segment: Segment;
-    avg_days: string | null;
-  }>(
-    `SELECT
-       (${SEGMENT_SQL}) AS segment,
-       AVG(
-         EXTRACT(EPOCH FROM h.changed_at) / 86400.0
-         - j.jn_date_created / 86400.0
-       )::text AS avg_days
-     FROM jobs j
-     JOIN job_stage_history h ON h.job_id = j.id
-     WHERE j.jn_date_created >= $1
-       AND j.jn_date_created <= $2
-       AND h.to_stage_name = 'Paid & Closed'
-     GROUP BY (${SEGMENT_SQL})`,
-    [startUnix, endUnix]
-  );
-
-  // Revenue per segment in period
-  const revenueRows = await query<{ segment: Segment; total: string }>(
-    `SELECT
-       (${SEGMENT_SQL}) AS segment,
-       COALESCE(SUM(inv.total), 0)::text AS total
-     FROM invoices inv
-     JOIN jobs j ON j.jnid = inv.job_jnid
-     WHERE inv.is_active = true
-       AND inv.date_invoice >= $1
-       AND inv.date_invoice <= $2
-     GROUP BY (${SEGMENT_SQL})`,
-    [startUnix, endUnix]
-  );
-
-  // Key conversions per segment (Lead→Estimate Sent, Estimate Sent→Signed, Signed→Invoiced)
-  const keyConvTransitions: [string, string][] = [
-    ["Lead", "Estimate Sent"],
-    ["Estimate Sent", "Sold Job"],
-    ["Sold Job", "Paid & Closed"],
-  ];
-
-  // For each transition, query counts grouped by segment
-  const segKeyConvs: Record<
-    Segment,
-    { leadToEstimate: number; estimateToSold: number; soldToInvoiced: number }
-  > = {
-    real_estate: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
-    retail: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
-    insurance: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
-    repairs: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
-    warranty: { leadToEstimate: 0, estimateToSold: 0, soldToInvoiced: 0 },
-  };
-
-  for (let ti = 0; ti < keyConvTransitions.length; ti++) {
-    const [from, to] = keyConvTransitions[ti];
-    const fromStatuses = ORDERED_STATUSES.filter(
-      (s) => STATUS_INDEX[s] >= STATUS_INDEX[from]
-    );
-    const toStatuses = ORDERED_STATUSES.filter(
-      (s) => STATUS_INDEX[s] >= STATUS_INDEX[to]
-    );
-
-    const fromParams: unknown[] = [startUnix, endUnix];
-    const fromPH = fromStatuses.map((_, i) => `$${fromParams.length + i + 1}`);
-    fromParams.push(...fromStatuses);
-
-    const fromBySegment = await query<{ segment: Segment; cnt: string }>(
-      `SELECT (${SEGMENT_SQL}) AS segment, COUNT(DISTINCT j.id)::text AS cnt
-       FROM jobs j
-       WHERE j.jn_date_created >= $1 AND j.jn_date_created <= $2
-         AND (
-           j.status_name IN (${fromPH.join(", ")})
-           OR EXISTS (
-             SELECT 1 FROM job_stage_history h
-             WHERE h.job_id = j.id AND h.to_stage_name IN (${fromPH.join(", ")})
-           )
-         )
-       GROUP BY (${SEGMENT_SQL})`,
-      fromParams
-    );
-
-    const toParams: unknown[] = [startUnix, endUnix];
-    const toPH = toStatuses.map((_, i) => `$${toParams.length + i + 1}`);
-    toParams.push(...toStatuses);
-
-    const toBySegment = await query<{ segment: Segment; cnt: string }>(
-      `SELECT (${SEGMENT_SQL}) AS segment, COUNT(DISTINCT j.id)::text AS cnt
-       FROM jobs j
-       WHERE j.jn_date_created >= $1 AND j.jn_date_created <= $2
-         AND (
-           j.status_name IN (${toPH.join(", ")})
-           OR EXISTS (
-             SELECT 1 FROM job_stage_history h
-             WHERE h.job_id = j.id AND h.to_stage_name IN (${toPH.join(", ")})
-           )
-         )
-       GROUP BY (${SEGMENT_SQL})`,
-      toParams
-    );
-
-    // Build lookup maps
-    const fromMap = Object.fromEntries(
-      fromBySegment.map((r) => [r.segment, parseInt(r.cnt, 10)])
-    ) as Record<Segment, number>;
-    const toMap = Object.fromEntries(
-      toBySegment.map((r) => [r.segment, parseInt(r.cnt, 10)])
-    ) as Record<Segment, number>;
-
-    for (const seg of VALID_SEGMENTS) {
-      const fc = fromMap[seg] ?? 0;
-      const tc = toMap[seg] ?? 0;
-      const rate = fc > 0 ? (tc / fc) * 100 : 0;
-
-      if (ti === 0) segKeyConvs[seg].leadToEstimate = rate;
-      else if (ti === 1) segKeyConvs[seg].estimateToSold = rate;
-      else segKeyConvs[seg].soldToInvoiced = rate;
-    }
-  }
-
-  // Assemble per-segment results
-  const activeMap = Object.fromEntries(
-    activeRows.map((r) => [r.segment, r])
-  ) as Record<Segment, (typeof activeRows)[0]>;
-  const totalMap = Object.fromEntries(
-    totalRows.map((r) => [r.segment, parseInt(r.cnt, 10)])
-  ) as Record<Segment, number>;
-  const convMap = Object.fromEntries(
-    convRows.map((r) => [r.segment, parseInt(r.cnt, 10)])
-  ) as Record<Segment, number>;
-  const cycleMap = Object.fromEntries(
-    cycleRows.map((r) => [r.segment, r.avg_days])
-  ) as Record<Segment, string | null>;
-  const revenueMap = Object.fromEntries(
-    revenueRows.map((r) => [r.segment, parseFloat(r.total)])
-  ) as Record<Segment, number>;
-
-  return VALID_SEGMENTS.map((seg) => {
-    const total = totalMap[seg] ?? 0;
-    const converted = convMap[seg] ?? 0;
-
-    return {
-      segment: seg,
-      activeJobs: parseInt(activeMap[seg]?.active_count ?? "0", 10),
-      overallConversion: total > 0 ? (converted / total) * 100 : 0,
-      avgCycleTimeDays: cycleMap[seg]
-        ? parseFloat(parseFloat(cycleMap[seg]!).toFixed(1))
-        : null,
-      pipelineValue: parseFloat(
-        (parseFloat(activeMap[seg]?.pipeline_value ?? "0")).toFixed(2)
-      ),
-      revenue: revenueMap[seg] ?? 0,
-      leadToEstimateRate: segKeyConvs[seg].leadToEstimate,
-      estimateToSoldRate: segKeyConvs[seg].estimateToSold,
-      soldToInvoicedRate: segKeyConvs[seg].soldToInvoiced,
-    };
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Query: Revenue in period (from invoices table)
-// ---------------------------------------------------------------------------
-
-async function queryRevenueInPeriod(
-  startUnix: number,
-  endUnix: number,
-  segment: Segment | null
-): Promise<number> {
-  if (segment) {
-    // Need to join to jobs for segment classification
-    const rows = await query<{ total: string }>(
-      `SELECT COALESCE(SUM(inv.total), 0)::text AS total
-       FROM invoices inv
-       JOIN jobs j ON j.jnid = inv.job_jnid
-       WHERE inv.is_active = true
-         AND inv.date_invoice >= $1
-         AND inv.date_invoice <= $2
-         AND ${segmentWhereClause(3)}`,
-      [startUnix, endUnix, segment]
-    );
-    return parseFloat(rows[0]?.total ?? "0");
-  }
-
-  const rows = await query<{ total: string }>(
-    `SELECT COALESCE(SUM(inv.total), 0)::text AS total
-     FROM invoices inv
-     WHERE inv.is_active = true
-       AND inv.date_invoice >= $1
-       AND inv.date_invoice <= $2`,
-    [startUnix, endUnix]
-  );
-  return parseFloat(rows[0]?.total ?? "0");
 }

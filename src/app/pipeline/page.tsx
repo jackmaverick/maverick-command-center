@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  BarChart,
   Bar,
-  Cell,
+  BarChart,
+  CartesianGrid,
   ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,712 +20,519 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PeriodSelector } from "@/components/layout/period-selector";
 import { InfoTooltip } from "@/components/InfoTooltip";
 import { formatCurrency, formatPercent } from "@/lib/dates";
-import { STAGES, SEGMENTS, CHART_COLORS } from "@/lib/constants";
-import type { Stage, Segment } from "@/lib/constants";
 
-/* ── Types ────────────────────────────────────────────────────────────── */
-
-interface StageCount {
-  stage: Stage;
-  count: number;
-}
-
-interface KeyConversion {
-  from: string;
-  to: string;
-  rate: number;
-  fromCount: number;
-  toCount: number;
-}
-
-interface LossByStage {
+interface CurrentStage {
   stage: string;
-  count: number;
-  rate: number;
-}
-
-interface PipelineValueByStage {
-  stage: Stage;
-  value: number;
-}
-
-interface SegmentComparison {
-  segment: Segment;
-  activeJobs: number;
-  overallConversion: number;
-  avgCycleTimeDays: number | null;
+  jobCount: number;
   pipelineValue: number;
-  revenue: number;
-  leadToEstimateRate: number;
-  estimateToSoldRate: number;
-  soldToInvoicedRate: number;
+  arDue: number;
+  avgDaysInStatus: number | null;
+}
+
+interface CurrentStatus {
+  recordType: string;
+  recordTypeLabel: string;
+  stage: string;
+  statusName: string;
+  jobCount: number;
+  pipelineValue: number;
+  arDue: number;
+  avgDaysInStatus: number | null;
+}
+
+interface RecordTypeSummary {
+  recordType: string;
+  label: string;
+  activeJobs: number;
+  pipelineValue: number;
+  arDue: number;
+  stageCounts: {
+    leads: number;
+    appointmentsScheduled: number;
+    appointmentsRan: number;
+    estimating: number;
+    production: number;
+    accountsReceivable: number;
+  };
+}
+
+interface TimingRow {
+  recordType: string;
+  recordTypeLabel: string;
+  fromStatus?: string;
+  toStatus?: string;
+  fromStage?: string;
+  toStage?: string;
+  sampleCount: number;
+  avgDays: number | null;
+  medianDays: number | null;
+  p75Days: number | null;
+  p90Days: number | null;
+}
+
+interface ConversionRow {
+  recordType: string;
+  recordTypeLabel: string;
+  fromStatus: string;
+  toStatus: string;
+  fromCount: number;
+  convertedCount: number;
+  conversionRate: number;
+}
+
+interface ForecastBucket {
+  bucket: string;
+  jobCount: number;
+  rawValue: number;
+  weightedValue: number;
+}
+
+interface TopJob {
+  jobJnid: string;
+  jobNumber: string | null;
+  jobName: string;
+  recordType: string;
+  recordTypeLabel: string;
+  stage: string;
+  statusName: string;
+  value: number;
+  arDue: number;
+  daysInStatus: number;
+  jobUrl: string;
 }
 
 interface PipelineData {
-  period: { key: string; label: string; start: string; end: string };
-  segment: Segment | null;
-  stageCounts: StageCount[];
-  overallConversion: {
-    rate: number;
-    convertedJobs: number;
-    totalJobs: number;
+  generatedAt: string;
+  mode: string;
+  cohortStart: string;
+  recordTypeFilter: string | null;
+  sourceNotes: string[];
+  summary: {
+    activeJobs: number;
+    pipelineValue: number;
+    arDue: number;
+    leads: number;
+    appointmentsScheduled: number;
+    appointmentsRan: number;
+    productionJobs: number;
+    accountsReceivableJobs: number;
   };
-  keyConversions: KeyConversion[];
-  lossByStage: LossByStage[];
-  lostJobsCount: number;
-  avgCycleTimeDays: number | null;
-  pipelineValueByStage: PipelineValueByStage[];
-  segmentComparison: SegmentComparison[];
-  revenueInPeriod: number;
+  currentStages: CurrentStage[];
+  currentStatuses: CurrentStatus[];
+  recordTypes: RecordTypeSummary[];
+  stageTiming: TimingRow[];
+  statusTiming: TimingRow[];
+  statusConversions: ConversionRow[];
+  forecastBuckets: ForecastBucket[];
+  topJobs: TopJob[];
 }
 
-/* ── Stage colors ─────────────────────────────────────────────────────── */
+const recordTypeOptions = [
+  { value: "all", label: "All Record Types" },
+  { value: "retail", label: "Retail" },
+  { value: "insurance", label: "Insurance" },
+  { value: "repairs", label: "Repairs" },
+  { value: "light_commercial", label: "Light Commercial" },
+  { value: "other", label: "Other" },
+];
 
-const STAGE_COLORS: Record<string, string> = {
+const stageColors: Record<string, string> = {
   Lead: "#58a6ff",
   "Appointment Scheduled": "#79c0ff",
-  Estimating: "#a371f7",
-  Sold: "#d29922",
+  "Appointment Ran": "#a371f7",
+  Estimating: "#d29922",
   Production: "#f0883e",
-  Invoicing: "#3fb950",
-  Completed: "#8b949e",
+  "Accounts Receivable": "#3fb950",
+  Other: "#8b949e",
 };
 
-/* ── Custom Tooltip ───────────────────────────────────────────────────── */
+function daysLabel(days: number | null) {
+  if (days === null) return "—";
+  return `${days}d`;
+}
 
-function CustomTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: { value: number; name: string; payload?: { fill?: string } }[];
-  label?: string;
-}) {
+function generatedLabel(value: string) {
+  return new Date(value).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function stageCount(row: RecordTypeSummary, key: keyof RecordTypeSummary["stageCounts"]) {
+  return row.stageCounts[key] ?? 0;
+}
+
+function CurrencyTooltip({ active, payload, label }: { active?: boolean; payload?: { value?: number; name?: string }[]; label?: string }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-[#21262d] border border-[#30363d] rounded-lg px-3 py-2 text-xs shadow-lg">
-      {label && <p className="text-[#8b949e] mb-1">{label}</p>}
-      {payload.map((entry, i) => (
-        <p key={i} className="text-[#e6edf3]">
-          <span
-            className="inline-block w-2 h-2 rounded-full mr-1.5"
-            style={{
-              backgroundColor: entry.payload?.fill ?? CHART_COLORS[i],
-            }}
-          />
-          {entry.name}:{" "}
-          {typeof entry.value === "number" && entry.value > 100
-            ? formatCurrency(entry.value)
-            : entry.value}
+    <div className="rounded-lg border border-[#30363d] bg-[#21262d] px-3 py-2 text-xs shadow-lg">
+      <p className="mb-1 text-[#8b949e]">{label}</p>
+      {payload.map((entry) => (
+        <p key={entry.name} className="text-[#e6edf3]">
+          {entry.name}: {formatCurrency(entry.value ?? 0)}
         </p>
       ))}
     </div>
   );
 }
 
-/* ── Main Component ───────────────────────────────────────────────────── */
+function NumberTooltip({ active, payload, label }: { active?: boolean; payload?: { value?: number; name?: string }[]; label?: string }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-lg border border-[#30363d] bg-[#21262d] px-3 py-2 text-xs shadow-lg">
+      <p className="mb-1 text-[#8b949e]">{label}</p>
+      {payload.map((entry) => (
+        <p key={entry.name} className="text-[#e6edf3]">
+          {entry.name}: {entry.value ?? 0}
+        </p>
+      ))}
+    </div>
+  );
+}
 
 export default function PipelinePage() {
-  const [period, setPeriod] = useState("month");
-  const [segment, setSegment] = useState<string>("all");
+  const [recordType, setRecordType] = useState("all");
 
-  const segmentParam = segment === "all" ? "" : `&segment=${segment}`;
-
-  const { data, isLoading, isError } = useQuery<PipelineData>({
-    queryKey: ["pipeline", period, segment],
+  const { data, isLoading, isError, error } = useQuery<PipelineData>({
+    queryKey: ["current-pipeline", recordType],
     queryFn: async () => {
-      const res = await fetch(
-        `/api/pipeline?period=${period}${segmentParam}`
-      );
-      if (!res.ok) throw new Error("Failed to fetch pipeline data");
-      return res.json();
+      const recordTypeParam = recordType === "all" ? "" : `?recordType=${recordType}`;
+      const res = await fetch(`/api/pipeline${recordTypeParam}`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Failed to fetch pipeline data");
+      return body;
     },
+    refetchInterval: 60_000,
   });
 
-  // Derived values
-  const totalOpportunities =
-    data?.stageCounts.reduce((sum, s) => sum + s.count, 0) ?? 0;
-  const totalPipelineValue =
-    data?.pipelineValueByStage.reduce((sum, s) => sum + s.value, 0) ?? 0;
-  const soldProductionCount = data?.stageCounts
-    .filter((s) => ["Sold", "Production", "Invoicing", "Completed"].includes(s.stage))
-    .reduce((sum, s) => sum + s.count, 0) ?? 0;
-  const maxStageCount = data
-    ? Math.max(...data.stageCounts.map((s) => s.count), 1)
-    : 1;
+  const selectedRecordType = data?.recordTypes.find((row) => row.recordType === recordType);
 
-  // Bar chart data for pipeline value by stage
-  const valueChartData =
-    data?.pipelineValueByStage.map((s) => ({
-      name: s.stage,
-      value: s.value,
-      fill: STAGE_COLORS[s.stage] ?? CHART_COLORS[0],
-    })) ?? [];
+  const statusRows = useMemo(() => {
+    if (!data) return [];
+    return [...data.currentStatuses]
+      .sort((a, b) => b.pipelineValue + b.arDue - (a.pipelineValue + a.arDue))
+      .slice(0, 30);
+  }, [data]);
 
-  // Bar chart data for loss analysis
-  const lossChartData =
-    data?.lossByStage.map((l, i) => ({
-      name: l.stage,
-      count: l.count,
-      rate: l.rate,
-      fill: CHART_COLORS[5], // red
-    })) ?? [];
+  const stageTimingRows = useMemo(() => {
+    if (!data) return [];
+    return data.stageTiming
+      .filter((row) => recordType === "all" || row.recordType === recordType)
+      .sort((a, b) => a.recordTypeLabel.localeCompare(b.recordTypeLabel) || (a.fromStage ?? "").localeCompare(b.fromStage ?? ""));
+  }, [data, recordType]);
+
+  const statusTimingRows = useMemo(() => {
+    if (!data) return [];
+    return data.statusTiming
+      .filter((row) => recordType === "all" || row.recordType === recordType)
+      .sort((a, b) => b.sampleCount - a.sampleCount)
+      .slice(0, 35);
+  }, [data, recordType]);
+
+  const conversionRows = useMemo(() => {
+    if (!data) return [];
+    return data.statusConversions
+      .filter((row) => recordType === "all" || row.recordType === recordType)
+      .filter((row) => row.fromCount >= 3)
+      .sort((a, b) => a.recordTypeLabel.localeCompare(b.recordTypeLabel) || b.fromCount - a.fromCount)
+      .slice(0, 40);
+  }, [data, recordType]);
+
+  if (isError) {
+    return (
+      <div>
+        <h1 className="mb-2 text-2xl font-bold text-[#e6edf3]">Pipeline</h1>
+        <Card className="border-[#30363d] bg-[#161b22]">
+          <CardContent className="pt-6">
+            <p className="text-sm text-[#f85149]">Failed to load JobNimbus pipeline data.</p>
+            <p className="mt-2 text-xs text-[#8b949e]">{error instanceof Error ? error.message : "Unknown error"}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div>
-      {/* ── 1. Header ──────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#e6edf3] mb-1">
-            Pipeline Overview
-          </h1>
-          <p className="text-[#8b949e] text-sm">
-            Job pipeline by workflow stage — track active jobs from lead to
-            completion.
+          <h1 className="mb-1 text-2xl font-bold text-[#e6edf3]">Current JobNimbus Pipeline</h1>
+          <p className="max-w-3xl text-sm text-[#8b949e]">
+            Live active jobs by current JobNimbus stage, plus timing and conversion rates from JobNimbus history. Revenue is JobNimbus only. QuickBooks is out of the chat, as requested.
           </p>
+          {data && <p className="mt-2 text-xs text-[#484f58]">Updated {generatedLabel(data.generatedAt)} · timing cohort starts {data.cohortStart}</p>}
         </div>
-        <div className="flex items-center gap-3">
-          <Select value={segment} onValueChange={setSegment}>
-            <SelectTrigger className="w-[160px] bg-[#161b22] border-[#30363d] text-[#e6edf3]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-[#161b22] border-[#30363d]">
-              <SelectItem
-                value="all"
-                className="text-[#e6edf3] focus:bg-[#21262d] focus:text-[#e6edf3]"
-              >
-                All Segments
+        <Select value={recordType} onValueChange={setRecordType}>
+          <SelectTrigger className="w-[210px] border-[#30363d] bg-[#161b22] text-[#e6edf3]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="border-[#30363d] bg-[#161b22]">
+            {recordTypeOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value} className="text-[#e6edf3] focus:bg-[#21262d] focus:text-[#e6edf3]">
+                {option.label}
               </SelectItem>
-              {(
-                Object.entries(SEGMENTS) as [
-                  Segment,
-                  (typeof SEGMENTS)[Segment],
-                ][]
-              ).map(([key, seg]) => (
-                <SelectItem
-                  key={key}
-                  value={key}
-                  className="text-[#e6edf3] focus:bg-[#21262d] focus:text-[#e6edf3]"
-                >
-                  {seg.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <PeriodSelector value={period} onChange={setPeriod} />
-        </div>
-      </div>
-
-      {/* ── 2. KPI Cards ───────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-8">
-        {/* Opportunities (Pre-sale) */}
-        <Card className="bg-[#161b22] border-[#30363d]">
-          <CardHeader className="pb-2">
-            <InfoTooltip label="Opportunities" explanation="Jobs currently in pre-sale stages (Lead through Estimate Sent). Counts jobs that have ever reached each stage in this period.">
-              <CardTitle className="text-xs font-medium text-[#8b949e]">Opportunities</CardTitle>
-            </InfoTooltip>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-8 w-16 bg-[#21262d]" />
-            ) : (
-              <p className="text-2xl font-bold text-[#e6edf3]">
-                {totalOpportunities}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Sold/Production */}
-        <Card className="bg-[#161b22] border-[#30363d]">
-          <CardHeader className="pb-2">
-            <InfoTooltip label="Sold/Production" explanation="Jobs that have reached Sold Job status or beyond (in production, invoicing, or completed).">
-              <CardTitle className="text-xs font-medium text-[#8b949e]">Sold/Production</CardTitle>
-            </InfoTooltip>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-8 w-16 bg-[#21262d]" />
-            ) : (
-              <p className="text-2xl font-bold text-[#e6edf3]">
-                {soldProductionCount}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Pipeline Value */}
-        <Card className="bg-[#161b22] border-[#30363d]">
-          <CardHeader className="pb-2">
-            <InfoTooltip label="Pipeline Value" explanation="Sum of estimate totals on active jobs in Estimating through Invoiced stages. Shows potential revenue in the pipeline.">
-              <CardTitle className="text-xs font-medium text-[#8b949e]">Pipeline Value</CardTitle>
-            </InfoTooltip>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-8 w-24 bg-[#21262d]" />
-            ) : (
-              <p className="text-2xl font-bold text-[#e6edf3]">
-                {formatCurrency(totalPipelineValue)}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Avg Cycle Time */}
-        <Card className="bg-[#161b22] border-[#30363d]">
-          <CardHeader className="pb-2">
-            <InfoTooltip label="Avg Cycle Time" explanation="Average days from job creation to reaching Sold Job status for jobs created in this period.">
-              <CardTitle className="text-xs font-medium text-[#8b949e]">Avg Cycle Time</CardTitle>
-            </InfoTooltip>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-8 w-20 bg-[#21262d]" />
-            ) : (
-              <p className="text-2xl font-bold text-[#e6edf3]">
-                {data?.avgCycleTimeDays !== null
-                  ? `${data?.avgCycleTimeDays} days`
-                  : "-- days"}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Overall Close Rate */}
-        <Card className="bg-[#161b22] border-[#30363d]">
-          <CardHeader className="pb-2">
-            <InfoTooltip label="Overall Close Rate" explanation="Jobs reaching Sold Job or beyond divided by total jobs created in this period. Shows X / Y jobs below.">
-              <CardTitle className="text-xs font-medium text-[#8b949e]">Overall Close Rate</CardTitle>
-            </InfoTooltip>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-8 w-16 bg-[#21262d]" />
-            ) : (
-              <div>
-                <p className="text-2xl font-bold text-[#e6edf3]">
-                  {formatPercent(data?.overallConversion.rate ?? 0)}
-                </p>
-                <p className="text-xs text-[#8b949e] mt-0.5">
-                  {data?.overallConversion.convertedJobs ?? 0} /{" "}
-                  {data?.overallConversion.totalJobs ?? 0} jobs
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ── 3. Stage Pipeline Visualization (Funnel) + Lost Count ───── */}
-      <div className="mb-8">
-        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-6 mb-4">
-          <h2 className="text-sm font-semibold text-[#e6edf3] mb-6">
-            Stage Pipeline
-          </h2>
-        {isLoading ? (
-          <div className="space-y-4">
-            {STAGES.map((stage, i) => (
-              <div key={stage} className="flex items-center gap-4">
-                <span className="text-xs text-[#8b949e] w-24">{stage}</span>
-                <Skeleton
-                  className="h-8 bg-[#21262d] rounded"
-                  style={{ width: `${90 - i * 12}%` }}
-                />
-              </div>
             ))}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {data?.stageCounts.map((entry) => {
-              const widthPct =
-                maxStageCount > 0
-                  ? Math.max((entry.count / maxStageCount) * 100, 2)
-                  : 2;
-              const color = STAGE_COLORS[entry.stage] ?? CHART_COLORS[0];
-              return (
-                <div key={entry.stage} className="flex items-center gap-4">
-                  <span className="text-xs text-[#8b949e] w-24 shrink-0">
-                    {entry.stage}
-                  </span>
-                  <div className="flex-1 relative">
-                    <div
-                      className="h-9 rounded-md flex items-center px-3 transition-all duration-500"
-                      style={{
-                        width: `${widthPct}%`,
-                        backgroundColor: color,
-                        minWidth: "40px",
-                      }}
-                    >
-                      <span className="text-xs font-bold text-white drop-shadow-sm">
-                        {entry.count}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        </div>
-
-        {/* Lost/Cold/Dead Count */}
-        {!isLoading && (data?.lostJobsCount ?? 0) > 0 && (
-          <div className="inline-block bg-[#21262d] border border-[#30363d] rounded-lg px-4 py-2">
-            <p className="text-sm font-semibold text-[#f85149]">
-              Lost This Period: {data?.lostJobsCount ?? 0} jobs
-            </p>
-          </div>
-        )}
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* ── 4. Key Conversions ─────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        {isLoading
-          ? [1, 2, 3].map((i) => (
-              <Card key={i} className="bg-[#161b22] border-[#30363d]">
-                <CardContent className="pt-6">
-                  <Skeleton className="h-4 w-40 mb-3 bg-[#21262d]" />
-                  <Skeleton className="h-10 w-20 mb-2 bg-[#21262d]" />
-                  <Skeleton className="h-3 w-28 bg-[#21262d]" />
-                </CardContent>
-              </Card>
-            ))
-          : data?.keyConversions.map((conv, i) => {
-              const color =
-                conv.rate >= 60
-                  ? "text-green-400"
-                  : conv.rate >= 40
-                    ? "text-yellow-400"
-                    : "text-red-400";
-              return (
-                <Card key={i} className="bg-[#161b22] border-[#30363d]">
-                  <CardContent className="pt-6">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-xs text-[#e6edf3]">
-                        {conv.from}
-                      </span>
-                      <svg
-                        className="w-4 h-4 text-[#484f58]"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M13 7l5 5m0 0l-5 5m5-5H6"
-                        />
-                      </svg>
-                      <span className="text-xs text-[#e6edf3]">{conv.to}</span>
-                    </div>
-                    <p className={`text-3xl font-bold ${color}`}>
-                      {formatPercent(conv.rate)}
-                    </p>
-                    <p className="text-xs text-[#8b949e] mt-1">
-                      {conv.fromCount} &rarr; {conv.toCount} jobs
-                    </p>
-                  </CardContent>
-                </Card>
-              );
-            })}
+      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-6">
+        <Card className="border-[#30363d] bg-[#161b22]">
+          <CardHeader className="pb-2"><CardTitle className="text-xs text-[#8b949e]">Active Jobs</CardTitle></CardHeader>
+          <CardContent>{isLoading ? <Skeleton className="h-8 w-16 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#e6edf3]">{data?.summary.activeJobs ?? 0}</p>}</CardContent>
+        </Card>
+        <Card className="border-[#30363d] bg-[#161b22]">
+          <CardHeader className="pb-2"><CardTitle className="text-xs text-[#8b949e]">Leads</CardTitle></CardHeader>
+          <CardContent>{isLoading ? <Skeleton className="h-8 w-16 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#58a6ff]">{data?.summary.leads ?? 0}</p>}</CardContent>
+        </Card>
+        <Card className="border-[#30363d] bg-[#161b22]">
+          <CardHeader className="pb-2"><CardTitle className="text-xs text-[#8b949e]">Appointments</CardTitle></CardHeader>
+          <CardContent>{isLoading ? <Skeleton className="h-8 w-16 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#79c0ff]">{data?.summary.appointmentsScheduled ?? 0}</p>}</CardContent>
+        </Card>
+        <Card className="border-[#30363d] bg-[#161b22]">
+          <CardHeader className="pb-2"><CardTitle className="text-xs text-[#8b949e]">Appt Ran</CardTitle></CardHeader>
+          <CardContent>{isLoading ? <Skeleton className="h-8 w-16 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#a371f7]">{data?.summary.appointmentsRan ?? 0}</p>}</CardContent>
+        </Card>
+        <Card className="border-[#30363d] bg-[#161b22]">
+          <CardHeader className="pb-2"><InfoTooltip label="Pipeline Value" explanation="JobNimbus job value from approved invoice due, approved invoice total, approved estimate total, parent values, last invoice, or last estimate. This is not QuickBooks."><CardTitle className="text-xs text-[#8b949e]">Pipeline Value</CardTitle></InfoTooltip></CardHeader>
+          <CardContent>{isLoading ? <Skeleton className="h-8 w-24 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#e6edf3]">{formatCurrency(data?.summary.pipelineValue ?? 0)}</p>}</CardContent>
+        </Card>
+        <Card className="border-[#30363d] bg-[#161b22]">
+          <CardHeader className="pb-2"><CardTitle className="text-xs text-[#8b949e]">AR Due</CardTitle></CardHeader>
+          <CardContent>{isLoading ? <Skeleton className="h-8 w-24 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#3fb950]">{formatCurrency(data?.summary.arDue ?? 0)}</p>}</CardContent>
+        </Card>
       </div>
 
-      {/* ── 5 & 6. Pipeline Value + Loss Analysis ─────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Pipeline Value by Stage */}
-        <Card className="bg-[#161b22] border-[#30363d]">
+      {selectedRecordType && (
+        <Card className="mb-8 border-[#30363d] bg-[#161b22]">
+          <CardHeader><CardTitle className="text-sm text-[#e6edf3]">{selectedRecordType.label} Snapshot</CardTitle></CardHeader>
+          <CardContent className="grid grid-cols-2 gap-3 text-sm md:grid-cols-6">
+            <div><p className="text-xs text-[#8b949e]">Leads</p><p className="font-bold text-[#e6edf3]">{stageCount(selectedRecordType, "leads")}</p></div>
+            <div><p className="text-xs text-[#8b949e]">Scheduled</p><p className="font-bold text-[#e6edf3]">{stageCount(selectedRecordType, "appointmentsScheduled")}</p></div>
+            <div><p className="text-xs text-[#8b949e]">Ran</p><p className="font-bold text-[#e6edf3]">{stageCount(selectedRecordType, "appointmentsRan")}</p></div>
+            <div><p className="text-xs text-[#8b949e]">Estimating</p><p className="font-bold text-[#e6edf3]">{stageCount(selectedRecordType, "estimating")}</p></div>
+            <div><p className="text-xs text-[#8b949e]">Production</p><p className="font-bold text-[#e6edf3]">{stageCount(selectedRecordType, "production")}</p></div>
+            <div><p className="text-xs text-[#8b949e]">AR</p><p className="font-bold text-[#e6edf3]">{stageCount(selectedRecordType, "accountsReceivable")}</p></div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <Card className="border-[#30363d] bg-[#161b22]">
           <CardHeader>
-            <CardTitle className="text-sm font-semibold text-[#e6edf3]">
-              Pipeline Value by Stage
-            </CardTitle>
+            <CardTitle className="text-sm text-[#e6edf3]">Jobs by Current Stage</CardTitle>
+            <p className="text-xs text-[#8b949e]">Where every active JobNimbus job sits right now.</p>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
-              <div className="space-y-3">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <Skeleton
-                    key={i}
-                    className="h-6 bg-[#21262d]"
-                    style={{ width: `${100 - i * 10}%` }}
-                  />
-                ))}
-              </div>
-            ) : valueChartData.every((d) => d.value === 0) ? (
-              <div className="flex items-center justify-center h-[250px]">
-                <p className="text-sm text-[#8b949e]">
-                  No pipeline value data for this period
-                </p>
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart
-                  layout="vertical"
-                  data={valueChartData}
-                  margin={{ top: 0, right: 20, bottom: 0, left: 10 }}
-                >
-                  <XAxis
-                    type="number"
-                    tick={{ fill: "#8b949e", fontSize: 11 }}
-                    axisLine={{ stroke: "#30363d" }}
-                    tickLine={false}
-                    tickFormatter={(v: number) => formatCurrency(v)}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    tick={{ fill: "#e6edf3", fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={80}
-                  />
-                  <Tooltip
-                    content={({ active, payload, label }) => {
-                      if (!active || !payload?.length) return null;
-                      return (
-                        <div className="bg-[#21262d] border border-[#30363d] rounded-lg px-3 py-2 text-xs shadow-lg">
-                          <p className="text-[#8b949e] mb-1">{label}</p>
-                          <p className="text-[#e6edf3] font-medium">
-                            {formatCurrency(payload[0].value as number)}
-                          </p>
-                        </div>
-                      );
-                    }}
-                    cursor={{ fill: "rgba(88,166,255,0.08)" }}
-                  />
-                  <Bar
-                    dataKey="value"
-                    name="Value"
-                    radius={[0, 4, 4, 0]}
-                    maxBarSize={24}
-                  >
-                    {valueChartData.map((entry, i) => (
-                      <Cell key={i} fill={entry.fill} />
-                    ))}
-                  </Bar>
+            {isLoading ? <Skeleton className="h-[280px] bg-[#21262d]" /> : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={data?.currentStages ?? []} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+                  <CartesianGrid stroke="#30363d" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="stage" tick={{ fill: "#8b949e", fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#8b949e", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <Tooltip content={<NumberTooltip />} cursor={{ fill: "rgba(88,166,255,0.08)" }} />
+                  <Bar dataKey="jobCount" name="Jobs" radius={[4, 4, 0, 0]} fill="#58a6ff" />
                 </BarChart>
               </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
 
-        {/* Loss Analysis */}
-        <Card className="bg-[#161b22] border-[#30363d]">
+        <Card className="border-[#30363d] bg-[#161b22]">
           <CardHeader>
-            <CardTitle className="text-sm font-semibold text-[#e6edf3]">
-              Loss Analysis
-            </CardTitle>
+            <CardTitle className="text-sm text-[#e6edf3]">JobNimbus Value by Stage</CardTitle>
+            <p className="text-xs text-[#8b949e]">Current estimated/invoiced value, separate from accounting revenue.</p>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-12 bg-[#21262d] rounded" />
-                ))}
-              </div>
-            ) : (data?.lossByStage ?? []).length === 0 ? (
-              <div className="flex items-center justify-center h-[250px]">
-                <p className="text-sm text-[#8b949e]">
-                  No lost jobs in this period
-                </p>
-              </div>
-            ) : (
-              <div>
-                <p className="text-xs text-[#8b949e] mb-4">
-                  Where jobs are lost in the pipeline
-                </p>
-                {lossChartData.length > 0 && (
-                  <ResponsiveContainer width="100%" height={200}>
-                    <BarChart
-                      data={lossChartData}
-                      margin={{ top: 0, right: 10, bottom: 0, left: 10 }}
-                    >
-                      <XAxis
-                        dataKey="name"
-                        tick={{ fill: "#8b949e", fontSize: 10 }}
-                        axisLine={{ stroke: "#30363d" }}
-                        tickLine={false}
-                      />
-                      <YAxis
-                        tick={{ fill: "#8b949e", fontSize: 11 }}
-                        axisLine={false}
-                        tickLine={false}
-                        width={30}
-                      />
-                      <Tooltip
-                        content={({ active, payload }) => {
-                          if (!active || !payload?.length) return null;
-                          const item = payload[0].payload;
-                          return (
-                            <div className="bg-[#21262d] border border-[#30363d] rounded-lg px-3 py-2 text-xs shadow-lg">
-                              <p className="text-[#e6edf3] font-medium">
-                                {item.name}
-                              </p>
-                              <p className="text-[#f85149]">
-                                {item.count} jobs lost (
-                                {formatPercent(item.rate)})
-                              </p>
-                            </div>
-                          );
-                        }}
-                        cursor={{ fill: "rgba(248,81,73,0.08)" }}
-                      />
-                      <Bar
-                        dataKey="count"
-                        name="Lost"
-                        radius={[4, 4, 0, 0]}
-                        maxBarSize={40}
-                      >
-                        {lossChartData.map((_, i) => (
-                          <Cell key={i} fill="#f85149" fillOpacity={0.7} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-                <div className="mt-4 space-y-2">
-                  {data?.lossByStage.map((loss) => (
-                    <div
-                      key={loss.stage}
-                      className="flex items-center justify-between bg-[#21262d] rounded-lg px-4 py-2.5"
-                    >
-                      <span className="text-sm text-[#e6edf3]">
-                        {loss.stage}
-                      </span>
-                      <div className="flex items-center gap-4">
-                        <span className="text-sm font-mono text-[#8b949e]">
-                          {loss.count} jobs
-                        </span>
-                        <span className="text-sm font-mono text-[#f85149]">
-                          {formatPercent(loss.rate)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            {isLoading ? <Skeleton className="h-[280px] bg-[#21262d]" /> : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={data?.currentStages ?? []} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+                  <CartesianGrid stroke="#30363d" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="stage" tick={{ fill: "#8b949e", fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#8b949e", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => formatCurrency(v)} width={70} />
+                  <Tooltip content={<CurrencyTooltip />} cursor={{ fill: "rgba(88,166,255,0.08)" }} />
+                  <Bar dataKey="pipelineValue" name="Value" radius={[4, 4, 0, 0]} fill="#3fb950" />
+                  <Bar dataKey="arDue" name="AR Due" radius={[4, 4, 0, 0]} fill="#d29922" />
+                </BarChart>
+              </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* ── 7. Segment Comparison ──────────────────────────────────── */}
-      <h2 className="text-sm font-semibold text-[#e6edf3] mb-4">
-        Segment Comparison
-      </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {isLoading
-          ? Object.keys(SEGMENTS).map((key) => (
-              <Card key={key} className="bg-[#161b22] border-[#30363d]">
-                <CardContent className="pt-6">
-                  <Skeleton className="h-4 w-24 mb-4 bg-[#21262d]" />
-                  <Skeleton className="h-6 w-16 mb-2 bg-[#21262d]" />
-                  <Skeleton className="h-4 w-28 mb-2 bg-[#21262d]" />
-                  <Skeleton className="h-4 w-20 mb-2 bg-[#21262d]" />
-                  <Skeleton className="h-4 w-24 bg-[#21262d]" />
-                </CardContent>
-              </Card>
-            ))
-          : data?.segmentComparison.map((seg) => {
-              const meta = SEGMENTS[seg.segment];
-              if (!meta) return null;
-              return (
-                <Card key={seg.segment} className="bg-[#161b22] border-[#30363d]">
-                  <CardContent className="pt-6">
-                    <div className="flex items-center gap-2 mb-4">
-                      <span
-                        className="h-3 w-3 rounded-full"
-                        style={{ backgroundColor: meta.color }}
-                      />
-                      <span
-                        className="text-sm font-semibold"
-                        style={{ color: meta.color }}
-                      >
-                        {meta.label}
-                      </span>
-                    </div>
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-[#8b949e]">
-                          Active Jobs
-                        </span>
-                        <span className="text-sm font-bold text-[#e6edf3]">
-                          {seg.activeJobs}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-[#8b949e]">
-                          Close Rate
-                        </span>
-                        <span className="text-sm font-bold text-[#e6edf3]">
-                          {formatPercent(seg.overallConversion)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-[#8b949e]">
-                          Pipeline Value
-                        </span>
-                        <span className="text-sm font-bold text-[#e6edf3]">
-                          {formatCurrency(seg.pipelineValue)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-[#8b949e]">Revenue</span>
-                        <span className="text-sm font-bold text-[#e6edf3]">
-                          {formatCurrency(seg.revenue)}
-                        </span>
-                      </div>
-                      {/* Mini conversion funnel */}
-                      <div className="pt-2 border-t border-[#30363d]">
-                        <p className="text-[10px] text-[#484f58] uppercase tracking-wider mb-2">
-                          Key Conversions
-                        </p>
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-[#8b949e]">
-                              Lead &rarr; Est
-                            </span>
-                            <span className="text-[10px] font-mono text-[#8b949e]">
-                              {formatPercent(seg.leadToEstimateRate)}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-[#8b949e]">
-                              Est &rarr; Sold
-                            </span>
-                            <span className="text-[10px] font-mono text-[#8b949e]">
-                              {formatPercent(seg.estimateToSoldRate)}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-[#8b949e]">
-                              Sold &rarr; Inv
-                            </span>
-                            <span className="text-[10px] font-mono text-[#8b949e]">
-                              {formatPercent(seg.soldToInvoicedRate)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+      <div className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-5">
+        {isLoading ? recordTypeOptions.slice(1).map((option) => <Skeleton key={option.value} className="h-44 bg-[#21262d]" />) : data?.recordTypes.map((row) => (
+          <Card key={row.recordType} className="border-[#30363d] bg-[#161b22]">
+            <CardContent className="pt-6">
+              <p className="mb-3 text-sm font-semibold text-[#e6edf3]">{row.label}</p>
+              <p className="text-2xl font-bold text-[#e6edf3]">{row.activeJobs}</p>
+              <p className="mb-4 text-xs text-[#8b949e]">active jobs · {formatCurrency(row.pipelineValue)}</p>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div><p className="text-[#8b949e]">Lead</p><p className="font-mono text-[#e6edf3]">{row.stageCounts.leads}</p></div>
+                <div><p className="text-[#8b949e]">Appt</p><p className="font-mono text-[#e6edf3]">{row.stageCounts.appointmentsScheduled}</p></div>
+                <div><p className="text-[#8b949e]">Ran</p><p className="font-mono text-[#e6edf3]">{row.stageCounts.appointmentsRan}</p></div>
+                <div><p className="text-[#8b949e]">Est</p><p className="font-mono text-[#e6edf3]">{row.stageCounts.estimating}</p></div>
+                <div><p className="text-[#8b949e]">Prod</p><p className="font-mono text-[#e6edf3]">{row.stageCounts.production}</p></div>
+                <div><p className="text-[#8b949e]">AR</p><p className="font-mono text-[#e6edf3]">{row.stageCounts.accountsReceivable}</p></div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      {/* ── Error State ───────────────────────────────────────────── */}
-      {isError && (
-        <div className="mt-6 bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-center">
-          <p className="text-sm text-red-400">
-            Failed to load pipeline data. Check your database connection and try
-            again.
-          </p>
+      <Card className="mb-8 border-[#30363d] bg-[#161b22]">
+        <CardHeader>
+          <InfoTooltip label="Revenue Timing Forecast" explanation="Conservative V1 weights from current JobNimbus stage. Use the timing/conversion tables below to calibrate this model as the history gets cleaner.">
+            <CardTitle className="text-sm text-[#e6edf3]">Revenue Timing Forecast</CardTitle>
+          </InfoTooltip>
+          <p className="text-xs text-[#8b949e]">How close the current pipeline is to production or bank cash.</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+            {isLoading ? [1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-24 bg-[#21262d]" />) : data?.forecastBuckets.map((bucket) => (
+              <div key={bucket.bucket} className="rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
+                <p className="mb-2 text-xs text-[#8b949e]">{bucket.bucket}</p>
+                <p className="text-lg font-bold text-[#e6edf3]">{formatCurrency(bucket.weightedValue)}</p>
+                <p className="mt-1 text-xs text-[#484f58]">{bucket.jobCount} jobs · raw {formatCurrency(bucket.rawValue)}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <Card className="border-[#30363d] bg-[#161b22]">
+          <CardHeader>
+            <CardTitle className="text-sm text-[#e6edf3]">Average Days by Stage Movement</CardTitle>
+            <p className="text-xs text-[#8b949e]">Grouped by record type. Median and p75 matter more than the average when a job gets weird.</p>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs text-[#8b949e]"><tr className="border-b border-[#30363d]"><th className="py-2 text-left">Type</th><th className="text-left">Move</th><th className="text-right">Avg</th><th className="text-right">Median</th><th className="text-right">P75</th><th className="text-right">N</th></tr></thead>
+              <tbody>
+                {isLoading ? <tr><td colSpan={6} className="py-6"><Skeleton className="h-24 bg-[#21262d]" /></td></tr> : stageTimingRows.map((row) => (
+                  <tr key={`${row.recordType}-${row.fromStage}-${row.toStage}`} className="border-b border-[#21262d] text-xs">
+                    <td className="py-2 text-[#e6edf3]">{row.recordTypeLabel}</td>
+                    <td className="py-2 text-[#8b949e]">{row.fromStage} → {row.toStage}</td>
+                    <td className="py-2 text-right font-mono text-[#e6edf3]">{daysLabel(row.avgDays)}</td>
+                    <td className="py-2 text-right font-mono text-[#e6edf3]">{daysLabel(row.medianDays)}</td>
+                    <td className="py-2 text-right font-mono text-[#e6edf3]">{daysLabel(row.p75Days)}</td>
+                    <td className="py-2 text-right font-mono text-[#8b949e]">{row.sampleCount}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+
+        <Card className="border-[#30363d] bg-[#161b22]">
+          <CardHeader>
+            <CardTitle className="text-sm text-[#e6edf3]">Conversion Rates Between Statuses</CardTitle>
+            <p className="text-xs text-[#8b949e]">Adjacent JobNimbus status movement by record type since {data?.cohortStart ?? "2026-01-21"}.</p>
+          </CardHeader>
+          <CardContent className="max-h-[480px] overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-[#161b22] text-xs text-[#8b949e]"><tr className="border-b border-[#30363d]"><th className="py-2 text-left">Type</th><th className="text-left">Status Move</th><th className="text-right">Rate</th><th className="text-right">Jobs</th></tr></thead>
+              <tbody>
+                {isLoading ? <tr><td colSpan={4} className="py-6"><Skeleton className="h-24 bg-[#21262d]" /></td></tr> : conversionRows.map((row) => (
+                  <tr key={`${row.recordType}-${row.fromStatus}-${row.toStatus}`} className="border-b border-[#21262d] text-xs">
+                    <td className="py-2 text-[#e6edf3]">{row.recordTypeLabel}</td>
+                    <td className="py-2 text-[#8b949e]">{row.fromStatus} → {row.toStatus}</td>
+                    <td className="py-2 text-right font-mono text-[#e6edf3]">{formatPercent(row.conversionRate)}</td>
+                    <td className="py-2 text-right font-mono text-[#8b949e]">{row.convertedCount} / {row.fromCount}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="mb-8 border-[#30363d] bg-[#161b22]">
+        <CardHeader>
+          <CardTitle className="text-sm text-[#e6edf3]">Current Status Buckets</CardTitle>
+          <p className="text-xs text-[#8b949e]">Every current JobNimbus status rolled up by record type, count, value, and average days sitting there.</p>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-[#8b949e]"><tr className="border-b border-[#30363d]"><th className="py-2 text-left">Stage</th><th className="text-left">Status</th><th className="text-left">Type</th><th className="text-right">Jobs</th><th className="text-right">Value</th><th className="text-right">AR Due</th><th className="text-right">Avg Age</th></tr></thead>
+            <tbody>
+              {isLoading ? <tr><td colSpan={7} className="py-6"><Skeleton className="h-28 bg-[#21262d]" /></td></tr> : statusRows.map((row) => (
+                <tr key={`${row.recordType}-${row.statusName}`} className="border-b border-[#21262d] text-xs">
+                  <td className="py-2"><span className="rounded-full px-2 py-1 text-[10px] font-semibold text-white" style={{ backgroundColor: stageColors[row.stage] ?? "#8b949e" }}>{row.stage}</span></td>
+                  <td className="py-2 text-[#e6edf3]">{row.statusName}</td>
+                  <td className="py-2 text-[#8b949e]">{row.recordTypeLabel}</td>
+                  <td className="py-2 text-right font-mono text-[#e6edf3]">{row.jobCount}</td>
+                  <td className="py-2 text-right font-mono text-[#e6edf3]">{formatCurrency(row.pipelineValue)}</td>
+                  <td className="py-2 text-right font-mono text-[#3fb950]">{formatCurrency(row.arDue)}</td>
+                  <td className="py-2 text-right font-mono text-[#8b949e]">{daysLabel(row.avgDaysInStatus)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-8 border-[#30363d] bg-[#161b22]">
+        <CardHeader>
+          <CardTitle className="text-sm text-[#e6edf3]">Status Timing Detail</CardTitle>
+          <p className="text-xs text-[#8b949e]">Most common exact JobNimbus status transitions, with average, median, p75, and p90 days.</p>
+        </CardHeader>
+        <CardContent className="max-h-[520px] overflow-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-[#161b22] text-xs text-[#8b949e]"><tr className="border-b border-[#30363d]"><th className="py-2 text-left">Type</th><th className="text-left">Status Move</th><th className="text-right">Avg</th><th className="text-right">Median</th><th className="text-right">P75</th><th className="text-right">P90</th><th className="text-right">N</th></tr></thead>
+            <tbody>
+              {isLoading ? <tr><td colSpan={7} className="py-6"><Skeleton className="h-28 bg-[#21262d]" /></td></tr> : statusTimingRows.map((row) => (
+                <tr key={`${row.recordType}-${row.fromStatus}-${row.toStatus}`} className="border-b border-[#21262d] text-xs">
+                  <td className="py-2 text-[#e6edf3]">{row.recordTypeLabel}</td>
+                  <td className="py-2 text-[#8b949e]">{row.fromStatus} → {row.toStatus}</td>
+                  <td className="py-2 text-right font-mono text-[#e6edf3]">{daysLabel(row.avgDays)}</td>
+                  <td className="py-2 text-right font-mono text-[#e6edf3]">{daysLabel(row.medianDays)}</td>
+                  <td className="py-2 text-right font-mono text-[#e6edf3]">{daysLabel(row.p75Days)}</td>
+                  <td className="py-2 text-right font-mono text-[#e6edf3]">{daysLabel(row.p90Days)}</td>
+                  <td className="py-2 text-right font-mono text-[#8b949e]">{row.sampleCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+
+      <Card className="border-[#30363d] bg-[#161b22]">
+        <CardHeader>
+          <CardTitle className="text-sm text-[#e6edf3]">Largest Current Jobs</CardTitle>
+          <p className="text-xs text-[#8b949e]">The jobs that drive the pipeline number. Click through to JobNimbus.</p>
+        </CardHeader>
+        <CardContent className="max-h-[520px] overflow-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-[#161b22] text-xs text-[#8b949e]"><tr className="border-b border-[#30363d]"><th className="py-2 text-left">Job</th><th className="text-left">Stage</th><th className="text-left">Status</th><th className="text-left">Type</th><th className="text-right">Value</th><th className="text-right">AR</th><th className="text-right">Age</th></tr></thead>
+            <tbody>
+              {isLoading ? <tr><td colSpan={7} className="py-6"><Skeleton className="h-28 bg-[#21262d]" /></td></tr> : data?.topJobs.map((job) => (
+                <tr key={job.jobJnid} className="border-b border-[#21262d] text-xs">
+                  <td className="max-w-[260px] truncate py-2 text-[#e6edf3]"><a href={job.jobUrl} target="_blank" rel="noreferrer" className="hover:text-[#58a6ff]">{job.jobName}</a></td>
+                  <td className="py-2 text-[#8b949e]">{job.stage}</td>
+                  <td className="py-2 text-[#8b949e]">{job.statusName}</td>
+                  <td className="py-2 text-[#8b949e]">{job.recordTypeLabel}</td>
+                  <td className="py-2 text-right font-mono text-[#e6edf3]">{formatCurrency(job.value)}</td>
+                  <td className="py-2 text-right font-mono text-[#3fb950]">{formatCurrency(job.arDue)}</td>
+                  <td className="py-2 text-right font-mono text-[#8b949e]">{job.daysInStatus}d</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+
+      {data && (
+        <div className="mt-6 rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#8b949e]">Source Notes</p>
+          <ul className="space-y-1 text-xs text-[#8b949e]">
+            {data.sourceNotes.map((note) => <li key={note}>• {note}</li>)}
+          </ul>
         </div>
       )}
     </div>
