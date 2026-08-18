@@ -194,6 +194,23 @@ function NumberTooltip({ active, payload, label }: { active?: boolean; payload?:
   );
 }
 
+const stageFormula = "status_name mapped to stage from the API status map";
+const openJobFilter = "active + not archived + not deleted + not test/demo + status not Lost/Dead/No Damage/Internal Supplementing/Paid & Closed";
+
+function stageValueFormula(stage: string) {
+  if (stage === "Accounts Receivable") return "sum(approved_invoice_due or parent_approved_invoice_due)";
+  return "sum(max approved invoice, approved estimate, parent invoice/estimate, last invoice, last estimate)";
+}
+
+function forecastFormula(bucket: string) {
+  if (bucket === "Bank cash now / collecting") return "AR due × 85%";
+  if (bucket === "Production money now / soon") return "production value × 70% for retail/repairs/commercial, × 50% for insurance";
+  if (bucket === "Potential production after sold") return "estimating value × 28% for retail/repairs/commercial, × 18% for insurance";
+  if (bucket === "Early pipeline") return "appointment scheduled/ran value × 8%";
+  if (bucket === "Raw leads") return "lead value × 3%";
+  return "not weighted";
+}
+
 export default function PipelinePage() {
   const [recordType, setRecordType] = useState("all");
 
@@ -241,6 +258,16 @@ export default function PipelinePage() {
       .sort((a, b) => a.recordTypeLabel.localeCompare(b.recordTypeLabel) || b.fromCount - a.fromCount)
       .slice(0, 40);
   }, [data, recordType]);
+
+  const formulaStageRows = useMemo(() => {
+    if (!data) return [];
+    return data.currentStages.map((row) => ({
+      label: row.stage,
+      value: row.pipelineValue,
+      jobs: row.jobCount,
+      formula: stageValueFormula(row.stage),
+    }));
+  }, [data]);
 
   if (isError) {
     return (
@@ -306,6 +333,72 @@ export default function PipelinePage() {
           <CardContent>{isLoading ? <Skeleton className="h-8 w-24 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#3fb950]">{formatCurrency(data?.summary.arDue ?? 0)}</p>}</CardContent>
         </Card>
       </div>
+
+      <Card className="mb-8 border-[#30363d] bg-[#161b22]">
+        <CardHeader>
+          <CardTitle className="text-sm text-[#e6edf3]">Where These Numbers Come From</CardTitle>
+          <p className="text-xs text-[#8b949e]">Plain-English formulas for the headline cards. Source is the synced JobNimbus jobs table in Supabase, not QuickBooks.</p>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#8b949e]">Active Jobs</p>
+              <p className="mt-2 font-mono text-lg text-[#e6edf3]">count(open jobs)</p>
+              <p className="mt-2 text-xs text-[#8b949e]">Open job = {openJobFilter}.</p>
+            </div>
+            <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#8b949e]">Open Value</p>
+              <p className="mt-2 font-mono text-lg text-[#e6edf3]">sum(stage open value)</p>
+              <p className="mt-2 text-xs text-[#8b949e]">AR rows use balance due. Non-AR rows use the best available JobNimbus value.</p>
+            </div>
+            <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#8b949e]">AR Due</p>
+              <p className="mt-2 font-mono text-lg text-[#e6edf3]">sum(approved_invoice_due)</p>
+              <p className="mt-2 text-xs text-[#8b949e]">Uses parent approved invoice due if the child job field is empty. This is collectible balance due, not full job size.</p>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#8b949e]">Stage value equation</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="text-[#8b949e]"><tr className="border-b border-[#30363d]"><th className="py-2 text-left">Stage</th><th className="text-right">Jobs</th><th className="text-right">Current value</th><th className="text-left pl-4">Formula</th></tr></thead>
+                <tbody>
+                  {isLoading ? <tr><td colSpan={4} className="py-4"><Skeleton className="h-20 bg-[#21262d]" /></td></tr> : formulaStageRows.map((row) => (
+                    <tr key={row.label} className="border-b border-[#21262d]">
+                      <td className="py-2 text-[#e6edf3]">{row.label}</td>
+                      <td className="py-2 text-right font-mono text-[#e6edf3]">{row.jobs}</td>
+                      <td className="py-2 text-right font-mono text-[#e6edf3]">{formatCurrency(row.value)}</td>
+                      <td className="py-2 pl-4 text-[#8b949e]">{row.formula}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#8b949e]">Forecast equation</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="text-[#8b949e]"><tr className="border-b border-[#30363d]"><th className="py-2 text-left">Bucket</th><th className="text-right">Raw value</th><th className="text-right">Weighted</th><th className="text-left pl-4">Equation</th></tr></thead>
+                <tbody>
+                  {isLoading ? <tr><td colSpan={4} className="py-4"><Skeleton className="h-20 bg-[#21262d]" /></td></tr> : data?.forecastBuckets.map((bucket) => (
+                    <tr key={bucket.bucket} className="border-b border-[#21262d]">
+                      <td className="py-2 text-[#e6edf3]">{bucket.bucket}</td>
+                      <td className="py-2 text-right font-mono text-[#e6edf3]">{formatCurrency(bucket.rawValue)}</td>
+                      <td className="py-2 text-right font-mono text-[#e6edf3]">{formatCurrency(bucket.weightedValue)}</td>
+                      <td className="py-2 pl-4 text-[#8b949e]">{forecastFormula(bucket.bucket)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <p className="text-xs text-[#8b949e]">Stage counts use {stageFormula}. The exact job-level rows are in Largest Current Jobs at the bottom, and the status rollup is in Current Status Buckets.</p>
+        </CardContent>
+      </Card>
 
       {selectedRecordType && (
         <Card className="mb-8 border-[#30363d] bg-[#161b22]">
