@@ -214,7 +214,7 @@ export default function PipelinePage() {
   const statusRows = useMemo(() => {
     if (!data) return [];
     return [...data.currentStatuses]
-      .sort((a, b) => b.pipelineValue + b.arDue - (a.pipelineValue + a.arDue))
+      .sort((a, b) => Math.max(b.pipelineValue, b.arDue) - Math.max(a.pipelineValue, a.arDue))
       .slice(0, 30);
   }, [data]);
 
@@ -298,7 +298,7 @@ export default function PipelinePage() {
           <CardContent>{isLoading ? <Skeleton className="h-8 w-16 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#a371f7]">{data?.summary.appointmentsRan ?? 0}</p>}</CardContent>
         </Card>
         <Card className="border-[#30363d] bg-[#161b22]">
-          <CardHeader className="pb-2"><InfoTooltip label="Pipeline Value" explanation="JobNimbus job value from approved invoice due, approved invoice total, approved estimate total, parent values, last invoice, or last estimate. This is not QuickBooks."><CardTitle className="text-xs text-[#8b949e]">Pipeline Value</CardTitle></InfoTooltip></CardHeader>
+          <CardHeader className="pb-2"><InfoTooltip label="Open Value" explanation="JobNimbus value still in play. For Accounts Receivable this uses collectible AR due, not full historical job value. This is not QuickBooks."><CardTitle className="text-xs text-[#8b949e]">Open Value</CardTitle></InfoTooltip></CardHeader>
           <CardContent>{isLoading ? <Skeleton className="h-8 w-24 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#e6edf3]">{formatCurrency(data?.summary.pipelineValue ?? 0)}</p>}</CardContent>
         </Card>
         <Card className="border-[#30363d] bg-[#161b22]">
@@ -344,8 +344,8 @@ export default function PipelinePage() {
 
         <Card className="border-[#30363d] bg-[#161b22]">
           <CardHeader>
-            <CardTitle className="text-sm text-[#e6edf3]">JobNimbus Value by Stage</CardTitle>
-            <p className="text-xs text-[#8b949e]">Current estimated/invoiced value, separate from accounting revenue.</p>
+            <CardTitle className="text-sm text-[#e6edf3]">Open JobNimbus Value by Stage</CardTitle>
+            <p className="text-xs text-[#8b949e]">Current estimated value by stage. AR uses balance due, not full job value.</p>
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-[280px] bg-[#21262d]" /> : (

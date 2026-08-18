@@ -42,6 +42,14 @@ const VALUE_SQL = `
   )
 `;
 
+const AR_DUE_SQL = `
+  GREATEST(
+    COALESCE(j.approved_invoice_due, 0),
+    COALESCE(j.parent_approved_invoice_due, 0),
+    0
+  )
+`;
+
 const STAGE_SQL = `
   CASE
     WHEN COALESCE(j.status_name, '') IN ('Lead', 'New', 'Cold Lead', 'Storm Alert') THEN 'Lead'
@@ -212,8 +220,8 @@ export async function GET(request: NextRequest) {
         WITH open_jobs AS (
           SELECT
             ${STAGE_SQL} AS pipeline_stage,
-            ${VALUE_SQL} AS value,
-            COALESCE(j.approved_invoice_due, j.parent_approved_invoice_due, 0) AS ar_due,
+            CASE WHEN ${STAGE_SQL} = 'Accounts Receivable' THEN ${AR_DUE_SQL} ELSE ${VALUE_SQL} END AS value,
+            ${AR_DUE_SQL} AS ar_due,
             GREATEST(0, EXTRACT(EPOCH FROM (now() - to_timestamp(COALESCE(j.jn_date_status_change, j.jn_date_created)))) / 86400.0) AS days_in_status,
             ${RECORD_TYPE_SQL} AS record_type
           FROM jobs j
@@ -236,8 +244,8 @@ export async function GET(request: NextRequest) {
             ${RECORD_TYPE_SQL} AS record_type,
             ${STAGE_SQL} AS pipeline_stage,
             COALESCE(j.status_name, 'Unknown') AS status_name,
-            ${VALUE_SQL} AS value,
-            COALESCE(j.approved_invoice_due, j.parent_approved_invoice_due, 0) AS ar_due,
+            CASE WHEN ${STAGE_SQL} = 'Accounts Receivable' THEN ${AR_DUE_SQL} ELSE ${VALUE_SQL} END AS value,
+            ${AR_DUE_SQL} AS ar_due,
             GREATEST(0, EXTRACT(EPOCH FROM (now() - to_timestamp(COALESCE(j.jn_date_status_change, j.jn_date_created)))) / 86400.0) AS days_in_status
           FROM jobs j
           WHERE ${OPEN_PIPELINE_WHERE}
@@ -261,8 +269,8 @@ export async function GET(request: NextRequest) {
           SELECT
             ${RECORD_TYPE_SQL} AS record_type,
             ${STAGE_SQL} AS pipeline_stage,
-            ${VALUE_SQL} AS value,
-            COALESCE(j.approved_invoice_due, j.parent_approved_invoice_due, 0) AS ar_due
+            CASE WHEN ${STAGE_SQL} = 'Accounts Receivable' THEN ${AR_DUE_SQL} ELSE ${VALUE_SQL} END AS value,
+            ${AR_DUE_SQL} AS ar_due
           FROM jobs j
           WHERE ${OPEN_PIPELINE_WHERE}
         )
@@ -393,8 +401,8 @@ export async function GET(request: NextRequest) {
           SELECT
             ${STAGE_SQL} AS pipeline_stage,
             ${RECORD_TYPE_SQL} AS record_type,
-            ${VALUE_SQL} AS value,
-            COALESCE(j.approved_invoice_due, j.parent_approved_invoice_due, 0) AS ar_due
+            CASE WHEN ${STAGE_SQL} = 'Accounts Receivable' THEN ${AR_DUE_SQL} ELSE ${VALUE_SQL} END AS value,
+            ${AR_DUE_SQL} AS ar_due
           FROM jobs j
           WHERE ${OPEN_PIPELINE_WHERE}
         ), scored AS (
@@ -410,7 +418,7 @@ export async function GET(request: NextRequest) {
             value,
             ar_due,
             CASE
-              WHEN pipeline_stage = 'Accounts Receivable' THEN GREATEST(ar_due, value) * 0.85
+              WHEN pipeline_stage = 'Accounts Receivable' THEN ar_due * 0.85
               WHEN pipeline_stage = 'Production' AND record_type IN ('retail', 'repairs', 'light_commercial') THEN value * 0.70
               WHEN pipeline_stage = 'Production' AND record_type = 'insurance' THEN value * 0.50
               WHEN pipeline_stage = 'Estimating' AND record_type IN ('retail', 'repairs', 'light_commercial') THEN value * 0.28
@@ -424,7 +432,7 @@ export async function GET(request: NextRequest) {
         )
         SELECT
           bucket,
-          COALESCE(SUM(GREATEST(ar_due, value)), 0)::text AS raw_value,
+          COALESCE(SUM(CASE WHEN bucket = 'Bank cash now / collecting' THEN ar_due ELSE value END), 0)::text AS raw_value,
           COALESCE(SUM(weighted_value), 0)::text AS weighted_value,
           COUNT(*)::text AS job_count
         FROM scored
@@ -447,8 +455,8 @@ export async function GET(request: NextRequest) {
             ${RECORD_TYPE_SQL} AS record_type,
             ${STAGE_SQL} AS pipeline_stage,
             COALESCE(j.status_name, 'Unknown') AS status_name,
-            ${VALUE_SQL} AS value,
-            COALESCE(j.approved_invoice_due, j.parent_approved_invoice_due, 0) AS ar_due,
+            CASE WHEN ${STAGE_SQL} = 'Accounts Receivable' THEN ${AR_DUE_SQL} ELSE ${VALUE_SQL} END AS value,
+            ${AR_DUE_SQL} AS ar_due,
             GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - to_timestamp(COALESCE(j.jn_date_status_change, j.jn_date_created)))) / 86400)) AS days_in_status
           FROM jobs j
           WHERE ${OPEN_PIPELINE_WHERE}
@@ -516,6 +524,7 @@ export async function GET(request: NextRequest) {
         "Revenue is JobNimbus only. QuickBooks is intentionally not used on this page.",
         "Current pipeline counts are active, non-archived JobNimbus jobs by current status right now, not a period cohort.",
         "Timing and conversion rates use JobNimbus job_stage_history from 2026-01-21 forward.",
+        "Accounts Receivable value uses collectible AR due, not the full historical job/invoice value, so close-out rows with no balance do not inflate the pipeline.",
         "Forecast buckets are conservative V1 weights from current JobNimbus stage. Timing and conversion tables are shown so the model can be calibrated against real movement history."
       ],
       summary: {
