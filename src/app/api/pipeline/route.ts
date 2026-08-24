@@ -233,8 +233,10 @@ function buildTradeFilter(trade: TradeFilter): string {
   if (trade === "all") return "";
   if (trade === "none") {
     // No trade CF: NONE of the trade install CFs are set to their Yes values
+    // Use IS DISTINCT FROM for null-safe comparison (NULL IS DISTINCT FROM 'value' = true)
+    // Includes jobs with NULL CFs and jobs with "No" or other non-Yes values
     const conditions = Object.entries(TRADE_CF_YES_VALUES)
-      .map(([cf, yesValue]) => `j.${cf} != '${yesValue.replace(/'/g, "''")}'`)
+      .map(([cf, yesValue]) => `j.${cf} IS DISTINCT FROM '${yesValue.replace(/'/g, "''")}'`)
       .join(" AND ");
     return `AND (${conditions})`;
   }
