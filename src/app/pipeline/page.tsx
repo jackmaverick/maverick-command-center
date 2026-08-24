@@ -141,6 +141,7 @@ interface SalesData {
   filters: {
     segment: string | null;
     rep: string | null;
+    roofOnly: boolean;
   };
   summary: {
     totalRevenue: number;
@@ -254,9 +255,11 @@ export default function PipelinePage() {
   });
 
   const { data: salesData, isLoading: salesLoading } = useQuery<SalesData>({
-    queryKey: ["sales-summary", "month"],
+    queryKey: ["sales-summary", "month", roofOnly],
     queryFn: async () => {
-      const res = await fetch("/api/sales?period=month");
+      const params = new URLSearchParams({ period: "month" });
+      if (roofOnly) params.set("roofOnly", "1");
+      const res = await fetch(`/api/sales?${params.toString()}`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Failed to fetch sales data");
       return body;
@@ -374,8 +377,11 @@ export default function PipelinePage() {
         </Card>
         <Card className="border-[#30363d] bg-[#161b22]">
           <CardHeader className="pb-2">
-            <InfoTooltip label="Monthly Close Rate" explanation="Won jobs / total jobs created this month. Uses same definition as Sales page. Won statuses include Sold Job, Production, Invoicing, and Completed stages.">
-              <CardTitle className="text-xs text-[#8b949e]">Monthly Close Rate</CardTitle>
+            <InfoTooltip 
+              label="Monthly Close Rate" 
+              explanation={`Won jobs / total jobs created this month. Uses same definition as Sales page. Won statuses include Sold Job, Production, Invoicing, and Completed stages.${roofOnly ? ' Currently filtered to roof-only jobs (cf_string_24 = 🏠 Y).' : ''}`}
+            >
+              <CardTitle className="text-xs text-[#8b949e]">Monthly Close Rate{roofOnly ? " (Roof)" : ""}</CardTitle>
             </InfoTooltip>
           </CardHeader>
           <CardContent>
@@ -386,7 +392,7 @@ export default function PipelinePage() {
                 <p className="text-2xl font-bold text-[#d29922]">{formatPercent(salesData?.summary.avgCloseRate ?? 0)}</p>
                 {salesData && salesData.summary.totalJobs > 0 && (
                   <p className="text-xs text-[#8b949e]">
-                    {salesData.summary.totalWon}/{salesData.summary.totalJobs}
+                    {salesData.summary.totalWon}/{salesData.summary.totalJobs}{roofOnly ? " roof" : ""}
                   </p>
                 )}
               </div>
