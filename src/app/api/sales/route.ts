@@ -16,15 +16,17 @@ const ACTIVE_REAL_JOB_WHERE = `
   AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|verification|scout_test)'
   AND COALESCE(j.primary_contact_name, '') !~* '(test|dummy|demo|sample|verification)'
 `;
+const ROOF_ONLY_WHERE = `j.cf_string_24 = '🏠 Y'`;
 const EFFECTIVE_INVOICE_DATE = "COALESCE(i.date_invoice, i.jn_date_created)";
 
 function round1(n: number): number { return Math.round(n * 10) / 10; }
 function round2(n: number): number { return Math.round(n * 100) / 100; }
 
-function buildJobFilter(startUnix: number, endUnix: number, segment: Segment | null, repJnid: string | null): { where: string; params: unknown[]; nextIdx: number } {
+function buildJobFilter(startUnix: number, endUnix: number, segment: Segment | null, repJnid: string | null, roofOnly: boolean): { where: string; params: unknown[]; nextIdx: number } {
   const conditions = [`j.jn_date_created >= $1`, `j.jn_date_created < $2`, ACTIVE_REAL_JOB_WHERE];
   const params: unknown[] = [startUnix, endUnix];
   let idx = 3;
+  if (roofOnly) { conditions.push(ROOF_ONLY_WHERE); }
   if (segment) { conditions.push(segmentWhereClause(idx)); params.push(segment); idx++; }
   if (repJnid === "unassigned") {
     conditions.push("j.sales_rep_jnid IS NULL");
@@ -36,7 +38,7 @@ function buildJobFilter(startUnix: number, endUnix: number, segment: Segment | n
   return { where: conditions.join(" AND "), params, nextIdx: idx };
 }
 
-function buildInvoiceFilter(startUnix: number, endUnix: number, segment: Segment | null, repJnid: string | null): { where: string; params: unknown[]; nextIdx: number } {
+function buildInvoiceFilter(startUnix: number, endUnix: number, segment: Segment | null, repJnid: string | null, roofOnly: boolean): { where: string; params: unknown[]; nextIdx: number } {
   const conditions = [
     `i.is_active = true`,
     `COALESCE(i.status_name, i.status::text, '') = ANY($1::text[])`,
@@ -46,6 +48,7 @@ function buildInvoiceFilter(startUnix: number, endUnix: number, segment: Segment
   ];
   const params: unknown[] = [INVOICED_STATUSES, startUnix, endUnix];
   let idx = 4;
+  if (roofOnly) { conditions.push(ROOF_ONLY_WHERE); }
   if (segment) { conditions.push(segmentWhereClause(idx)); params.push(segment); idx++; }
   if (repJnid === "unassigned") {
     conditions.push("j.sales_rep_jnid IS NULL");
@@ -63,6 +66,8 @@ export async function GET(request: NextRequest) {
     const period = (searchParams.get("period") ?? "month") as PeriodKey;
     const segment = (searchParams.get("segment") as Segment | null) || null;
     const repJnid = searchParams.get("rep_jnid") || null;
+    const roofOnlyParam = searchParams.get("roofOnly");
+    const roofOnly = roofOnlyParam === "1" || roofOnlyParam === "true";
 
     if (!isValidPeriodKey(period)) return NextResponse.json({ error: "Invalid period" }, { status: 400 });
     if (segment && !VALID_SEGMENTS.includes(segment)) return NextResponse.json({ error: "Invalid segment" }, { status: 400 });
@@ -73,6 +78,7 @@ export async function GET(request: NextRequest) {
     const repConditions = [ACTIVE_REAL_JOB_WHERE];
     const repParams: unknown[] = [];
     let repParamIdx = 1;
+    if (roofOnly) { repConditions.push(ROOF_ONLY_WHERE); }
     if (segment) {
       repConditions.push(segmentWhereClause(repParamIdx));
       repParams.push(segment);
@@ -97,8 +103,8 @@ export async function GET(request: NextRequest) {
     const reps = repsRows.filter((r) => r.sales_rep_jnid && r.sales_rep_name);
 
     const repMetrics = await Promise.all(reps.map(async (rep) => {
-      const repFilter = buildJobFilter(startUnix, endUnix, segment, rep.sales_rep_jnid);
-      const repInvoiceFilter = buildInvoiceFilter(startUnix, endUnix, segment, rep.sales_rep_jnid);
+      const repFilter = buildJobFilter(startUnix, endUnix, segment, rep.sales_rep_jnid, roofOnly);
+      const repInvoiceFilter = buildInvoiceFilter(startUnix, endUnix, segment, rep.sales_rep_jnid, roofOnly);
 
       const [totalRes, wonRes, lostRes, revenueRes] = await Promise.all([
         query<{ count: string }>(`SELECT COUNT(*) AS count FROM jobs j WHERE ${repFilter.where}`, repFilter.params),
@@ -114,7 +120,7 @@ export async function GET(request: NextRequest) {
 
       const segmentBreakdown: Record<string, number> = {};
       for (const seg of VALID_SEGMENTS) {
-        const segFilter = buildJobFilter(startUnix, endUnix, seg, rep.sales_rep_jnid);
+        const segFilter = buildJobFilter(startUnix, endUnix, seg, rep.sales_rep_jnid, roofOnly);
         const [segTotal, segWon, segLost] = await Promise.all([
           query<{ count: string }>(`SELECT COUNT(*) AS count FROM jobs j WHERE ${segFilter.where}`, segFilter.params),
           query<{ count: string }>(`SELECT COUNT(*) AS count FROM jobs j WHERE ${segFilter.where} AND j.status_name = ANY($${segFilter.nextIdx}::text[])`, [...segFilter.params, WON_STATUSES]),
@@ -153,7 +159,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       period: { key: period, label: range.label, start: range.start.toISOString(), end: range.end.toISOString() },
-      filters: { segment, rep: repJnid },
+      filters: { segment, rep: repJnid, roofOnly },
       summary: { totalRevenue, avgCloseRate, avgCycleTimeDays: 0, activeReps: repMetrics.length, totalJobs, totalWon },
       reps: repMetrics,
     });

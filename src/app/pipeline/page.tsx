@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { InfoTooltip } from "@/components/InfoTooltip";
 import { formatCurrency, formatPercent } from "@/lib/dates";
 
@@ -108,6 +109,7 @@ interface PipelineData {
   mode: string;
   cohortStart: string;
   recordTypeFilter: string | null;
+  roofOnlyFilter: boolean;
   sourceNotes: string[];
   summary: {
     activeJobs: number;
@@ -139,6 +141,7 @@ interface SalesData {
   filters: {
     segment: string | null;
     rep: string | null;
+    roofOnly: boolean;
   };
   summary: {
     totalRevenue: number;
@@ -234,12 +237,16 @@ function forecastFormula(bucket: string) {
 
 export default function PipelinePage() {
   const [recordType, setRecordType] = useState("all");
+  const [roofOnly, setRoofOnly] = useState(false);
 
   const { data, isLoading, isError, error } = useQuery<PipelineData>({
-    queryKey: ["current-pipeline", recordType],
+    queryKey: ["current-pipeline", recordType, roofOnly],
     queryFn: async () => {
-      const recordTypeParam = recordType === "all" ? "" : `?recordType=${recordType}`;
-      const res = await fetch(`/api/pipeline${recordTypeParam}`);
+      const params = new URLSearchParams();
+      if (recordType !== "all") params.set("recordType", recordType);
+      if (roofOnly) params.set("roofOnly", "1");
+      const queryString = params.toString();
+      const res = await fetch(`/api/pipeline${queryString ? `?${queryString}` : ""}`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Failed to fetch pipeline data");
       return body;
@@ -248,9 +255,11 @@ export default function PipelinePage() {
   });
 
   const { data: salesData, isLoading: salesLoading } = useQuery<SalesData>({
-    queryKey: ["sales-summary", "month"],
+    queryKey: ["sales-summary", "month", roofOnly],
     queryFn: async () => {
-      const res = await fetch("/api/sales?period=month");
+      const params = new URLSearchParams({ period: "month" });
+      if (roofOnly) params.set("roofOnly", "1");
+      const res = await fetch(`/api/sales?${params.toString()}`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Failed to fetch sales data");
       return body;
@@ -323,20 +332,30 @@ export default function PipelinePage() {
           <p className="max-w-3xl text-sm text-[#8b949e]">
             Live active jobs by current JobNimbus stage, plus timing and conversion rates from JobNimbus history. Revenue is JobNimbus only. QuickBooks is out of the chat, as requested.
           </p>
-          {data && <p className="mt-2 text-xs text-[#484f58]">Updated {generatedLabel(data.generatedAt)} · timing cohort starts {data.cohortStart}</p>}
+          {data && <p className="mt-2 text-xs text-[#484f58]">Updated {generatedLabel(data.generatedAt)} · timing cohort starts {data.cohortStart}{data.roofOnlyFilter && " · Roof only"}</p>}
         </div>
-        <Select value={recordType} onValueChange={setRecordType}>
-          <SelectTrigger className="w-[210px] border-[#30363d] bg-[#161b22] text-[#e6edf3]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="border-[#30363d] bg-[#161b22]">
-            {recordTypeOptions.map((option) => (
-              <SelectItem key={option.value} value={option.value} className="text-[#e6edf3] focus:bg-[#21262d] focus:text-[#e6edf3]">
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button
+            variant={roofOnly ? "default" : "outline"}
+            size="sm"
+            onClick={() => setRoofOnly(!roofOnly)}
+            className="w-[210px] sm:w-auto"
+          >
+            {roofOnly ? "✓ " : ""}Roof Only
+          </Button>
+          <Select value={recordType} onValueChange={setRecordType}>
+            <SelectTrigger className="w-[210px] border-[#30363d] bg-[#161b22] text-[#e6edf3]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="border-[#30363d] bg-[#161b22]">
+              {recordTypeOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value} className="text-[#e6edf3] focus:bg-[#21262d] focus:text-[#e6edf3]">
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-7">
@@ -358,8 +377,11 @@ export default function PipelinePage() {
         </Card>
         <Card className="border-[#30363d] bg-[#161b22]">
           <CardHeader className="pb-2">
-            <InfoTooltip label="Monthly Close Rate" explanation="Won jobs / total jobs created this month. Uses same definition as Sales page. Won statuses include Sold Job, Production, Invoicing, and Completed stages.">
-              <CardTitle className="text-xs text-[#8b949e]">Monthly Close Rate</CardTitle>
+            <InfoTooltip 
+              label="Monthly Close Rate" 
+              explanation={`Won jobs / total jobs created this month. Uses same definition as Sales page. Won statuses include Sold Job, Production, Invoicing, and Completed stages.${roofOnly ? ' Currently filtered to roof-only jobs (cf_string_24 = 🏠 Y).' : ''}`}
+            >
+              <CardTitle className="text-xs text-[#8b949e]">Monthly Close Rate{roofOnly ? " (Roof)" : ""}</CardTitle>
             </InfoTooltip>
           </CardHeader>
           <CardContent>
@@ -370,7 +392,7 @@ export default function PipelinePage() {
                 <p className="text-2xl font-bold text-[#d29922]">{formatPercent(salesData?.summary.avgCloseRate ?? 0)}</p>
                 {salesData && salesData.summary.totalJobs > 0 && (
                   <p className="text-xs text-[#8b949e]">
-                    {salesData.summary.totalWon}/{salesData.summary.totalJobs}
+                    {salesData.summary.totalWon}/{salesData.summary.totalJobs}{roofOnly ? " roof" : ""}
                   </p>
                 )}
               </div>
