@@ -20,9 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
 import { InfoTooltip } from "@/components/InfoTooltip";
 import { formatCurrency, formatPercent } from "@/lib/dates";
+import { TRADE_FILTERS, type TradeFilter } from "@/lib/constants";
 
 interface CurrentStage {
   stage: string;
@@ -109,17 +109,14 @@ interface PipelineData {
   mode: string;
   cohortStart: string;
   recordTypeFilter: string | null;
-  roofOnlyFilter: boolean;
+  tradeFilter: TradeFilter;
   sourceNotes: string[];
   summary: {
     activeJobs: number;
     pipelineValue: number;
     arDue: number;
     leads: number;
-    appointmentsScheduled: number;
-    appointmentsRan: number;
-    productionJobs: number;
-    accountsReceivableJobs: number;
+    estimating: number;
   };
   currentStages: CurrentStage[];
   currentStatuses: CurrentStatus[];
@@ -141,7 +138,7 @@ interface SalesData {
   filters: {
     segment: string | null;
     rep: string | null;
-    roofOnly: boolean;
+    trade: TradeFilter;
   };
   summary: {
     totalRevenue: number;
@@ -162,13 +159,21 @@ const recordTypeOptions = [
   { value: "other", label: "Other" },
 ];
 
+const tradeFilterOptions: { value: TradeFilter; label: string; description?: string }[] = [
+  { value: "all", label: TRADE_FILTERS.all.label, description: TRADE_FILTERS.all.description },
+  { value: "none", label: TRADE_FILTERS.none.label, description: TRADE_FILTERS.none.description },
+  { value: "roof", label: TRADE_FILTERS.roof.label },
+  { value: "gutters", label: TRADE_FILTERS.gutters.label },
+  { value: "windows", label: TRADE_FILTERS.windows.label },
+];
+
+// JobNimbus stage colors (pre-sold pipeline shows Lead + Estimating only)
 const stageColors: Record<string, string> = {
   Lead: "#58a6ff",
-  "Appointment Scheduled": "#79c0ff",
-  "Appointment Ran": "#a371f7",
   Estimating: "#d29922",
   Production: "#f0883e",
   "Accounts Receivable": "#3fb950",
+  Completed: "#3fb950",
   Other: "#8b949e",
 };
 
@@ -218,8 +223,8 @@ function NumberTooltip({ active, payload, label }: { active?: boolean; payload?:
   );
 }
 
-const stageFormula = "status_name mapped to stage from the API status map";
-const openJobFilter = "active + not archived + not deleted + not test/demo + status not Lost/Dead/No Damage/Internal Supplementing/Paid & Closed";
+const stageFormula = "status_name mapped to JobNimbus stage (Lead stage includes appointments)";
+const openJobFilter = "PRE-SOLD ONLY: active + not archived + not deleted + not test/demo + not Warranty record type + status not Lost/Dead/No Damage/Internal Supplementing/Paid & Closed + JN stage in (Lead, Estimating)";
 
 function stageValueFormula(stage: string) {
   if (stage === "Accounts Receivable") return "sum(active Sent/Open/Closed invoice balance due)";
@@ -237,14 +242,14 @@ function forecastFormula(bucket: string) {
 
 export default function PipelinePage() {
   const [recordType, setRecordType] = useState("all");
-  const [roofOnly, setRoofOnly] = useState(false);
+  const [tradeFilter, setTradeFilter] = useState<TradeFilter>("all");
 
   const { data, isLoading, isError, error } = useQuery<PipelineData>({
-    queryKey: ["current-pipeline", recordType, roofOnly],
+    queryKey: ["current-pipeline", recordType, tradeFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (recordType !== "all") params.set("recordType", recordType);
-      if (roofOnly) params.set("roofOnly", "1");
+      if (tradeFilter !== "all") params.set("trade", tradeFilter);
       const queryString = params.toString();
       const res = await fetch(`/api/pipeline${queryString ? `?${queryString}` : ""}`);
       const body = await res.json().catch(() => ({}));
@@ -255,10 +260,10 @@ export default function PipelinePage() {
   });
 
   const { data: salesData, isLoading: salesLoading } = useQuery<SalesData>({
-    queryKey: ["sales-summary", "month", roofOnly],
+    queryKey: ["sales-summary", "month", tradeFilter],
     queryFn: async () => {
       const params = new URLSearchParams({ period: "month" });
-      if (roofOnly) params.set("roofOnly", "1");
+      if (tradeFilter !== "all") params.set("trade", tradeFilter);
       const res = await fetch(`/api/sales?${params.toString()}`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Failed to fetch sales data");
@@ -324,25 +329,40 @@ export default function PipelinePage() {
     );
   }
 
+  const tradeFilterLabel = tradeFilter !== "all" 
+    ? ` (${tradeFilterOptions.find(opt => opt.value === tradeFilter)?.label})` 
+    : "";
+
   return (
     <div>
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="mb-1 text-2xl font-bold text-[#e6edf3]">Current JobNimbus Pipeline</h1>
+          <h1 className="mb-1 text-2xl font-bold text-[#e6edf3]">Pre-Sold Pipeline</h1>
           <p className="max-w-3xl text-sm text-[#8b949e]">
-            Live active jobs by current JobNimbus stage, plus timing and conversion rates from JobNimbus history. Revenue is JobNimbus only. QuickBooks is out of the chat, as requested.
+            Live pre-sold jobs in Lead and Estimating JobNimbus stages (Lead includes appointments). Excludes Production, AR, Completed stages, and Warranty jobs. Timing/conversion use full JN history.
           </p>
-          {data && <p className="mt-2 text-xs text-[#484f58]">Updated {generatedLabel(data.generatedAt)} · timing cohort starts {data.cohortStart}{data.roofOnlyFilter && " · Roof only"}</p>}
+          {data && <p className="mt-2 text-xs text-[#484f58]">Updated {generatedLabel(data.generatedAt)} · timing cohort starts {data.cohortStart}{tradeFilter !== "all" && ` · ${tradeFilterOptions.find(opt => opt.value === tradeFilter)?.label}`}</p>}
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Button
-            variant={roofOnly ? "default" : "outline"}
-            size="sm"
-            onClick={() => setRoofOnly(!roofOnly)}
-            className="w-[210px] sm:w-auto"
-          >
-            {roofOnly ? "✓ " : ""}Roof Only
-          </Button>
+          <Select value={tradeFilter} onValueChange={(value) => setTradeFilter(value as TradeFilter)}>
+            <SelectTrigger className="w-[210px] border-[#30363d] bg-[#161b22] text-[#e6edf3]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="border-[#30363d] bg-[#161b22]">
+              {tradeFilterOptions.map((option) => (
+                <SelectItem 
+                  key={option.value} 
+                  value={option.value} 
+                  className="text-[#e6edf3] focus:bg-[#21262d] focus:text-[#e6edf3]"
+                >
+                  <div className="flex flex-col">
+                    <span>{option.label}</span>
+                    {option.description && <span className="text-xs text-[#8b949e]">{option.description}</span>}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select value={recordType} onValueChange={setRecordType}>
             <SelectTrigger className="w-[210px] border-[#30363d] bg-[#161b22] text-[#e6edf3]">
               <SelectValue />
@@ -358,7 +378,7 @@ export default function PipelinePage() {
         </div>
       </div>
 
-      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-7">
+      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-5">
         <Card className="border-[#30363d] bg-[#161b22]">
           <CardHeader className="pb-2"><CardTitle className="text-xs text-[#8b949e]">Active Jobs</CardTitle></CardHeader>
           <CardContent>{isLoading ? <Skeleton className="h-8 w-16 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#e6edf3]">{data?.summary.activeJobs ?? 0}</p>}</CardContent>
@@ -368,20 +388,16 @@ export default function PipelinePage() {
           <CardContent>{isLoading ? <Skeleton className="h-8 w-16 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#58a6ff]">{data?.summary.leads ?? 0}</p>}</CardContent>
         </Card>
         <Card className="border-[#30363d] bg-[#161b22]">
-          <CardHeader className="pb-2"><CardTitle className="text-xs text-[#8b949e]">Appointments</CardTitle></CardHeader>
-          <CardContent>{isLoading ? <Skeleton className="h-8 w-16 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#79c0ff]">{data?.summary.appointmentsScheduled ?? 0}</p>}</CardContent>
-        </Card>
-        <Card className="border-[#30363d] bg-[#161b22]">
-          <CardHeader className="pb-2"><CardTitle className="text-xs text-[#8b949e]">Appt Ran</CardTitle></CardHeader>
-          <CardContent>{isLoading ? <Skeleton className="h-8 w-16 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#a371f7]">{data?.summary.appointmentsRan ?? 0}</p>}</CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-xs text-[#8b949e]">Estimating</CardTitle></CardHeader>
+          <CardContent>{isLoading ? <Skeleton className="h-8 w-16 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#d29922]">{data?.summary.estimating ?? 0}</p>}</CardContent>
         </Card>
         <Card className="border-[#30363d] bg-[#161b22]">
           <CardHeader className="pb-2">
             <InfoTooltip 
               label="Monthly Close Rate" 
-              explanation={`Won jobs / total jobs created this month. Uses same definition as Sales page. Won statuses include Sold Job, Production, Invoicing, and Completed stages.${roofOnly ? ' Currently filtered to roof-only jobs (cf_string_24 = 🏠 Y).' : ''}`}
+              explanation={`Won jobs / total jobs created this month. Uses same definition as Sales page. Won statuses include Sold Job, Production, Invoicing, and Completed stages.${tradeFilter !== "all" ? ` Currently filtered to ${tradeFilterOptions.find(opt => opt.value === tradeFilter)?.label} jobs.` : ''}`}
             >
-              <CardTitle className="text-xs text-[#8b949e]">Monthly Close Rate{roofOnly ? " (Roof)" : ""}</CardTitle>
+              <CardTitle className="text-xs text-[#8b949e]">Monthly Close Rate{tradeFilterLabel}</CardTitle>
             </InfoTooltip>
           </CardHeader>
           <CardContent>
@@ -392,7 +408,7 @@ export default function PipelinePage() {
                 <p className="text-2xl font-bold text-[#d29922]">{formatPercent(salesData?.summary.avgCloseRate ?? 0)}</p>
                 {salesData && salesData.summary.totalJobs > 0 && (
                   <p className="text-xs text-[#8b949e]">
-                    {salesData.summary.totalWon}/{salesData.summary.totalJobs}{roofOnly ? " roof" : ""}
+                    {salesData.summary.totalWon}/{salesData.summary.totalJobs}{tradeFilterLabel}
                   </p>
                 )}
               </div>
@@ -418,8 +434,8 @@ export default function PipelinePage() {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-[#8b949e]">Active Jobs</p>
-              <p className="mt-2 font-mono text-lg text-[#e6edf3]">count(open jobs)</p>
-              <p className="mt-2 text-xs text-[#8b949e]">Open job = {openJobFilter}.</p>
+              <p className="mt-2 font-mono text-lg text-[#e6edf3]">count(pre-sold jobs)</p>
+              <p className="mt-2 text-xs text-[#8b949e]">Pre-sold job = {openJobFilter}.</p>
             </div>
             <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-[#8b949e]">Open Value</p>
@@ -471,7 +487,7 @@ export default function PipelinePage() {
             </div>
           </div>
 
-          <p className="text-xs text-[#8b949e]">Stage counts use {stageFormula}. The exact job-level rows are in Largest Current Jobs at the bottom, and the status rollup is in Current Status Buckets.</p>
+          <p className="text-xs text-[#8b949e]">JobNimbus stages: Lead (includes all pre-estimate statuses + appointments) and Estimating. Statuses sit underneath stages. The exact job-level rows are in Largest Pre-Sold Jobs at the bottom, and the status rollup is in Current Status Buckets.</p>
         </CardContent>
       </Card>
 
@@ -492,8 +508,8 @@ export default function PipelinePage() {
       <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card className="border-[#30363d] bg-[#161b22]">
           <CardHeader>
-            <CardTitle className="text-sm text-[#e6edf3]">Jobs by Current Stage</CardTitle>
-            <p className="text-xs text-[#8b949e]">Where every active JobNimbus job sits right now.</p>
+            <CardTitle className="text-sm text-[#e6edf3]">Pre-Sold Jobs by JN Stage</CardTitle>
+            <p className="text-xs text-[#8b949e]">JobNimbus Lead and Estimating stages (Lead includes appointments).</p>
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-[280px] bg-[#21262d]" /> : (
@@ -512,8 +528,8 @@ export default function PipelinePage() {
 
         <Card className="border-[#30363d] bg-[#161b22]">
           <CardHeader>
-            <CardTitle className="text-sm text-[#e6edf3]">Open JobNimbus Value by Stage</CardTitle>
-            <p className="text-xs text-[#8b949e]">Current estimated value by stage. AR uses balance due, not full job value.</p>
+            <CardTitle className="text-sm text-[#e6edf3]">Pre-Sold Pipeline Value by Stage</CardTitle>
+            <p className="text-xs text-[#8b949e]">Estimated value of pre-sold stages (Lead through Estimating).</p>
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-[280px] bg-[#21262d]" /> : (
@@ -554,10 +570,10 @@ export default function PipelinePage() {
 
       <Card className="mb-8 border-[#30363d] bg-[#161b22]">
         <CardHeader>
-          <InfoTooltip label="Revenue Timing Forecast" explanation="Conservative V1 weights from current JobNimbus stage. Use the timing/conversion tables below to calibrate this model as the history gets cleaner.">
-            <CardTitle className="text-sm text-[#e6edf3]">Revenue Timing Forecast</CardTitle>
+          <InfoTooltip label="Pre-Sold Pipeline Forecast" explanation="Conservative V1 weights from current JobNimbus stage. Pre-sold stages only (Lead through Estimating). Use the timing/conversion tables below to calibrate this model as the history gets cleaner.">
+            <CardTitle className="text-sm text-[#e6edf3]">Pre-Sold Pipeline Forecast</CardTitle>
           </InfoTooltip>
-          <p className="text-xs text-[#8b949e]">How close the current pipeline is to production or bank cash.</p>
+          <p className="text-xs text-[#8b949e]">Weighted forecast of pre-sold pipeline stages.</p>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
@@ -672,8 +688,8 @@ export default function PipelinePage() {
 
       <Card className="border-[#30363d] bg-[#161b22]">
         <CardHeader>
-          <CardTitle className="text-sm text-[#e6edf3]">Largest Current Jobs</CardTitle>
-          <p className="text-xs text-[#8b949e]">The jobs that drive the pipeline number. Click through to JobNimbus.</p>
+          <CardTitle className="text-sm text-[#e6edf3]">Largest Pre-Sold Jobs</CardTitle>
+          <p className="text-xs text-[#8b949e]">Top jobs in pre-sold stages (Lead through Estimating). Click through to JobNimbus.</p>
         </CardHeader>
         <CardContent className="max-h-[520px] overflow-auto">
           <table className="w-full text-sm">

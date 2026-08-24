@@ -23,6 +23,29 @@ export const SEGMENTS = {
 
 export type Segment = keyof typeof SEGMENTS;
 
+// Trade filter definitions for pipeline
+// Uses install custom field strings (exact emoji + Y match required)
+export const TRADE_FILTERS = {
+  all: { label: "All Trades", description: "All jobs (excludes Warranty record type)" },
+  none: { 
+    label: "No Trade CF", 
+    description: "Jobs with NO trade install custom fields set (none of cf_string_24/25/26/27 equal their Yes values). Useful for DQ/tagging review."
+  },
+  roof: { label: "Roof", cf: "cf_string_24", value: "🏠 Y" },
+  gutters: { label: "Gutters", cf: "cf_string_26", value: "💧Y" },
+  windows: { label: "Windows", cf: "cf_string_27", value: "🪟 Y" },
+} as const;
+
+export type TradeFilter = keyof typeof TRADE_FILTERS;
+
+// Trade install custom field mappings (for "no trade CF" predicate)
+export const TRADE_CF_YES_VALUES = {
+  cf_string_24: "🏠 Y",   // Roof
+  cf_string_25: "🧱 Y",   // Siding (not in UI filter but included in "no trade CF" check)
+  cf_string_26: "💧Y",    // Gutters (NO SPACE between emoji and Y)
+  cf_string_27: "🪟 Y",   // Windows
+} as const;
+
 // Pipeline stage definitions kept for backward compatibility with sales funnel
 export const STAGES = [
   "Lead",
