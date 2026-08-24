@@ -129,6 +129,27 @@ interface PipelineData {
   topJobs: TopJob[];
 }
 
+interface SalesData {
+  period: {
+    key: string;
+    label: string;
+    start: string;
+    end: string;
+  };
+  filters: {
+    segment: string | null;
+    rep: string | null;
+  };
+  summary: {
+    totalRevenue: number;
+    avgCloseRate: number;
+    avgCycleTimeDays: number;
+    activeReps: number;
+    totalJobs: number;
+    totalWon: number;
+  };
+}
+
 const recordTypeOptions = [
   { value: "all", label: "All Record Types" },
   { value: "retail", label: "Retail" },
@@ -226,6 +247,17 @@ export default function PipelinePage() {
     refetchInterval: 60_000,
   });
 
+  const { data: salesData, isLoading: salesLoading } = useQuery<SalesData>({
+    queryKey: ["sales-summary", "month"],
+    queryFn: async () => {
+      const res = await fetch("/api/sales?period=month");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Failed to fetch sales data");
+      return body;
+    },
+    refetchInterval: 60_000,
+  });
+
   const selectedRecordType = data?.recordTypes.find((row) => row.recordType === recordType);
 
   const statusRows = useMemo(() => {
@@ -307,7 +339,7 @@ export default function PipelinePage() {
         </Select>
       </div>
 
-      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-6">
+      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-7">
         <Card className="border-[#30363d] bg-[#161b22]">
           <CardHeader className="pb-2"><CardTitle className="text-xs text-[#8b949e]">Active Jobs</CardTitle></CardHeader>
           <CardContent>{isLoading ? <Skeleton className="h-8 w-16 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#e6edf3]">{data?.summary.activeJobs ?? 0}</p>}</CardContent>
@@ -323,6 +355,27 @@ export default function PipelinePage() {
         <Card className="border-[#30363d] bg-[#161b22]">
           <CardHeader className="pb-2"><CardTitle className="text-xs text-[#8b949e]">Appt Ran</CardTitle></CardHeader>
           <CardContent>{isLoading ? <Skeleton className="h-8 w-16 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#a371f7]">{data?.summary.appointmentsRan ?? 0}</p>}</CardContent>
+        </Card>
+        <Card className="border-[#30363d] bg-[#161b22]">
+          <CardHeader className="pb-2">
+            <InfoTooltip label="Monthly Close Rate" explanation="Won jobs / total jobs created this month. Uses same definition as Sales page. Won statuses include Sold Job, Production, Invoicing, and Completed stages.">
+              <CardTitle className="text-xs text-[#8b949e]">Monthly Close Rate</CardTitle>
+            </InfoTooltip>
+          </CardHeader>
+          <CardContent>
+            {salesLoading ? (
+              <Skeleton className="h-8 w-16 bg-[#21262d]" />
+            ) : (
+              <div>
+                <p className="text-2xl font-bold text-[#d29922]">{formatPercent(salesData?.summary.avgCloseRate ?? 0)}</p>
+                {salesData && salesData.summary.totalJobs > 0 && (
+                  <p className="text-xs text-[#8b949e]">
+                    {salesData.summary.totalWon}/{salesData.summary.totalJobs}
+                  </p>
+                )}
+              </div>
+            )}
+          </CardContent>
         </Card>
         <Card className="border-[#30363d] bg-[#161b22]">
           <CardHeader className="pb-2"><InfoTooltip label="Open Value" explanation="JobNimbus value still in play. For Accounts Receivable this uses collectible AR due, not full historical job value. This is not QuickBooks."><CardTitle className="text-xs text-[#8b949e]">Open Value</CardTitle></InfoTooltip></CardHeader>
