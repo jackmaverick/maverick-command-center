@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { ORDERED_STATUSES, STATUS_TO_STAGE, type Stage } from "@/lib/constants";
+import { ORDERED_STATUSES, STATUS_TO_STAGE, type Stage, type TradeFilter, TRADE_CF_YES_VALUES } from "@/lib/constants";
 
 const TIMING_COHORT_START = "2026-01-21";
 const JOBNIMBUS_BASE_URL = "https://app.jobnimbus.com/job/";
@@ -23,12 +23,49 @@ const ACTIVE_REAL_JOB_WHERE = `
   AND COALESCE(j.primary_contact_name, '') !~* '(test|dummy|demo|sample|verification)'
 `;
 
+// Base open pipeline filter (active, real jobs, not in lost/dead statuses, not Warranty record type)
 const OPEN_PIPELINE_WHERE = `
   ${ACTIVE_REAL_JOB_WHERE}
   AND COALESCE(j.status_name, '') NOT IN ('Lost', 'Dead', 'No Damage', 'Internal Supplementing', 'Paid & Closed')
+  AND COALESCE(j.record_type_name, '') != 'Warranty'
 `;
 
-const ROOF_ONLY_WHERE = `j.cf_string_24 = '🏠 Y'`;
+// JobNimbus stage mapping (aligns with actual JN stage model per Jack)
+// For pre-sold pipeline: Lead stage includes all pre-estimate statuses (Lead + Appointments)
+const STAGE_SQL = `
+  CASE
+    WHEN COALESCE(j.status_name, '') IN (
+      'Lead', 'New', 'Cold Lead', 'Storm Alert',
+      'Appointment Scheduled', 'Adjuster Appt Scheduled',
+      'Appt Ran', 'Appointment Ran', 'Adjuster Appt Ran'
+    ) THEN 'Lead'
+    WHEN COALESCE(j.status_name, '') IN (
+      'Estimating', 'Estimate Sent', 'Claim Review', 'Scope Approval', 'Waiting on Claim'
+    ) THEN 'Estimating'
+    WHEN COALESCE(j.status_name, '') IN (
+      'Sold Job', 'Signed Contract', 'Fully Approved', 'Deductible Collected',
+      'Production Ready', 'Job Scheduled', 'In Progress', 'In Production',
+      'Insurance Pending', 'Insurance Pending/Cont Skipped', 'Pre Production Supplementing',
+      'Future Work', 'Needs Rescheduling', 'City / HOA Approval'
+    ) THEN 'Production'
+    WHEN COALESCE(j.status_name, '') IN (
+      'Invoiced', 'Final Invoicing', 'Deductible Invoice Sent', 'Final Invoice Sent',
+      'Pending Final Payment', 'Job Close Out', 'Close Out In Progress',
+      'Project Review In Progress', 'Back End Job Audit'
+    ) THEN 'Accounts Receivable'
+    WHEN COALESCE(j.status_name, '') IN (
+      'Paid & Closed', 'All Work Completed', 'All Work Complete',
+      'Work Completed Approved', 'Repair Completed Approved',
+      'Job Completed', 'Warranty Complete'
+    ) THEN 'Completed'
+    ELSE 'Other'
+  END
+`;
+
+// PRE-SOLD STAGES ONLY: Limit pipeline to Lead and Estimating JN stages (excludes Production, AR, Completed)
+const PRE_SOLD_STAGE_FILTER = `
+  AND (${STAGE_SQL}) IN ('Lead', 'Estimating')
+`;
 
 const VALUE_SQL = `
   GREATEST(
@@ -57,25 +94,13 @@ const AR_DUE_SQL = `
   )
 `;
 
-const STAGE_SQL = `
-  CASE
-    WHEN COALESCE(j.status_name, '') IN ('Lead', 'New', 'Cold Lead', 'Storm Alert') THEN 'Lead'
-    WHEN COALESCE(j.status_name, '') IN ('Appointment Scheduled', 'Adjuster Appt Scheduled') THEN 'Appointment Scheduled'
-    WHEN COALESCE(j.status_name, '') IN ('Appt Ran', 'Appointment Ran', 'Adjuster Appt Ran') THEN 'Appointment Ran'
-    WHEN COALESCE(j.status_name, '') IN ('Estimating', 'Estimate Sent', 'Claim Review', 'Scope Approval', 'Waiting on Claim') THEN 'Estimating'
-    WHEN COALESCE(j.status_name, '') IN ('Invoiced', 'Final Invoicing', 'Deductible Invoice Sent', 'Final Invoice Sent', 'Pending Final Payment', 'Job Close Out', 'Close Out In Progress', 'Project Review In Progress', 'Back End Job Audit') THEN 'Accounts Receivable'
-    WHEN COALESCE(j.status_name, '') IN ('Sold Job', 'Signed Contract', 'Fully Approved', 'Deductible Collected', 'Production Ready', 'Job Scheduled', 'In Progress', 'In Production', 'Insurance Pending', 'Insurance Pending/Cont Skipped', 'Pre Production Supplementing', 'Future Work', 'Needs Rescheduling', 'City / HOA Approval') THEN 'Production'
-    ELSE 'Other'
-  END
-`;
-
+// JobNimbus stage order (pre-sold pipeline shows Lead + Estimating only)
 const STAGE_ORDER: Record<string, number> = {
   Lead: 1,
-  "Appointment Scheduled": 2,
-  "Appointment Ran": 3,
-  Estimating: 4,
-  Production: 5,
-  "Accounts Receivable": 6,
+  Estimating: 2,
+  Production: 3,
+  "Accounts Receivable": 4,
+  Completed: 5,
   Other: 99,
 };
 
@@ -204,20 +229,42 @@ function recordTypeLabel(recordType: string): string {
   return RECORD_TYPE_LABELS[recordType] ?? recordType.replaceAll("_", " ");
 }
 
+function buildTradeFilter(trade: TradeFilter): string {
+  if (trade === "all") return "";
+  if (trade === "none") {
+    // No trade CF: NONE of the trade install CFs are set to their Yes values
+    // Use IS DISTINCT FROM for null-safe comparison (NULL IS DISTINCT FROM 'value' = true)
+    // Includes jobs with NULL CFs and jobs with "No" or other non-Yes values
+    const conditions = Object.entries(TRADE_CF_YES_VALUES)
+      .map(([cf, yesValue]) => `j.${cf} IS DISTINCT FROM '${yesValue.replace(/'/g, "''")}'`)
+      .join(" AND ");
+    return `AND (${conditions})`;
+  }
+  // Specific trade filter (roof, gutters, windows)
+  const tradeMap: Record<Exclude<TradeFilter, "all" | "none">, { cf: string; value: string }> = {
+    roof: { cf: "cf_string_24", value: "🏠 Y" },
+    gutters: { cf: "cf_string_26", value: "💧Y" },
+    windows: { cf: "cf_string_27", value: "🪟 Y" },
+  };
+  const config = tradeMap[trade as Exclude<TradeFilter, "all" | "none">];
+  if (!config) return "";
+  return `AND j.${config.cf} = '${config.value.replace(/'/g, "''")}'`;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const recordTypeParam = request.nextUrl.searchParams.get("recordType");
     const recordType = recordTypeParam && TRACKED_RECORD_TYPES.includes(recordTypeParam)
       ? recordTypeParam
       : null;
-    const roofOnlyParam = request.nextUrl.searchParams.get("roofOnly");
-    const roofOnly = roofOnlyParam === "1" || roofOnlyParam === "true";
+    const tradeParam = (request.nextUrl.searchParams.get("trade") || "all") as TradeFilter;
+    const trade = ["all", "none", "roof", "gutters", "windows"].includes(tradeParam) ? tradeParam : "all";
     
     const recordTypeFilter = recordType ? "AND record_type = $1" : "";
     const recordTypeParams = recordType ? [recordType] : [];
     
-    const roofFilter = roofOnly ? `AND ${ROOF_ONLY_WHERE}` : "";
-    const openPipelineWhere = `${OPEN_PIPELINE_WHERE}${roofFilter}`;
+    const tradeFilter = buildTradeFilter(trade);
+    const openPipelineWhere = `${OPEN_PIPELINE_WHERE}${PRE_SOLD_STAGE_FILTER}${tradeFilter}`;
 
     const [
       currentStages,
@@ -320,7 +367,6 @@ export async function GET(request: NextRequest) {
           AND EXTRACT(EPOCH FROM h.duration_in_previous_stage) >= 0
           AND EXTRACT(EPOCH FROM h.duration_in_previous_stage) <= 365 * 86400
           AND ${ACTIVE_REAL_JOB_WHERE}
-          ${roofFilter}
         GROUP BY record_type, h.from_stage_name, h.to_stage_name
         HAVING COUNT(*) >= 2
         ORDER BY record_type, from_status, to_status
@@ -339,7 +385,6 @@ export async function GET(request: NextRequest) {
             AND EXTRACT(EPOCH FROM h.duration_in_previous_stage) >= 0
             AND EXTRACT(EPOCH FROM h.duration_in_previous_stage) <= 365 * 86400
             AND ${ACTIVE_REAL_JOB_WHERE}
-            ${roofFilter}
         )
         SELECT
           record_type,
@@ -366,7 +411,6 @@ export async function GET(request: NextRequest) {
           FROM jobs j
           WHERE j.jn_date_created >= EXTRACT(EPOCH FROM DATE '${TIMING_COHORT_START}')
             AND ${ACTIVE_REAL_JOB_WHERE}
-            ${roofFilter}
         ), from_counts AS (
           SELECT
             c.record_type,
@@ -513,10 +557,7 @@ export async function GET(request: NextRequest) {
         acc.pipelineValue += row.pipelineValue;
         acc.arDue += row.arDue;
         if (row.stage === "Lead") acc.leads = row.jobCount;
-        if (row.stage === "Appointment Scheduled") acc.appointmentsScheduled = row.jobCount;
-        if (row.stage === "Appointment Ran") acc.appointmentsRan = row.jobCount;
-        if (row.stage === "Production") acc.productionJobs = row.jobCount;
-        if (row.stage === "Accounts Receivable") acc.accountsReceivableJobs = row.jobCount;
+        if (row.stage === "Estimating") acc.estimating = row.jobCount;
         return acc;
       },
       {
@@ -524,24 +565,22 @@ export async function GET(request: NextRequest) {
         pipelineValue: 0,
         arDue: 0,
         leads: 0,
-        appointmentsScheduled: 0,
-        appointmentsRan: 0,
-        productionJobs: 0,
-        accountsReceivableJobs: 0,
+        estimating: 0,
       }
     );
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
-      mode: "current_pipeline_snapshot",
+      mode: "pre_sold_pipeline_snapshot",
       cohortStart: TIMING_COHORT_START,
       recordTypeFilter: recordType,
-      roofOnlyFilter: roofOnly,
+      tradeFilter: trade,
       sourceNotes: [
+        "PRE-SOLD PIPELINE ONLY: Shows jobs in Lead and Estimating JobNimbus stages. Lead stage includes all pre-estimate statuses (Lead, New, Cold Lead, Storm Alert, Appointment Scheduled, Appt Ran, etc.). Production, Accounts Receivable, Completed stages, and Warranty record types are excluded from pre-sold pipeline.",
+        "Stages shown match actual JobNimbus stage model: Lead, Estimating, Production, Accounts Receivable, Completed. Statuses sit underneath stages. Pre-sold view displays Lead + Estimating only.",
         "Revenue is JobNimbus only. QuickBooks is intentionally not used on this page.",
         "Current pipeline counts are active, non-archived JobNimbus jobs by current status right now, not a period cohort.",
         "Timing and conversion rates use JobNimbus job_stage_history from 2026-01-21 forward.",
-        "Accounts Receivable value uses collectible invoice balance due from active JobNimbus invoices in Sent/Open/Closed, not the job-level approved_invoice_due fallback or full historical job value.",
         "Forecast buckets are conservative V1 weights from current JobNimbus stage. Timing and conversion tables are shown so the model can be calibrated against real movement history."
       ],
       summary: {
