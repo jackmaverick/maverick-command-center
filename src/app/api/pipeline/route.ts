@@ -28,6 +28,8 @@ const OPEN_PIPELINE_WHERE = `
   AND COALESCE(j.status_name, '') NOT IN ('Lost', 'Dead', 'No Damage', 'Internal Supplementing', 'Paid & Closed')
 `;
 
+const ROOF_ONLY_WHERE = `j.cf_string_24 = '🏠 Y'`;
+
 const VALUE_SQL = `
   GREATEST(
     COALESCE(j.approved_invoice_due, 0),
@@ -208,8 +210,14 @@ export async function GET(request: NextRequest) {
     const recordType = recordTypeParam && TRACKED_RECORD_TYPES.includes(recordTypeParam)
       ? recordTypeParam
       : null;
+    const roofOnlyParam = request.nextUrl.searchParams.get("roofOnly");
+    const roofOnly = roofOnlyParam === "1" || roofOnlyParam === "true";
+    
     const recordTypeFilter = recordType ? "AND record_type = $1" : "";
     const recordTypeParams = recordType ? [recordType] : [];
+    
+    const roofFilter = roofOnly ? `AND ${ROOF_ONLY_WHERE}` : "";
+    const openPipelineWhere = `${OPEN_PIPELINE_WHERE}${roofFilter}`;
 
     const [
       currentStages,
@@ -230,7 +238,7 @@ export async function GET(request: NextRequest) {
             GREATEST(0, EXTRACT(EPOCH FROM (now() - to_timestamp(COALESCE(j.jn_date_status_change, j.jn_date_created)))) / 86400.0) AS days_in_status,
             ${RECORD_TYPE_SQL} AS record_type
           FROM jobs j
-          WHERE ${OPEN_PIPELINE_WHERE}
+          WHERE ${openPipelineWhere}
         )
         SELECT
           pipeline_stage,
@@ -253,7 +261,7 @@ export async function GET(request: NextRequest) {
             ${AR_DUE_SQL} AS ar_due,
             GREATEST(0, EXTRACT(EPOCH FROM (now() - to_timestamp(COALESCE(j.jn_date_status_change, j.jn_date_created)))) / 86400.0) AS days_in_status
           FROM jobs j
-          WHERE ${OPEN_PIPELINE_WHERE}
+          WHERE ${openPipelineWhere}
         )
         SELECT
           record_type,
@@ -277,7 +285,7 @@ export async function GET(request: NextRequest) {
             CASE WHEN ${STAGE_SQL} = 'Accounts Receivable' THEN ${AR_DUE_SQL} ELSE ${VALUE_SQL} END AS value,
             ${AR_DUE_SQL} AS ar_due
           FROM jobs j
-          WHERE ${OPEN_PIPELINE_WHERE}
+          WHERE ${openPipelineWhere}
         )
         SELECT
           record_type,
@@ -312,6 +320,7 @@ export async function GET(request: NextRequest) {
           AND EXTRACT(EPOCH FROM h.duration_in_previous_stage) >= 0
           AND EXTRACT(EPOCH FROM h.duration_in_previous_stage) <= 365 * 86400
           AND ${ACTIVE_REAL_JOB_WHERE}
+          ${roofFilter}
         GROUP BY record_type, h.from_stage_name, h.to_stage_name
         HAVING COUNT(*) >= 2
         ORDER BY record_type, from_status, to_status
@@ -330,6 +339,7 @@ export async function GET(request: NextRequest) {
             AND EXTRACT(EPOCH FROM h.duration_in_previous_stage) >= 0
             AND EXTRACT(EPOCH FROM h.duration_in_previous_stage) <= 365 * 86400
             AND ${ACTIVE_REAL_JOB_WHERE}
+            ${roofFilter}
         )
         SELECT
           record_type,
@@ -356,6 +366,7 @@ export async function GET(request: NextRequest) {
           FROM jobs j
           WHERE j.jn_date_created >= EXTRACT(EPOCH FROM DATE '${TIMING_COHORT_START}')
             AND ${ACTIVE_REAL_JOB_WHERE}
+            ${roofFilter}
         ), from_counts AS (
           SELECT
             c.record_type,
@@ -409,7 +420,7 @@ export async function GET(request: NextRequest) {
             CASE WHEN ${STAGE_SQL} = 'Accounts Receivable' THEN ${AR_DUE_SQL} ELSE ${VALUE_SQL} END AS value,
             ${AR_DUE_SQL} AS ar_due
           FROM jobs j
-          WHERE ${OPEN_PIPELINE_WHERE}
+          WHERE ${openPipelineWhere}
         ), scored AS (
           SELECT
             CASE
@@ -464,7 +475,7 @@ export async function GET(request: NextRequest) {
             ${AR_DUE_SQL} AS ar_due,
             GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - to_timestamp(COALESCE(j.jn_date_status_change, j.jn_date_created)))) / 86400)) AS days_in_status
           FROM jobs j
-          WHERE ${OPEN_PIPELINE_WHERE}
+          WHERE ${openPipelineWhere}
         )
         SELECT
           job_jnid,
@@ -525,6 +536,7 @@ export async function GET(request: NextRequest) {
       mode: "current_pipeline_snapshot",
       cohortStart: TIMING_COHORT_START,
       recordTypeFilter: recordType,
+      roofOnlyFilter: roofOnly,
       sourceNotes: [
         "Revenue is JobNimbus only. QuickBooks is intentionally not used on this page.",
         "Current pipeline counts are active, non-archived JobNimbus jobs by current status right now, not a period cohort.",
