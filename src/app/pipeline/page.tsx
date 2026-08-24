@@ -419,10 +419,6 @@ export default function PipelinePage() {
           <CardHeader className="pb-2"><InfoTooltip label="Open Value" explanation="JobNimbus value still in play. For Accounts Receivable this uses collectible AR due, not full historical job value. This is not QuickBooks."><CardTitle className="text-xs text-[#8b949e]">Open Value</CardTitle></InfoTooltip></CardHeader>
           <CardContent>{isLoading ? <Skeleton className="h-8 w-24 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#e6edf3]">{formatCurrency(data?.summary.pipelineValue ?? 0)}</p>}</CardContent>
         </Card>
-        <Card className="border-[#30363d] bg-[#161b22]">
-          <CardHeader className="pb-2"><CardTitle className="text-xs text-[#8b949e]">AR Due</CardTitle></CardHeader>
-          <CardContent>{isLoading ? <Skeleton className="h-8 w-24 bg-[#21262d]" /> : <p className="text-2xl font-bold text-[#3fb950]">{formatCurrency(data?.summary.arDue ?? 0)}</p>}</CardContent>
-        </Card>
       </div>
 
       <Card className="mb-8 border-[#30363d] bg-[#161b22]">
