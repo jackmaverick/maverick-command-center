@@ -106,6 +106,7 @@ export async function GET(request: NextRequest) {
       lossAnalysisRows,
       speedRows,
       companyConvRows,
+      soldThisPeriodRows,
     ] = await Promise.all([
       // 1. Core metrics: total jobs, won, lost
       // $1=start, $2=end, $3=segment, $4=WON, $5=LOSS
@@ -283,6 +284,29 @@ export async function GET(request: NextRequest) {
            AND ${ACTIVE_REAL_JOB_WHERE}`,
         [startUnix, endUnix, [...WON_STATUSES]]
       ),
+
+      // 10. Sold This Period - first move to sold status in period, any vintage
+      // $1=start (timestamp), $2=end (timestamp), $3=segment
+      query<{ jobs: string; value: string }>(
+        `WITH first_sold AS (
+           SELECT DISTINCT ON (h.job_jnid)
+             h.job_jnid,
+             h.changed_at
+           FROM job_stage_history h
+           WHERE h.to_stage_name IN ('Sold Job', 'Signed Contract', 'Sold Scope Prep')
+             AND h.changed_at >= $1
+             AND h.changed_at < $2
+           ORDER BY h.job_jnid, h.changed_at ASC
+         )
+         SELECT
+           COUNT(DISTINCT j.jnid)::text AS jobs,
+           COALESCE(SUM(COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), 0)), 0)::text AS value
+         FROM first_sold fs
+         JOIN jobs j ON j.jnid = fs.job_jnid
+         WHERE ${ACTIVE_REAL_JOB_WHERE}
+           AND ${segWhere(3)}`,
+        [range.start, range.end, segment]
+      ),
     ]);
 
     // ── Process results ────────────────────────────────────────────────
@@ -369,6 +393,10 @@ export async function GET(request: NextRequest) {
       speedMetrics.reduce((sum, m) => sum + m.avgDays, 0)
     );
 
+    // 10. Sold This Period
+    const soldThisPeriodJobs = parseInt(soldThisPeriodRows[0]?.jobs ?? "0", 10);
+    const soldThisPeriodValue = round2(parseFloat(soldThisPeriodRows[0]?.value ?? "0"));
+
     // ── Assemble response ──────────────────────────────────────────────
 
     return NextResponse.json({
@@ -389,6 +417,8 @@ export async function GET(request: NextRequest) {
         avgTicket,
         pipelineValue,
         avgCycleTimeDays: avgCycleTime,
+        soldThisPeriodJobs,
+        soldThisPeriodValue,
       },
       stageCounts,
       statusCounts,

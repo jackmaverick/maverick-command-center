@@ -51,6 +51,8 @@ export async function GET(request: NextRequest) {
       opportunitiesBySegmentRows,
       soldJobsBySegmentRows,
       qboRevenueRows,
+      soldThisPeriodByTradeRows,
+      soldThisPeriodBySegmentRows,
     ] = await Promise.all([
       // 1. YTD Revenue (accrual basis - uses date_invoice BIGINT)
       query<{ total: string }>(
@@ -203,7 +205,7 @@ export async function GET(request: NextRequest) {
         [startUnix, endUnix]
       ),
 
-      // 11. Sold Jobs by Segment - production jobs created in period
+      // 11. Sold Jobs by Segment - cohort close (jobs created in period that are currently converted)
       query<{ segment: string; count: string }>(
         `SELECT
            ${SEGMENT_SQL} AS segment,
@@ -230,6 +232,88 @@ export async function GET(request: NextRequest) {
            AND COALESCE(total_amount, 0) > 0`,
         [range.start.toISOString().slice(0, 10), range.end.toISOString().slice(0, 10)]
       ).catch(() => [{ total: "0", balance: "0", count: "0" }]),
+
+      // 13. Sold This Period by Trade - first move to sold status in period, any vintage
+      query<{ trade: string; jobs: string; value: string }>(
+        `WITH first_sold AS (
+           SELECT DISTINCT ON (h.job_jnid)
+             h.job_jnid,
+             h.changed_at
+           FROM job_stage_history h
+           WHERE h.to_stage_name IN ('Sold Job', 'Signed Contract', 'Sold Scope Prep')
+             AND h.changed_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago' >= $1
+             AND h.changed_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago' < $2
+           ORDER BY h.job_jnid, h.changed_at ASC
+         ),
+         sold_jobs AS (
+           SELECT
+             j.jnid,
+             j.cf_string_24,
+             j.cf_string_25,
+             j.cf_string_26,
+             j.cf_string_27,
+             j.record_type_name,
+             COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), 0) AS estimate_value
+           FROM first_sold fs
+           JOIN jobs j ON j.jnid = fs.job_jnid
+           WHERE ${ACTIVE_REAL_JOB_WHERE}
+             AND j.record_type_name != 'Warranty'
+         )
+         SELECT
+           'Roof' AS trade,
+           COUNT(DISTINCT jnid) FILTER (WHERE cf_string_24 = '🏠 Y')::text AS jobs,
+           COALESCE(SUM(DISTINCT estimate_value) FILTER (WHERE cf_string_24 = '🏠 Y'), 0)::text AS value
+         FROM sold_jobs
+         UNION ALL
+         SELECT
+           'Siding' AS trade,
+           COUNT(DISTINCT jnid) FILTER (WHERE cf_string_25 = '🧱 Y')::text AS jobs,
+           COALESCE(SUM(DISTINCT estimate_value) FILTER (WHERE cf_string_25 = '🧱 Y'), 0)::text AS value
+         FROM sold_jobs
+         UNION ALL
+         SELECT
+           'Gutters' AS trade,
+           COUNT(DISTINCT jnid) FILTER (WHERE cf_string_26 = '💧Y')::text AS jobs,
+           COALESCE(SUM(DISTINCT estimate_value) FILTER (WHERE cf_string_26 = '💧Y'), 0)::text AS value
+         FROM sold_jobs
+         UNION ALL
+         SELECT
+           'Windows' AS trade,
+           COUNT(DISTINCT jnid) FILTER (WHERE cf_string_27 = '🪟 Y')::text AS jobs,
+           COALESCE(SUM(DISTINCT estimate_value) FILTER (WHERE cf_string_27 = '🪟 Y'), 0)::text AS value
+         FROM sold_jobs
+         UNION ALL
+         SELECT
+           'Repairs' AS trade,
+           COUNT(DISTINCT jnid) FILTER (WHERE record_type_name = 'Repairs')::text AS jobs,
+           COALESCE(SUM(DISTINCT estimate_value) FILTER (WHERE record_type_name = 'Repairs'), 0)::text AS value
+         FROM sold_jobs`,
+        [range.start, range.end]
+      ),
+
+      // 14. Sold This Period by Segment - first move to sold status in period, any vintage
+      query<{ segment: string; jobs: string; value: string }>(
+        `WITH first_sold AS (
+           SELECT DISTINCT ON (h.job_jnid)
+             h.job_jnid,
+             h.changed_at
+           FROM job_stage_history h
+           WHERE h.to_stage_name IN ('Sold Job', 'Signed Contract', 'Sold Scope Prep')
+             AND h.changed_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago' >= $1
+             AND h.changed_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago' < $2
+           ORDER BY h.job_jnid, h.changed_at ASC
+         )
+         SELECT
+           ${SEGMENT_SQL} AS segment,
+           COUNT(DISTINCT j.jnid)::text AS jobs,
+           COALESCE(SUM(COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), 0)), 0)::text AS value
+         FROM first_sold fs
+         JOIN jobs j ON j.jnid = fs.job_jnid
+         WHERE ${ACTIVE_REAL_JOB_WHERE}
+         GROUP BY segment
+         ORDER BY jobs DESC`,
+        [range.start, range.end]
+      ),
     ]);
 
     // ── Process results ─────────────────────────────────────────────────
@@ -302,10 +386,57 @@ export async function GET(request: NextRequest) {
       opportunitiesBySegment[row.segment] = parseInt(row.count, 10);
     }
 
-    // 11. Sold jobs by segment
+    // 11. Sold jobs by segment (cohort close - created in period, currently converted)
     const soldJobsBySegment: Record<string, number> = {};
     for (const row of soldJobsBySegmentRows) {
       soldJobsBySegment[row.segment] = parseInt(row.count, 10);
+    }
+
+    // 13. Sold This Period by Trade (first sold in period, any vintage)
+    const soldThisPeriodByTrade: Array<{ trade: string; jobs: number; value: number }> = [];
+    let totalSoldThisPeriodJobs = 0;
+    let totalSoldThisPeriodValue = 0;
+    for (const row of soldThisPeriodByTradeRows) {
+      const jobs = parseInt(row.jobs, 10);
+      const value = parseFloat(row.value);
+      if (jobs > 0) {
+        soldThisPeriodByTrade.push({ trade: row.trade, jobs, value });
+      }
+    }
+    // Calculate distinct total (need to re-query to get distinct count across all trades)
+    // For now, sum the values as they're already using DISTINCT in the query
+    totalSoldThisPeriodValue = soldThisPeriodByTrade.reduce((sum, t) => sum + t.value, 0);
+    // Jobs might overlap across trades, so we need the total distinct count
+    const totalSoldDistinctRows = await query<{ total_jobs: string; total_value: string }>(
+      `WITH first_sold AS (
+         SELECT DISTINCT ON (h.job_jnid)
+           h.job_jnid,
+           h.changed_at
+         FROM job_stage_history h
+         WHERE h.to_stage_name IN ('Sold Job', 'Signed Contract', 'Sold Scope Prep')
+           AND h.changed_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago' >= $1
+           AND h.changed_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago' < $2
+         ORDER BY h.job_jnid, h.changed_at ASC
+       )
+       SELECT
+         COUNT(DISTINCT j.jnid)::text AS total_jobs,
+         COALESCE(SUM(DISTINCT COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), 0)), 0)::text AS total_value
+       FROM first_sold fs
+       JOIN jobs j ON j.jnid = fs.job_jnid
+       WHERE ${ACTIVE_REAL_JOB_WHERE}
+         AND j.record_type_name != 'Warranty'`,
+      [range.start, range.end]
+    );
+    totalSoldThisPeriodJobs = parseInt(totalSoldDistinctRows[0]?.total_jobs ?? "0", 10);
+    totalSoldThisPeriodValue = parseFloat(totalSoldDistinctRows[0]?.total_value ?? "0");
+
+    // 14. Sold This Period by Segment
+    const soldThisPeriodBySegment: Record<string, { jobs: number; value: number }> = {};
+    for (const row of soldThisPeriodBySegmentRows) {
+      soldThisPeriodBySegment[row.segment] = {
+        jobs: parseInt(row.jobs, 10),
+        value: parseFloat(row.value),
+      };
     }
 
     // ── Leads delta (compare to previous period if available) ───────────
@@ -353,6 +484,16 @@ export async function GET(request: NextRequest) {
       topLeadSources,
       opportunitiesBySegment,
       soldJobsBySegment,
+      soldThisPeriod: {
+        totalJobs: totalSoldThisPeriodJobs,
+        totalValue: Math.round(totalSoldThisPeriodValue * 100) / 100,
+        byTrade: soldThisPeriodByTrade.map(t => ({
+          trade: t.trade,
+          jobs: t.jobs,
+          value: Math.round(t.value * 100) / 100,
+        })),
+        bySegment: soldThisPeriodBySegment,
+      },
     };
 
     return NextResponse.json(dashboard);

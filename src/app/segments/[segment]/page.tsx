@@ -40,6 +40,8 @@ interface SegmentSummary {
   avgTicket: number;
   pipelineValue: number;
   avgCycleTimeDays: number;
+  soldThisPeriodJobs: number;
+  soldThisPeriodValue: number;
 }
 
 interface RepPerformance {
@@ -259,10 +261,55 @@ export default function SegmentPage() {
         and conversion rates.
       </p>
 
-      {/* ── 2. KPI Cards ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+      {/* ── 2. KPI Cards (Top Row: New Leads, Closed from Cohort, Sold This Period) ─── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
         {isLoading ? (
-          Array.from({ length: 6 }).map((_, i) => <KpiSkeleton key={i} />)
+          Array.from({ length: 3 }).map((_, i) => <KpiSkeleton key={i} />)
+        ) : (
+          <>
+            {/* New Leads This Period */}
+            <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
+              <div className="mb-1">
+                <InfoTooltip label={`New Leads ${data?.period.label ?? ""}`} explanation={`Jobs created in ${data?.period.label ?? "this period"} for this segment. This is the top of the funnel.`} />
+              </div>
+              <p className="text-2xl font-bold text-[#e6edf3]">
+                {summary?.totalJobs ?? 0}
+              </p>
+              <p className="text-xs text-[#484f58] mt-1">created in period</p>
+            </div>
+            {/* Closed from This Period's Leads */}
+            <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
+              <div className="mb-1">
+                <InfoTooltip label={`Closed of ${data?.period.label ?? "Period"}'s Leads`} explanation={`Of the ${summary?.totalJobs ?? 0} jobs created in ${data?.period.label ?? "this period"}, how many have reached Sold Job or beyond. This is the cohort close rate.`} />
+              </div>
+              <p className="text-2xl font-bold text-[#e6edf3]">
+                {summary?.wonJobs ?? 0}
+              </p>
+              <p className="text-xs text-[#484f58] mt-1">
+                {formatPercent(summary?.closeRate ?? 0)} close rate
+                {data && <DeltaBadge value={data.conversionDelta} />}
+              </p>
+            </div>
+            {/* Sold This Period (Any Vintage) */}
+            <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
+              <div className="mb-1">
+                <InfoTooltip label={`Sold ${data?.period.label ?? "This Period"}`} explanation={`Jobs that FIRST moved to Sold Job during ${data?.period.label ?? "this period"}, regardless of when the lead was created. Estimate value = COALESCE(approved_estimate_total, last_estimate, 0). This is the second clock — different from cohort close above.`} />
+              </div>
+              <p className="text-2xl font-bold text-green-400">
+                {summary?.soldThisPeriodJobs ?? 0}
+              </p>
+              <p className="text-xs text-[#484f58] mt-1">
+                {formatCurrency(summary?.soldThisPeriodValue ?? 0)} estimate value
+              </p>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ── 3. Additional KPI Cards ─────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+        {isLoading ? (
+          Array.from({ length: 5 }).map((_, i) => <KpiSkeleton key={i} />)
         ) : (
           <>
             {/* Revenue */}
@@ -295,25 +342,11 @@ export default function SegmentPage() {
             {/* Active Jobs */}
             <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
               <div className="mb-1">
-                <InfoTooltip label="Active Jobs" explanation="Non-archived jobs in this segment created during the selected period." />
+                <InfoTooltip label="Active Jobs" explanation="Jobs in this segment created during the selected period that are not won or lost." />
               </div>
               <p className="text-xl font-bold text-[#e6edf3]">
                 {summary?.activeJobs ?? 0}
               </p>
-            </div>
-            {/* Close Rate */}
-            <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-              <div className="mb-1">
-                <InfoTooltip label="Close Rate" explanation="Percentage of jobs in this segment reaching Sold Job or beyond. Delta badge shows difference vs company-wide close rate." />
-              </div>
-              <p className="text-xl font-bold text-[#e6edf3]">
-                {formatPercent(summary?.closeRate ?? 0)}
-              </p>
-              {data && (
-                <div className="mt-1">
-                  <DeltaBadge value={data.conversionDelta} />
-                </div>
-              )}
             </div>
             {/* Avg Cycle Time */}
             <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
