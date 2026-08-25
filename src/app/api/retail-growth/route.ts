@@ -144,17 +144,14 @@ export async function GET(request: NextRequest) {
       ),
       query<{ sold_jobs: string; sold_value: string }>(
         `WITH first_sold AS (
-           SELECT DISTINCT ON (h.job_jnid)
-             h.job_jnid,
-             h.changed_at
+           SELECT h.job_jnid, MIN(h.changed_at) AS first_sold_at
            FROM job_stage_history h
            WHERE h.to_stage_name IN ('Sold Job', 'Signed Contract', 'Sold Scope Prep')
-             AND h.changed_at >= $1
-             AND h.changed_at < $2
-           ORDER BY h.job_jnid, h.changed_at ASC
+           GROUP BY h.job_jnid
+           HAVING MIN(h.changed_at) >= $1 AND MIN(h.changed_at) < $2
          )
          SELECT
-           COUNT(DISTINCT j.jnid)::text AS sold_jobs,
+           COUNT(j.jnid)::text AS sold_jobs,
            COALESCE(SUM(COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), 0)), 0)::text AS sold_value
          FROM first_sold fs
          JOIN jobs j ON j.jnid = fs.job_jnid
@@ -207,19 +204,16 @@ export async function GET(request: NextRequest) {
       ),
       query<RepRow>(
         `WITH first_sold AS (
-           SELECT DISTINCT ON (h.job_jnid)
-             h.job_jnid,
-             h.changed_at
+           SELECT h.job_jnid, MIN(h.changed_at) AS first_sold_at
            FROM job_stage_history h
            WHERE h.to_stage_name IN ('Sold Job', 'Signed Contract', 'Sold Scope Prep')
-             AND h.changed_at >= $1
-             AND h.changed_at < $2
-           ORDER BY h.job_jnid, h.changed_at ASC
+           GROUP BY h.job_jnid
+           HAVING MIN(h.changed_at) >= $1 AND MIN(h.changed_at) < $2
          ),
          rep_sold AS (
            SELECT
              j.sales_rep_name,
-             COUNT(DISTINCT j.jnid)::text AS sold_jobs,
+             COUNT(j.jnid)::text AS sold_jobs,
              COALESCE(SUM(COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), 0)), 0)::text AS sold_value
            FROM first_sold fs
            JOIN jobs j ON j.jnid = fs.job_jnid
@@ -353,19 +347,16 @@ export async function GET(request: NextRequest) {
       ),
       query<{ source_name: string | null; jobs: string; sold_jobs: string; sold_value: string; open_pipeline: string }>(
         `WITH first_sold AS (
-           SELECT DISTINCT ON (h.job_jnid)
-             h.job_jnid,
-             h.changed_at
+           SELECT h.job_jnid, MIN(h.changed_at) AS first_sold_at
            FROM job_stage_history h
            WHERE h.to_stage_name IN ('Sold Job', 'Signed Contract', 'Sold Scope Prep')
-             AND h.changed_at >= $1
-             AND h.changed_at < $2
-           ORDER BY h.job_jnid, h.changed_at ASC
+           GROUP BY h.job_jnid
+           HAVING MIN(h.changed_at) >= $1 AND MIN(h.changed_at) < $2
          ),
          source_sold AS (
            SELECT
              COALESCE(j.source_name, 'Unknown') AS source_name,
-             COUNT(DISTINCT j.jnid)::text AS sold_jobs,
+             COUNT(j.jnid)::text AS sold_jobs,
              COALESCE(SUM(COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), 0)), 0)::text AS sold_value
            FROM first_sold fs
            JOIN jobs j ON j.jnid = fs.job_jnid

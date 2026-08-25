@@ -289,21 +289,19 @@ export async function GET(request: NextRequest) {
       // $1=start (timestamp), $2=end (timestamp), $3=segment
       query<{ jobs: string; value: string }>(
         `WITH first_sold AS (
-           SELECT DISTINCT ON (h.job_jnid)
-             h.job_jnid,
-             h.changed_at
+           SELECT h.job_jnid, MIN(h.changed_at) AS first_sold_at
            FROM job_stage_history h
            WHERE h.to_stage_name IN ('Sold Job', 'Signed Contract', 'Sold Scope Prep')
-             AND h.changed_at >= $1
-             AND h.changed_at < $2
-           ORDER BY h.job_jnid, h.changed_at ASC
+           GROUP BY h.job_jnid
+           HAVING MIN(h.changed_at) >= $1 AND MIN(h.changed_at) < $2
          )
          SELECT
-           COUNT(DISTINCT j.jnid)::text AS jobs,
+           COUNT(j.jnid)::text AS jobs,
            COALESCE(SUM(COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), 0)), 0)::text AS value
          FROM first_sold fs
          JOIN jobs j ON j.jnid = fs.job_jnid
          WHERE ${ACTIVE_REAL_JOB_WHERE}
+           AND j.record_type_name IS DISTINCT FROM 'Warranty'
            AND ${segWhere(3)}`,
         [range.start, range.end, segment]
       ),
