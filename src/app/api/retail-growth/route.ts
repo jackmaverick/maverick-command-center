@@ -143,15 +143,20 @@ export async function GET(request: NextRequest) {
         [weekStartUnix, weekEndUnix, INVOICE_STATUSES]
       ),
       query<{ sold_jobs: string; sold_value: string }>(
-        `SELECT
-           COUNT(*)::text AS sold_jobs,
-           COALESCE(SUM(COALESCE(NULLIF(j.approved_invoice_total, 0), NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_invoice, 0), NULLIF(j.last_estimate, 0), 0)), 0)::text AS sold_value
-         FROM jobs j
-         WHERE ${RETAIL_WHERE}
-           AND j.status_name = ANY($3::text[])
-           AND j.jn_date_status_change >= $1
-           AND j.jn_date_status_change < $2`,
-        [startUnix, endUnix, SOLD_STATUSES]
+        `WITH first_sold AS (
+           SELECT h.job_jnid, MIN(h.changed_at) AS first_sold_at
+           FROM job_stage_history h
+           WHERE h.to_stage_name IN ('Sold Job', 'Signed Contract', 'Sold Scope Prep')
+           GROUP BY h.job_jnid
+           HAVING MIN(h.changed_at) >= $1 AND MIN(h.changed_at) < $2
+         )
+         SELECT
+           COUNT(j.jnid)::text AS sold_jobs,
+           COALESCE(SUM(COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), 0)), 0)::text AS sold_value
+         FROM first_sold fs
+         JOIN jobs j ON j.jnid = fs.job_jnid
+         WHERE ${RETAIL_WHERE}`,
+        [range.start, range.end]
       ),
       query<{ jobs: string; value: string; open_estimate_value: string }>(
         `SELECT
@@ -198,27 +203,45 @@ export async function GET(request: NextRequest) {
         []
       ),
       query<RepRow>(
-        `SELECT
+        `WITH first_sold AS (
+           SELECT h.job_jnid, MIN(h.changed_at) AS first_sold_at
+           FROM job_stage_history h
+           WHERE h.to_stage_name IN ('Sold Job', 'Signed Contract', 'Sold Scope Prep')
+           GROUP BY h.job_jnid
+           HAVING MIN(h.changed_at) >= $1 AND MIN(h.changed_at) < $2
+         ),
+         rep_sold AS (
+           SELECT
+             j.sales_rep_name,
+             COUNT(j.jnid)::text AS sold_jobs,
+             COALESCE(SUM(COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), 0)), 0)::text AS sold_value
+           FROM first_sold fs
+           JOIN jobs j ON j.jnid = fs.job_jnid
+           WHERE ${RETAIL_WHERE}
+           GROUP BY j.sales_rep_name
+         )
+         SELECT
            COALESCE(j.sales_rep_name, 'Unassigned') AS sales_rep_name,
            COUNT(*) FILTER (WHERE j.jn_date_created >= $1 AND j.jn_date_created < $2)::text AS new_leads,
-           COUNT(*) FILTER (WHERE j.status_name = ANY($3::text[]) AND j.jn_date_status_change >= $1 AND j.jn_date_status_change < $2)::text AS sold_jobs,
+           COALESCE(rs.sold_jobs, '0') AS sold_jobs,
            COUNT(*) FILTER (WHERE j.status_name = ANY($4::text[]) AND j.jn_date_status_change >= $1 AND j.jn_date_status_change < $2)::text AS lost_jobs,
            COUNT(*) FILTER (WHERE j.is_closed = false)::text AS open_jobs,
            COALESCE(SUM(CASE WHEN j.is_closed = false THEN COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), NULLIF(j.approved_invoice_total, 0), 0) ELSE 0 END), 0)::text AS open_pipeline,
-           COALESCE(SUM(CASE WHEN j.status_name = ANY($3::text[]) AND j.jn_date_status_change >= $1 AND j.jn_date_status_change < $2 THEN COALESCE(NULLIF(j.approved_invoice_total, 0), NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_invoice, 0), NULLIF(j.last_estimate, 0), 0) ELSE 0 END), 0)::text AS sold_value,
+           COALESCE(rs.sold_value, '0') AS sold_value,
            COALESCE(SUM(CASE WHEN i.date_invoice >= $1 AND i.date_invoice < $2 AND i.is_active = true THEN i.total ELSE 0 END), 0)::text AS invoiced_revenue,
            AVG(CASE WHEN j.status_name IN ('Estimate Sent', 'Estimating') THEN GREATEST(0, ($5 - COALESCE(j.jn_date_status_change, j.jn_date_created)) / 86400.0) END)::text AS avg_followup_days
          FROM jobs j
          LEFT JOIN invoices i ON i.job_jnid = j.jnid
+         LEFT JOIN rep_sold rs ON rs.sales_rep_name = COALESCE(j.sales_rep_name, 'Unassigned')
          WHERE ${RETAIL_WHERE}
-         GROUP BY COALESCE(j.sales_rep_name, 'Unassigned')
-         HAVING COUNT(*) FILTER (WHERE j.jn_date_created >= $1 AND j.jn_date_created < $2) > 0
-             OR COUNT(*) FILTER (WHERE j.status_name = ANY($3::text[]) AND j.jn_date_status_change >= $1 AND j.jn_date_status_change < $2) > 0
+         GROUP BY COALESCE(j.sales_rep_name, 'Unassigned'), rs.sold_jobs, rs.sold_value
+         HAVING COUNT(*) FILTER (WHERE j.jn_date_created >= $3 AND j.jn_date_created < $4) > 0
+             OR COALESCE(rs.sold_jobs::int, 0) > 0
              OR COUNT(*) FILTER (WHERE j.is_closed = false) > 0
          ORDER BY
-           SUM(CASE WHEN j.status_name = ANY($3::text[]) AND j.jn_date_status_change >= $1 AND j.jn_date_status_change < $2 THEN COALESCE(NULLIF(j.approved_invoice_total, 0), NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_invoice, 0), NULLIF(j.last_estimate, 0), 0) ELSE 0 END) DESC,
+           COALESCE(rs.sold_value::numeric, 0) DESC,
            SUM(CASE WHEN j.is_closed = false THEN COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), NULLIF(j.approved_invoice_total, 0), 0) ELSE 0 END) DESC`,
-        [startUnix, endUnix, SOLD_STATUSES, ["Lost", "Dead", "Cold", "Cold Lead"], nowUnix]
+        [range.start, range.end, startUnix, endUnix, ["Lost", "Dead", "Cold", "Cold Lead"], nowUnix]
       ),
       query<ActionRow>(
         `WITH candidates AS (
@@ -323,23 +346,41 @@ export async function GET(request: NextRequest) {
         [SOLD_STATUSES]
       ),
       query<{ source_name: string | null; jobs: string; sold_jobs: string; sold_value: string; open_pipeline: string }>(
-        `SELECT
+        `WITH first_sold AS (
+           SELECT h.job_jnid, MIN(h.changed_at) AS first_sold_at
+           FROM job_stage_history h
+           WHERE h.to_stage_name IN ('Sold Job', 'Signed Contract', 'Sold Scope Prep')
+           GROUP BY h.job_jnid
+           HAVING MIN(h.changed_at) >= $1 AND MIN(h.changed_at) < $2
+         ),
+         source_sold AS (
+           SELECT
+             COALESCE(j.source_name, 'Unknown') AS source_name,
+             COUNT(j.jnid)::text AS sold_jobs,
+             COALESCE(SUM(COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), 0)), 0)::text AS sold_value
+           FROM first_sold fs
+           JOIN jobs j ON j.jnid = fs.job_jnid
+           WHERE ${RETAIL_WHERE}
+           GROUP BY COALESCE(j.source_name, 'Unknown')
+         )
+         SELECT
            COALESCE(j.source_name, 'Unknown') AS source_name,
-           COUNT(*) FILTER (WHERE j.jn_date_created >= $1 AND j.jn_date_created < $2)::text AS jobs,
-           COUNT(*) FILTER (WHERE j.status_name = ANY($3::text[]) AND j.jn_date_status_change >= $1 AND j.jn_date_status_change < $2)::text AS sold_jobs,
-           COALESCE(SUM(CASE WHEN j.status_name = ANY($3::text[]) AND j.jn_date_status_change >= $1 AND j.jn_date_status_change < $2 THEN COALESCE(NULLIF(j.approved_invoice_total, 0), NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_invoice, 0), NULLIF(j.last_estimate, 0), 0) ELSE 0 END), 0)::text AS sold_value,
+           COUNT(*) FILTER (WHERE j.jn_date_created >= $3 AND j.jn_date_created < $4)::text AS jobs,
+           COALESCE(ss.sold_jobs, '0') AS sold_jobs,
+           COALESCE(ss.sold_value, '0') AS sold_value,
            COALESCE(SUM(CASE WHEN j.is_closed = false THEN COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), NULLIF(j.approved_invoice_total, 0), 0) ELSE 0 END), 0)::text AS open_pipeline
          FROM jobs j
+         LEFT JOIN source_sold ss ON ss.source_name = COALESCE(j.source_name, 'Unknown')
          WHERE ${RETAIL_WHERE}
-         GROUP BY COALESCE(j.source_name, 'Unknown')
-         HAVING COUNT(*) FILTER (WHERE j.jn_date_created >= $1 AND j.jn_date_created < $2) > 0
-             OR COUNT(*) FILTER (WHERE j.status_name = ANY($3::text[]) AND j.jn_date_status_change >= $1 AND j.jn_date_status_change < $2) > 0
+         GROUP BY COALESCE(j.source_name, 'Unknown'), ss.sold_jobs, ss.sold_value
+         HAVING COUNT(*) FILTER (WHERE j.jn_date_created >= $3 AND j.jn_date_created < $4) > 0
+             OR COALESCE(ss.sold_jobs::int, 0) > 0
              OR SUM(CASE WHEN j.is_closed = false THEN COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), NULLIF(j.approved_invoice_total, 0), 0) ELSE 0 END) > 0
          ORDER BY
-           SUM(CASE WHEN j.status_name = ANY($3::text[]) AND j.jn_date_status_change >= $1 AND j.jn_date_status_change < $2 THEN COALESCE(NULLIF(j.approved_invoice_total, 0), NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_invoice, 0), NULLIF(j.last_estimate, 0), 0) ELSE 0 END) DESC,
+           COALESCE(ss.sold_value::numeric, 0) DESC,
            SUM(CASE WHEN j.is_closed = false THEN COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), NULLIF(j.approved_invoice_total, 0), 0) ELSE 0 END) DESC
          LIMIT 10`,
-        [startUnix, endUnix, SOLD_STATUSES]
+        [range.start, range.end, startUnix, endUnix]
       ),
     ]);
 

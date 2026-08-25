@@ -62,6 +62,12 @@ interface DashboardData {
   topLeadSources: LeadSource[];
   opportunitiesBySegment: Record<string, number>;
   soldJobsBySegment: Record<string, number>;
+  soldThisPeriod: {
+    totalJobs: number;
+    totalValue: number;
+    byTrade: Array<{ trade: string; jobs: number; value: number }>;
+    bySegment: Record<string, { jobs: number; value: number }>;
+  };
 }
 
 interface GrossProfitJob {
@@ -352,7 +358,7 @@ export default function DashboardPage() {
         {/* Conversion Rate */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <InfoTooltip label="Conv Rate" explanation="Percentage of jobs created in this period that have reached &quot;Sold Job&quot; status or beyond">
+            <InfoTooltip label="Conv Rate" explanation="Percentage of jobs created in this period that have reached &quot;Sold Job&quot; status or beyond. This tracks cohort close rate (jobs created in the period that closed).">
               <CardTitle className="text-xs font-medium text-[#8b949e]">Conv Rate</CardTitle>
             </InfoTooltip>
           </CardHeader>
@@ -384,6 +390,114 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
+      </div>
+
+      {/* ── Sold This Period ────────────────────────────────────────── */}
+      <div className="mb-8">
+        <h2 className="text-sm font-semibold text-[#e6edf3] mb-4">
+          <InfoTooltip 
+            label={`Sold ${data?.period.label ?? "This Period"}`}
+            explanation="Jobs that FIRST moved to Sold Job status during this period, regardless of when the lead was created. This is the second clock — different from cohort close rate above. Estimate value = COALESCE(approved_estimate_total, last_estimate, 0). Trades can overlap; total is distinct jobs."
+          />
+        </h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="bg-[#161b22] border-[#30363d]">
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+                By Trade
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <Skeleton key={i} className="h-10 bg-[#21262d]" />
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {(data?.soldThisPeriod?.byTrade ?? []).map((trade, i) => (
+                    <div key={trade.trade}>
+                      <div className="flex items-center justify-between text-sm mb-1">
+                        <span className="text-[#e6edf3]">{trade.trade}</span>
+                        <span className="font-mono text-[#8b949e]">
+                          {trade.jobs} jobs · {formatCurrency(trade.value)}
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-[#21262d] rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${percentOf(trade.value, data?.soldThisPeriod?.totalValue ?? 1)}%`,
+                            backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  <div className="pt-3 mt-3 border-t border-[#30363d]">
+                    <div className="flex items-center justify-between text-sm font-semibold">
+                      <span className="text-[#e6edf3]">Total (Distinct)</span>
+                      <span className="font-mono text-[#e6edf3]">
+                        {data?.soldThisPeriod?.totalJobs ?? 0} jobs · {formatCurrency(data?.soldThisPeriod?.totalValue ?? 0)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-[#161b22] border-[#30363d]">
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+                By Segment
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3, 4].map((i) => (
+                    <Skeleton key={i} className="h-10 bg-[#21262d]" />
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {(Object.entries(SEGMENTS) as [Segment, (typeof SEGMENTS)[Segment]][])
+                    .filter(([key]) => (data?.soldThisPeriod?.bySegment[key]?.jobs ?? 0) > 0)
+                    .map(([key, segment], i) => {
+                      const segData = data?.soldThisPeriod?.bySegment[key];
+                      return (
+                        <div key={key}>
+                          <div className="flex items-center justify-between text-sm mb-1">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="h-2.5 w-2.5 rounded-full"
+                                style={{ backgroundColor: segment.color }}
+                              />
+                              <span className="text-[#e6edf3]">{segment.label}</span>
+                            </div>
+                            <span className="font-mono text-[#8b949e]">
+                              {segData?.jobs ?? 0} jobs · {formatCurrency(segData?.value ?? 0)}
+                            </span>
+                          </div>
+                          <div className="h-1.5 bg-[#21262d] rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${percentOf(segData?.value ?? 0, data?.soldThisPeriod?.totalValue ?? 1)}%`,
+                                backgroundColor: segment.color,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* ── Revenue Command Center ─────────────────────────────────── */}
@@ -898,10 +1012,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Sold Jobs by Segment ──────────────────────────────────────── */}
+      {/* ── Cohort Close by Segment ───────────────────────────────────── */}
       <div>
         <h2 className="text-sm font-semibold text-[#e6edf3] mb-4">
-          Sold Jobs by Segment
+          <InfoTooltip
+            label="Cohort Close by Segment"
+            explanation="Jobs CREATED in this period that have CURRENTLY reached Sold Job or beyond. This tracks the cohort close rate — different from 'Sold This Period' above which counts first-sold date."
+          />
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           {(Object.entries(SEGMENTS) as [Segment, (typeof SEGMENTS)[Segment]][]).map(
@@ -927,7 +1044,7 @@ export default function DashboardPage() {
                           </span>
                         </div>
                         <p className="text-2xl font-bold text-[#e6edf3]">{count}</p>
-                        <p className="text-xs text-[#484f58] mt-0.5">production jobs</p>
+                        <p className="text-xs text-[#484f58] mt-0.5">cohort closed</p>
                       </div>
                     )}
                   </CardContent>

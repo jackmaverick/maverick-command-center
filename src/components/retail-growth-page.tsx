@@ -228,7 +228,7 @@ export function RetailGrowthPage() {
         <>
           <section className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <Card label={`${data.period.label} Invoiced`} value={formatCurrency(data.summary.invoicedRevenue)} sub={`${data.summary.invoiceCount} active invoices`} />
-            <Card label="Sold Value" value={formatCurrency(data.summary.soldValue)} sub={`${data.summary.soldJobs} jobs moved sold this period`} tone="good" />
+            <Card label="Sold Value" value={formatCurrency(data.summary.soldValue)} sub={`${data.summary.soldJobs} jobs FIRST sold this period (any vintage)`} tone="good" />
             <Card label="Open Retail Pipeline" value={formatCurrency(data.summary.openPipelineValue)} sub={`${data.summary.openRetailJobs} open retail jobs`} />
             <Card label="Next 14 Days Scheduled" value={formatCurrency(data.summary.scheduled14Value)} sub={`${data.summary.scheduled14Jobs} scheduled retail jobs`} tone="warn" />
             <Card label="Open Estimate Value" value={formatCurrency(data.summary.openEstimateValue)} sub="Estimating + Estimate Sent" />
