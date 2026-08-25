@@ -416,7 +416,7 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {(data?.soldThisPeriod.byTrade ?? []).map((trade, i) => (
+                  {(data?.soldThisPeriod?.byTrade ?? []).map((trade, i) => (
                     <div key={trade.trade}>
                       <div className="flex items-center justify-between text-sm mb-1">
                         <span className="text-[#e6edf3]">{trade.trade}</span>
@@ -428,7 +428,7 @@ export default function DashboardPage() {
                         <div
                           className="h-full rounded-full"
                           style={{
-                            width: `${percentOf(trade.value, data?.soldThisPeriod.totalValue ?? 1)}%`,
+                            width: `${percentOf(trade.value, data?.soldThisPeriod?.totalValue ?? 1)}%`,
                             backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
                           }}
                         />
@@ -439,7 +439,7 @@ export default function DashboardPage() {
                     <div className="flex items-center justify-between text-sm font-semibold">
                       <span className="text-[#e6edf3]">Total (Distinct)</span>
                       <span className="font-mono text-[#e6edf3]">
-                        {data?.soldThisPeriod.totalJobs ?? 0} jobs · {formatCurrency(data?.soldThisPeriod.totalValue ?? 0)}
+                        {data?.soldThisPeriod?.totalJobs ?? 0} jobs · {formatCurrency(data?.soldThisPeriod?.totalValue ?? 0)}
                       </span>
                     </div>
                   </div>
@@ -464,9 +464,9 @@ export default function DashboardPage() {
               ) : (
                 <div className="space-y-3">
                   {(Object.entries(SEGMENTS) as [Segment, (typeof SEGMENTS)[Segment]][])
-                    .filter(([key]) => data?.soldThisPeriod.bySegment[key]?.jobs > 0)
+                    .filter(([key]) => (data?.soldThisPeriod?.bySegment[key]?.jobs ?? 0) > 0)
                     .map(([key, segment], i) => {
-                      const segData = data?.soldThisPeriod.bySegment[key];
+                      const segData = data?.soldThisPeriod?.bySegment[key];
                       return (
                         <div key={key}>
                           <div className="flex items-center justify-between text-sm mb-1">
@@ -485,7 +485,7 @@ export default function DashboardPage() {
                             <div
                               className="h-full rounded-full"
                               style={{
-                                width: `${percentOf(segData?.value ?? 0, data?.soldThisPeriod.totalValue ?? 1)}%`,
+                                width: `${percentOf(segData?.value ?? 0, data?.soldThisPeriod?.totalValue ?? 1)}%`,
                                 backgroundColor: segment.color,
                               }}
                             />
