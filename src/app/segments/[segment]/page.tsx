@@ -293,7 +293,7 @@ export default function SegmentPage() {
             {/* Sold This Period (Any Vintage) */}
             <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
               <div className="mb-1">
-                <InfoTooltip label={`Sold ${data?.period.label ?? "This Period"}`} explanation={`Jobs that FIRST moved to Sold Job during ${data?.period.label ?? "this period"}, regardless of when the lead was created. Estimate value = COALESCE(approved_estimate_total, last_estimate, 0). This is the second clock — different from cohort close above.`} />
+                <InfoTooltip label={`Sold ${data?.period.label ?? "This Period"}`} explanation={`Jobs that FIRST entered the Sold stage during ${data?.period.label ?? "this period"}, regardless of when the lead was created. Insurance workflow uses Deductible Collected, Retail uses Sold Job, etc. — whichever status under the Sold stage came first. Estimate value = COALESCE(approved_estimate_total, last_estimate, 0). This is the second clock — different from cohort close above.`} />
               </div>
               <p className="text-2xl font-bold text-green-400">
                 {summary?.soldThisPeriodJobs ?? 0}
