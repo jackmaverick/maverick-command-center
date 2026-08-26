@@ -397,7 +397,7 @@ export default function DashboardPage() {
         <h2 className="text-sm font-semibold text-[#e6edf3] mb-4">
           <InfoTooltip 
             label={`Sold ${data?.period.label ?? "This Period"}`}
-            explanation="Jobs that FIRST moved to Sold Job status during this period, regardless of when the lead was created. This is the second clock — different from cohort close rate above. Estimate value = COALESCE(approved_estimate_total, last_estimate, 0). Trades can overlap; total is distinct jobs."
+            explanation="Jobs that FIRST entered the Sold stage during this period, regardless of when the lead was created. Insurance workflow uses Deductible Collected, Retail uses Sold Job, etc. — whichever status under the Sold stage came first. Estimate value = COALESCE(approved_estimate_total, last_estimate, 0). Trades can overlap; total is distinct jobs. This is the second clock — different from cohort close rate above."
           />
         </h2>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

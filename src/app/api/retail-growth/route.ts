@@ -146,7 +146,16 @@ export async function GET(request: NextRequest) {
         `WITH first_sold AS (
            SELECT h.job_jnid, MIN(h.changed_at) AS first_sold_at
            FROM job_stage_history h
-           WHERE h.to_stage_name IN ('Sold Job', 'Signed Contract', 'Sold Scope Prep')
+           LEFT JOIN workflows w ON w.name = h.workflow_name
+           LEFT JOIN workflow_stages ws ON ws.workflow_id = w.id 
+                                        AND ws.name = h.to_stage_name 
+                                        AND ws.deleted_at IS NULL
+           JOIN jobs j_fallback ON j_fallback.jnid = h.job_jnid
+           LEFT JOIN workflows j_w ON j_w.name = j_fallback.record_type_name
+           LEFT JOIN workflow_stages j_ws ON j_ws.workflow_id = j_w.id 
+                                          AND j_ws.name = h.to_stage_name 
+                                          AND j_ws.deleted_at IS NULL
+           WHERE COALESCE(ws.jn_stage, j_ws.jn_stage) = 'Sold'
            GROUP BY h.job_jnid
            HAVING MIN(h.changed_at) >= $1 AND MIN(h.changed_at) < $2
          )
@@ -206,7 +215,16 @@ export async function GET(request: NextRequest) {
         `WITH first_sold AS (
            SELECT h.job_jnid, MIN(h.changed_at) AS first_sold_at
            FROM job_stage_history h
-           WHERE h.to_stage_name IN ('Sold Job', 'Signed Contract', 'Sold Scope Prep')
+           LEFT JOIN workflows w ON w.name = h.workflow_name
+           LEFT JOIN workflow_stages ws ON ws.workflow_id = w.id 
+                                        AND ws.name = h.to_stage_name 
+                                        AND ws.deleted_at IS NULL
+           JOIN jobs j_fallback ON j_fallback.jnid = h.job_jnid
+           LEFT JOIN workflows j_w ON j_w.name = j_fallback.record_type_name
+           LEFT JOIN workflow_stages j_ws ON j_ws.workflow_id = j_w.id 
+                                          AND j_ws.name = h.to_stage_name 
+                                          AND j_ws.deleted_at IS NULL
+           WHERE COALESCE(ws.jn_stage, j_ws.jn_stage) = 'Sold'
            GROUP BY h.job_jnid
            HAVING MIN(h.changed_at) >= $1 AND MIN(h.changed_at) < $2
          ),
@@ -349,7 +367,16 @@ export async function GET(request: NextRequest) {
         `WITH first_sold AS (
            SELECT h.job_jnid, MIN(h.changed_at) AS first_sold_at
            FROM job_stage_history h
-           WHERE h.to_stage_name IN ('Sold Job', 'Signed Contract', 'Sold Scope Prep')
+           LEFT JOIN workflows w ON w.name = h.workflow_name
+           LEFT JOIN workflow_stages ws ON ws.workflow_id = w.id 
+                                        AND ws.name = h.to_stage_name 
+                                        AND ws.deleted_at IS NULL
+           JOIN jobs j_fallback ON j_fallback.jnid = h.job_jnid
+           LEFT JOIN workflows j_w ON j_w.name = j_fallback.record_type_name
+           LEFT JOIN workflow_stages j_ws ON j_ws.workflow_id = j_w.id 
+                                          AND j_ws.name = h.to_stage_name 
+                                          AND j_ws.deleted_at IS NULL
+           WHERE COALESCE(ws.jn_stage, j_ws.jn_stage) = 'Sold'
            GROUP BY h.job_jnid
            HAVING MIN(h.changed_at) >= $1 AND MIN(h.changed_at) < $2
          ),
