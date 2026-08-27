@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.maverick.production-communication-health-publisher</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{REPO_PATH}}/scripts/run-production-communication-health-publisher.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>{{REPO_PATH}}</string>
+    <key>StartInterval</key>
+    <integer>900</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/maverick_ai/maverick-local-automations/logs/production-communication-health-publisher.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/maverick_ai/maverick-local-automations/logs/production-communication-health-publisher.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/maverick_ai/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

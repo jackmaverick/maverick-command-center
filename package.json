@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "loop-health:migrate": "node scripts/apply-loop-health-migration.mjs",
+    "loop-health:publish": "node scripts/publish-loop-health-snapshots.mjs",
     "test": "vitest run"
   },
   "dependencies": {

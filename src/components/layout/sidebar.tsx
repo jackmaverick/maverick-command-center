@@ -15,6 +15,7 @@ import {
   Target,
   CalendarDays,
   Bot,
+  Activity,
   MessageCircleQuestion,
   Settings,
   TrendingUp,
@@ -78,6 +79,7 @@ const navGroups = [
   {
     label: "SYSTEM",
     items: [
+      { href: "/loop-health", label: "Loop Health", icon: Activity },
       { href: "/agents", label: "Agents", icon: Bot },
       { href: "/faq-review", label: "FAQ Review", icon: MessageCircleQuestion },
       { href: "/settings", label: "Settings", icon: Settings },
