@@ -4,6 +4,12 @@ const directMailDateFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
+const provenStatuses = new Set([
+  "postal_confirmed",
+  "postal_drop_confirmed",
+  "complete",
+]);
+
 export function formatDirectMailDate(value: string | null): string {
   if (!value) return "Not proven";
 
@@ -13,4 +19,11 @@ export function formatDirectMailDate(value: string | null): string {
     : new Date(value);
 
   return directMailDateFormatter.format(date);
+}
+
+export function isDirectMailProvenStatus(
+  status: string,
+  confirmedRecipientCount: number,
+): boolean {
+  return provenStatuses.has(status) && confirmedRecipientCount > 0;
 }

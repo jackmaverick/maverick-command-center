@@ -4,7 +4,8 @@ export interface DirectMailSummary {
   uniqueAddressesConfirmedMailed: number;
   confirmedMailTouches: number;
   repeatMailTouches: number;
-  totalAddressGaps: number;
+  uniqueDueAddressesWithGaps: number;
+  addressGapInstances: number;
   attributedLeads: number;
   confirmedLeads: number;
   attributedSales: number;

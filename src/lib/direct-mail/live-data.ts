@@ -14,6 +14,17 @@ interface GlobalRow {
   unique_addresses_confirmed_mailed: string | number;
   confirmed_mail_touch_count: string | number;
   repeat_mail_touch_count: string | number;
+  unique_due_addresses_with_gaps: string | number;
+  due_address_gap_instances: string | number;
+}
+
+interface DashboardRow {
+  dashboard: {
+    global: GlobalRow | null;
+    campaigns: CampaignRow[];
+    drops: DropRow[];
+    recommendations: RecommendationRow[];
+  };
 }
 
 interface CampaignRow {
@@ -97,31 +108,60 @@ function mapRecommendation(row: RecommendationRow): DirectMailMessageRecommendat
 }
 
 export async function loadDirectMailDashboard(query: QueryFn): Promise<DirectMailDashboardData> {
-  const [globalRows, campaignRows, dropRows, recommendationRows] = await Promise.all([
-    query<GlobalRow>("SELECT * FROM public.v_direct_mail_global_reporting"),
-    query<CampaignRow>("SELECT * FROM public.v_direct_mail_campaign_reporting ORDER BY campaign_name"),
-    query<DropRow>("SELECT * FROM public.v_direct_mail_drop_reporting ORDER BY planned_mail_date DESC NULLS LAST, drop_number DESC"),
-    query<RecommendationRow>("SELECT * FROM public.v_direct_mail_message_recommendations ORDER BY current_hail_age_days, campaign_name"),
-  ]);
+  const dashboardRows = await query<DashboardRow>(`
+    SELECT jsonb_build_object(
+      'global', (SELECT to_jsonb(global_report) FROM public.v_direct_mail_global_reporting global_report),
+      'campaigns', COALESCE((
+        SELECT jsonb_agg(to_jsonb(campaign_report) ORDER BY campaign_report.campaign_name)
+        FROM public.v_direct_mail_campaign_reporting campaign_report
+      ), '[]'::jsonb),
+      'drops', COALESCE((
+        SELECT jsonb_agg(
+          to_jsonb(drop_report)
+          ORDER BY drop_report.planned_mail_date DESC NULLS LAST, drop_report.drop_number DESC
+        )
+        FROM public.v_direct_mail_drop_reporting drop_report
+      ), '[]'::jsonb),
+      'recommendations', COALESCE((
+        SELECT jsonb_agg(
+          to_jsonb(recommendation)
+          ORDER BY recommendation.current_hail_age_days, recommendation.campaign_name
+        )
+        FROM public.v_direct_mail_message_recommendations recommendation
+      ), '[]'::jsonb)
+    ) AS dashboard
+  `);
+  const payload = dashboardRows[0]?.dashboard ?? {
+    global: null,
+    campaigns: [],
+    drops: [],
+    recommendations: [],
+  };
+  const {
+    global,
+    campaigns: campaignRows,
+    drops: dropRows,
+    recommendations: recommendationRows,
+  } = payload;
   const campaigns = campaignRows.map(mapCampaign);
   const campaignTotals = campaigns.reduce((total, row) => ({
     campaignCount: total.campaignCount + 1, dropCount: total.dropCount + row.dropCount,
-    totalAddressGaps: total.totalAddressGaps + row.totalAddressGaps,
     attributedLeads: total.attributedLeads + row.attributedLeads,
     confirmedLeads: total.confirmedLeads + row.confirmedLeads,
     attributedSales: total.attributedSales + row.attributedSales,
     attributedRevenue: total.attributedRevenue + row.attributedRevenue,
     totalCost: total.totalCost + row.totalCampaignCost,
   }), {
-    campaignCount: 0, dropCount: 0, totalAddressGaps: 0, attributedLeads: 0, confirmedLeads: 0,
+    campaignCount: 0, dropCount: 0, attributedLeads: 0, confirmedLeads: 0,
     attributedSales: 0, attributedRevenue: 0, totalCost: 0,
   });
-  const global = globalRows[0];
   const summary = {
     ...campaignTotals,
     uniqueAddressesConfirmedMailed: numeric(global?.unique_addresses_confirmed_mailed ?? 0),
     confirmedMailTouches: numeric(global?.confirmed_mail_touch_count ?? 0),
     repeatMailTouches: numeric(global?.repeat_mail_touch_count ?? 0),
+    uniqueDueAddressesWithGaps: numeric(global?.unique_due_addresses_with_gaps ?? 0),
+    addressGapInstances: numeric(global?.due_address_gap_instances ?? 0),
   };
 
   return {

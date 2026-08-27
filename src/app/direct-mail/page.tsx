@@ -9,7 +9,7 @@ import {
 import type {
   DirectMailDashboardData, DirectMailDashboardResponse, DirectMailDropReport,
 } from "@/lib/direct-mail/types";
-import { formatDirectMailDate } from "@/lib/direct-mail/format";
+import { formatDirectMailDate, isDirectMailProvenStatus } from "@/lib/direct-mail/format";
 
 const number = new Intl.NumberFormat("en-US");
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -24,8 +24,8 @@ function StatCard({ label, value, detail, icon: Icon, tone = "text-[#58a6ff]" }:
   </div>;
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const proven = ["postal_confirmed", "complete"].includes(status);
+function StatusBadge({ status, confirmedRecipientCount }: { status: string; confirmedRecipientCount: number }) {
+  const proven = isDirectMailProvenStatus(status, confirmedRecipientCount);
   return <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${proven
     ? "border-[#3fb950]/30 bg-[#3fb950]/10 text-[#3fb950]"
     : "border-[#d29922]/30 bg-[#d29922]/10 text-[#d29922]"}`}>
@@ -67,7 +67,7 @@ function CampaignScorecard({ data }: { data: DirectMailDashboardData }) {
       </tr></thead>
       <tbody>{data.campaigns.map((row) => <tr key={row.campaignId} className="border-b border-[#30363d]/70">
         <td className="px-4 py-3"><div className="flex items-center gap-2 font-medium text-[#e6edf3]">{row.campaignName}{row.driveWebUrl ? <a href={row.driveWebUrl} target="_blank" rel="noreferrer" aria-label={`Open ${row.campaignName} in Drive`}><ExternalLink className="h-3.5 w-3.5 text-[#58a6ff]" /></a> : null}</div><div className="mt-1 text-xs text-[#8b949e]">{row.stormEventCode ?? "Evergreen"} · {formatDirectMailDate(row.stormDate)}</div></td>
-        <td className="px-4 py-3"><StatusBadge status={row.campaignStatus} /></td>
+        <td className="px-4 py-3"><StatusBadge status={row.campaignStatus} confirmedRecipientCount={row.confirmedMailTouches} /></td>
         <td className="px-4 py-3 text-right font-mono text-[#e6edf3]">{number.format(row.uniqueAddressesConfirmedMailed)}</td>
         <td className="px-4 py-3 text-right font-mono text-[#e6edf3]">{number.format(row.confirmedMailTouches)}</td>
         <td className="px-4 py-3 text-right font-mono text-[#d29922]">{number.format(row.totalAddressGaps)}</td>
@@ -85,7 +85,7 @@ function DropFunnels({ data }: { data: DirectMailDashboardData }) {
     {data.drops.map((drop) => <article key={drop.dropId} className="rounded-lg border border-[#30363d] bg-[#161b22] p-5">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div><div className="flex items-center gap-2"><h3 className="font-medium text-[#e6edf3]">{drop.campaignName} · Drop {drop.dropNumber}</h3>{drop.driveWebUrl ? <a href={drop.driveWebUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4 text-[#58a6ff]" /></a> : null}</div><div className="mt-1 text-xs text-[#8b949e]">Planned {formatDirectMailDate(drop.plannedMailDate)} · Postal proof {formatDirectMailDate(drop.postalDropAt)} · {drop.hailAgeDays ?? "unknown"} hail days</div></div>
-        <StatusBadge status={drop.dropStatus} />
+        <StatusBadge status={drop.dropStatus} confirmedRecipientCount={drop.addressesConfirmedMailed} />
       </div>
       <Funnel drop={drop} />
       {drop.totalAddressGaps > 0 ? <div className="mt-4 text-xs text-[#d29922]">Gaps: {number.format(drop.eligibleNotPackaged)} eligible not packaged · {number.format(drop.packagedNotSubmitted)} packaged not submitted · {number.format(drop.vendorRejectedRecipientCount)} vendor rejected · {number.format(drop.unconfirmedAfterPostalDrop)} unconfirmed after postal drop</div> : null}
@@ -112,7 +112,7 @@ function Dashboard({ data }: { data: DirectMailDashboardData }) {
     <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
       <StatCard label="Confirmed homes" value={number.format(summary.uniqueAddressesConfirmedMailed)} detail="Unique addresses with postal evidence" icon={MapPin} tone="text-[#3fb950]" />
       <StatCard label="Confirmed touches" value={number.format(summary.confirmedMailTouches)} detail={`${number.format(summary.repeatMailTouches)} repeat touches`} icon={Mail} />
-      <StatCard label="Address gaps" value={number.format(summary.totalAddressGaps)} detail="Eligible, packaging, or confirmation gaps" icon={AlertTriangle} tone="text-[#d29922]" />
+      <StatCard label="Missed homes" value={number.format(summary.uniqueDueAddressesWithGaps)} detail={`${number.format(summary.addressGapInstances)} overdue packaging, submission, rejection, or confirmation gap instances`} icon={AlertTriangle} tone="text-[#d29922]" />
       <StatCard label="Attributed leads" value={number.format(summary.attributedLeads)} detail={`${number.format(summary.confirmedLeads)} confirmed direct-mail leads`} icon={RadioTower} />
       <StatCard label="Attributed sales" value={number.format(summary.attributedSales)} detail={`${money.format(summary.attributedRevenue)} attributed revenue`} icon={BarChart3} tone="text-[#3fb950]" />
     </div>
