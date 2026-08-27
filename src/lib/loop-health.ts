@@ -376,8 +376,6 @@ function codexProjectFor(entry: LoopRegistryEntry): LoopCodexProject {
     ? "jackmaverick/website"
     : isCommandCenterLoop
       ? "jackmaverick/maverick-command-center"
-      : isProductionCommunicationLoop
-        ? "jackmaverick/supabase-maverick-exteriors"
       : "jackmaverick/supabase-maverick-exteriors";
   const branch = isWebsiteLoop
     ? "codex/website-growth-loop"
@@ -452,8 +450,8 @@ export async function buildLoopHealth(options: { includeSnapshots?: boolean } = 
   const snapshots = includeSnapshots ? await fetchLatestLoopHealthSnapshots() : new Map();
   const loops = await Promise.all(
     loopRegistry.map(async (entry) => {
-      const localProofs = await Promise.all(entry.proofSources.map(resolveProof));
       const snapshot = snapshots.get(entry.id);
+      const localProofs = snapshot ? [] : await Promise.all(entry.proofSources.map(resolveProof));
       const liveSnapshotProof = snapshot ? snapshotProof(snapshot) : null;
       const proofs = liveSnapshotProof ? [liveSnapshotProof, ...localProofs] : localProofs;
       const status = liveSnapshotProof?.status ?? worstStatus(localProofs.map((proof) => proof.status));
