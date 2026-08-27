@@ -6,6 +6,11 @@ import { buildLoopHealth, type LoopHealthEntry } from "../src/lib/loop-health";
 
 const { Pool } = pg;
 
+const SPECIALIZED_LOOP_IDS = new Set([
+  "production-communication-closed-loop",
+  "gaf_measurements_to_jobnimbus",
+]);
+
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
   console.error("DATABASE_URL is required to publish loop health snapshots.");
@@ -13,7 +18,14 @@ if (!databaseUrl) {
 }
 
 function bestProof(loop: LoopHealthEntry) {
-  const preferredStatuses = ["failing", "stale", "warning", "healthy", "paused", "unknown"] as const;
+  const preferredStatuses = [
+    "failing",
+    "stale",
+    "warning",
+    "healthy",
+    "paused",
+    "unknown",
+  ] as const;
   for (const status of preferredStatuses) {
     const proof = loop.proofs.find((candidate) => candidate.status === status);
     if (proof) return proof;
@@ -21,7 +33,10 @@ function bestProof(loop: LoopHealthEntry) {
   return loop.proofs.find((proof) => proof.available) ?? loop.proofs[0] ?? null;
 }
 
-async function publish(pool: pg.Pool, health: Awaited<ReturnType<typeof buildLoopHealth>>) {
+async function publish(
+  pool: pg.Pool,
+  health: Awaited<ReturnType<typeof buildLoopHealth>>,
+) {
   const client = await pool.connect();
 
   try {
@@ -31,7 +46,7 @@ async function publish(pool: pg.Pool, health: Awaited<ReturnType<typeof buildLoo
       // This loop has a dedicated 15-minute collector with structured reply,
       // delivery, and active-case evidence. A generic artifact scan must never
       // overwrite its more authoritative snapshot.
-      if (loop.id === "production-communication-closed-loop") continue;
+      if (SPECIALIZED_LOOP_IDS.has(loop.id)) continue;
       const proof = bestProof(loop);
       await client.query(
         `
@@ -80,7 +95,7 @@ async function publish(pool: pg.Pool, health: Awaited<ReturnType<typeof buildLoo
             freshness: loop.freshness,
             localProofs: loop.proofs,
           }),
-        ]
+        ],
       );
     }
 
@@ -112,9 +127,11 @@ async function main() {
     JSON.stringify({
       status: "ok",
       generatedAt: health.generatedAt,
-      loopsPublished: health.loops.length - 1,
+      loopsPublished: health.loops.filter(
+        (loop) => !SPECIALIZED_LOOP_IDS.has(loop.id),
+      ).length,
       summary: health.summary,
-    })
+    }),
   );
 }
 

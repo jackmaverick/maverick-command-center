@@ -58,7 +58,7 @@ Publish current local proof into Supabase:
 npm run loop-health:publish
 ```
 
-The graph publisher writes one row per generic loop into `loop_health_snapshots`. It intentionally skips `production-communication-closed-loop`, which has a dedicated 15-minute structured collector. The production Vercel cockpit reads the latest row per loop, so Vercel never needs direct access to `/Users/maverick_ai/...` proof files.
+The graph publisher writes one row per generic loop into `loop_health_snapshots`. It intentionally skips `production-communication-closed-loop` and `gaf_measurements_to_jobnimbus`, which have dedicated structured collectors. The production Vercel cockpit reads the latest row per loop, so Vercel never needs direct access to `/Users/maverick_ai/...` proof files.
 
 Install the recurring 30-minute local graph publisher:
 
@@ -120,6 +120,39 @@ For a loop such as `Homeowner production texts`:
 - The production cockpit snapshot publisher runs every 15 minutes. If it stops, snapshot freshness independently downgrades the card.
 - The card's Codex starter prompt points to the runner, heartbeat, launchd logs, and safe dry-run recovery sequence.
 
+## GAF Measurements to JobNimbus Contract
+
+The owning runner publishes two independent records:
+
+- `loop_health`: `source=runner`, `loop_name=gaf_measurements_to_jobnimbus`, plus current runtime status, detail, and timestamps.
+- `loop_health_snapshots`: `loop_id=gaf_measurements_to_jobnimbus`, the business-result status, `ran_at`, `checked_at`, proof references, and the JSON fields below in `details`.
+
+```json
+{
+  "contract_version": "gaf_measurements_to_jobnimbus.v1",
+  "outcome": "applied_verified",
+  "source_provenance": "verified_attached_report",
+  "run_id": "stable audit identifier",
+  "verification": {
+    "method": "authenticated_jobnimbus_browser_readback",
+    "readback_at": "ISO-8601 timestamp"
+  },
+  "counts": {
+    "discovered": 0,
+    "eligible": 0,
+    "applied_verified": 0,
+    "nothing_to_change_verified": 0,
+    "blocked_source": 0,
+    "blocked_conflict": 0,
+    "browser_failed": 0,
+    "writes": 0,
+    "verified_readbacks": 0
+  }
+}
+```
+
+`outcome` is `applied_verified`, `nothing_to_change_verified`, `blocked`, or `failed`. Healthy requires a fresh daily snapshot and either positive `applied_verified` with `applied_verified = writes = verified_readbacks`, or positive `nothing_to_change_verified` with zero writes. A deployed skill, queue scan, or browser acceptance without readback remains unknown rather than healthy.
+
 ## Registry
 
 The durable registry lives in `src/lib/loop-registry.ts`.
@@ -147,7 +180,7 @@ The current target structure is:
 
 - Production communication: one graph with materials/install, team-update, and supervised-message lanes.
 - Daily operations: one stuck-work capability feeding the shared Daily Touch action surface.
-- Appointment lifecycle: one graph for prep, confirmation, reminders, replies, and no-shows.
+- Sales / estimate prep: one graph where verified GAF entry feeds prep, confirmation, reminders, replies, and no-shows.
 - Job closeout and cash: one graph for supplier intake, matching, ledger, warranty, invoicing, and collections.
 - Growth and reputation: one Website Growth graph plus one Reputation graph; retire duplicate paused ClickFlow schedules after verification.
 - Pre-production readiness: one graph with permit and product-selection branches.

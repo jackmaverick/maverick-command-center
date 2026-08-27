@@ -1,4 +1,5 @@
-export type LoopStatus = "healthy" | "warning" | "failing" | "stale" | "paused" | "unknown";
+export type LoopStatus =
+  "healthy" | "warning" | "failing" | "stale" | "paused" | "unknown";
 
 export type LoopCadence = "daily" | "weekly" | "continuous" | "manual";
 
@@ -32,7 +33,8 @@ export interface LoopRegistryEntry {
 
 const dailyTouchListActionSurface = {
   name: "Michelle Daily Touch List",
-  purpose: "Team work queue for reviewing, approving, denying, marking wrong, or completing admin tasks.",
+  purpose:
+    "Team work queue for reviewing, approving, denying, marking wrong, or completing admin tasks.",
   pathOrUrl:
     "/Users/maverick_ai/supabase-maverick-exteriors/reports/michelle-daily-touch-list",
   actions: ["Approve", "Deny", "Wrong", "Done"],
@@ -40,16 +42,31 @@ const dailyTouchListActionSurface = {
 
 const opsInvestigationActionSurface = {
   name: "Ops automation Codex session",
-  purpose: "Investigate proof, repair the loop, and publish a fresh health snapshot. Live customer actions stay approval-gated.",
+  purpose:
+    "Investigate proof, repair the loop, and publish a fresh health snapshot. Live customer actions stay approval-gated.",
   pathOrUrl: "/Users/maverick_ai/worktrees/ops-automation-loop-fixes",
   actions: ["Investigate", "Dry run", "Publish snapshot"],
 };
 
 const websiteGrowthActionSurface = {
   name: "Website Growth worktree",
-  purpose: "Investigate SEO/indexing proof, create draft-only website work, and publish health snapshots after approval.",
+  purpose:
+    "Investigate SEO/indexing proof, create draft-only website work, and publish health snapshots after approval.",
   pathOrUrl: "/Users/maverick_ai/worktrees/website-growth-loop",
   actions: ["Investigate", "Draft", "Verify", "Publish snapshot"],
+};
+
+const jobNimbusMeasurementActionSurface = {
+  name: "JobNimbus roof measurements",
+  purpose:
+    "Review verified GAF source provenance, enter measurements through the authenticated JobNimbus browser, and confirm a fresh readback.",
+  pathOrUrl: "https://app.jobnimbus.com",
+  actions: [
+    "Review source",
+    "Enter measurements",
+    "Verify readback",
+    "Resolve blocker",
+  ],
 };
 
 const commandCenterActionSurface = {
@@ -66,7 +83,8 @@ export const loopRegistry: LoopRegistryEntry[] = [
     businessPromise:
       "Distinct install-morning, insurance, gutter, and introduction messages remain review-gated until each is separately validated.",
     owner: "Jack / Michael",
-    sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors/daily-production-check",
+    sourceRepoPath:
+      "/Users/maverick_ai/supabase-maverick-exteriors/daily-production-check",
     actionSurface: dailyTouchListActionSurface,
     cadence: "daily",
     approvalRequired: true,
@@ -78,15 +96,27 @@ export const loopRegistry: LoopRegistryEntry[] = [
         kind: "directory",
         path: "/Users/maverick_ai/supabase-maverick-exteriors/daily-production-check/runs",
         freshnessHours: 36,
-        failurePatterns: ["HTTPError", "522 Server Error", "failed immediately"],
-        successPatterns: ["homeowner_approval_tasks", "prod_install_morning", "prod_manager_intro_chester"],
+        failurePatterns: [
+          "HTTPError",
+          "522 Server Error",
+          "failed immediately",
+        ],
+        successPatterns: [
+          "homeowner_approval_tasks",
+          "prod_install_morning",
+          "prod_manager_intro_chester",
+        ],
       },
       {
         label: "scheduler memory",
         kind: "file",
         path: "/Users/maverick_ai/.codex/automations/daily-work-order-subcontractor-photo-links/memory.md",
         freshnessHours: 36,
-        failurePatterns: ["failed immediately", "No new audit file", "522 Server Error"],
+        failurePatterns: [
+          "failed immediately",
+          "No new audit file",
+          "522 Server Error",
+        ],
       },
     ],
   },
@@ -96,7 +126,8 @@ export const loopRegistry: LoopRegistryEntry[] = [
     businessPromise:
       "Sales and production teammates get the same install-date and work-order movement signals the automation sees.",
     owner: "Production / Bob-facing update loop",
-    sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors/daily-production-check",
+    sourceRepoPath:
+      "/Users/maverick_ai/supabase-maverick-exteriors/daily-production-check",
     actionSurface: dailyTouchListActionSurface,
     cadence: "daily",
     approvalRequired: false,
@@ -108,8 +139,16 @@ export const loopRegistry: LoopRegistryEntry[] = [
         kind: "directory",
         path: "/Users/maverick_ai/supabase-maverick-exteriors/daily-production-check/runs",
         freshnessHours: 36,
-        failurePatterns: ["HTTPError", "522 Server Error", "failed immediately"],
-        successPatterns: ["salesperson_update_texts", "subcontractor_confirmation_texts", "prod_bob_salesperson_production_update"],
+        failurePatterns: [
+          "HTTPError",
+          "522 Server Error",
+          "failed immediately",
+        ],
+        successPatterns: [
+          "salesperson_update_texts",
+          "subcontractor_confirmation_texts",
+          "prod_bob_salesperson_production_update",
+        ],
       },
       {
         label: "CompanyCam send ledger",
@@ -126,7 +165,8 @@ export const loopRegistry: LoopRegistryEntry[] = [
     businessPromise:
       "Homeowners receive one verified delivery/install schedule, one correction when dates change, and a fast human handoff when they object or ask for help.",
     owner: "Chester / Mia / AI Ops",
-    sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors/scripts/production_communication_graph.py",
+    sourceRepoPath:
+      "/Users/maverick_ai/supabase-maverick-exteriors/scripts/production_communication_graph.py",
     actionSurface: dailyTouchListActionSurface,
     cadence: "continuous",
     approvalRequired: false,
@@ -138,8 +178,14 @@ export const loopRegistry: LoopRegistryEntry[] = [
         kind: "file",
         path: "/Users/maverick_ai/supabase-maverick-exteriors/reports/production-communication-graph/health-latest.json",
         freshnessHours: 0.75,
-        failurePatterns: ["\"status\": \"failing\"", "Production communication graph poll failed"],
-        successPatterns: ["\"status\": \"healthy\"", "Sender and reply monitor ran successfully"],
+        failurePatterns: [
+          '"status": "failing"',
+          "Production communication graph poll failed",
+        ],
+        successPatterns: [
+          '"status": "healthy"',
+          "Sender and reply monitor ran successfully",
+        ],
       },
       {
         label: "production communication graph runner",
@@ -155,7 +201,8 @@ export const loopRegistry: LoopRegistryEntry[] = [
     businessPromise:
       "Jobs that sit too long in the wrong JobNimbus status are surfaced with owner, evidence, and next step.",
     owner: "Michelle / Jack",
-    sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors/reports/status-transition-intelligence",
+    sourceRepoPath:
+      "/Users/maverick_ai/supabase-maverick-exteriors/reports/status-transition-intelligence",
     actionSurface: dailyTouchListActionSurface,
     cadence: "daily",
     approvalRequired: false,
@@ -258,7 +305,11 @@ export const loopRegistry: LoopRegistryEntry[] = [
         kind: "file",
         path: "/Users/maverick_ai/.codex/automations/collections-text-dry-run-email/memory.md",
         freshnessHours: 36,
-        failurePatterns: ["failed before report generation", "HTTP 500", "counts were unavailable"],
+        failurePatterns: [
+          "failed before report generation",
+          "HTTP 500",
+          "counts were unavailable",
+        ],
         successPatterns: ["Result: ok", "email.status sent", "status=ok"],
       },
       {
@@ -289,7 +340,11 @@ export const loopRegistry: LoopRegistryEntry[] = [
         kind: "file",
         path: "/Users/maverick_ai/website/scripts/weekly_seo_content_plan.py",
         freshnessHours: 720,
-        successPatterns: ["No ClickFlow writes", "approval queue", "does not publish"],
+        successPatterns: [
+          "No ClickFlow writes",
+          "approval queue",
+          "does not publish",
+        ],
       },
       {
         label: "website repository state",
@@ -317,8 +372,17 @@ export const loopRegistry: LoopRegistryEntry[] = [
         path: "/Users/maverick_ai/website/docs/seo-reports",
         nameIncludes: ["daily-growth"],
         freshnessHours: 72,
-        failurePatterns: ["robots status: 404", "sitemap index status: 404", "GA4/GSC measurement status: **Blocked**"],
-        successPatterns: ["GA4/GSC measurement status: **Healthy**", "Robots status: 200", "Sitemap index status: 200", "No crawl/index P0"],
+        failurePatterns: [
+          "robots status: 404",
+          "sitemap index status: 404",
+          "GA4/GSC measurement status: **Blocked**",
+        ],
+        successPatterns: [
+          "GA4/GSC measurement status: **Healthy**",
+          "Robots status: 200",
+          "Sitemap index status: 200",
+          "No crawl/index P0",
+        ],
       },
       {
         label: "latest technical checks data",
@@ -326,7 +390,11 @@ export const loopRegistry: LoopRegistryEntry[] = [
         path: "/Users/maverick_ai/website/docs/seo-reports/data",
         nameIncludes: ["technical-checks"],
         freshnessHours: 72,
-        failurePatterns: ["\"status\": 404", "\"status\": 500", "\"indexable\": false"],
+        failurePatterns: [
+          '"status": 404',
+          '"status": 500',
+          '"indexable": false',
+        ],
         successPatterns: ["sitemap", "robots", "canonical"],
       },
       {
@@ -354,8 +422,17 @@ export const loopRegistry: LoopRegistryEntry[] = [
         kind: "file",
         path: "/Users/maverick_ai/supabase-maverick-exteriors/reports/google-review-monitor-state.json",
         freshnessHours: 72,
-        failurePatterns: ["auth_needed", "unauthorized_client", "missing_from_supabase", "Traceback"],
-        successPatterns: ["finished_at", "review_count", "supabase_count_after"],
+        failurePatterns: [
+          "auth_needed",
+          "unauthorized_client",
+          "missing_from_supabase",
+          "Traceback",
+        ],
+        successPatterns: [
+          "finished_at",
+          "review_count",
+          "supabase_count_after",
+        ],
       },
       {
         label: "latest review sequence preview",
@@ -363,7 +440,11 @@ export const loopRegistry: LoopRegistryEntry[] = [
         path: "/Users/maverick_ai/supabase-maverick-exteriors/reports",
         nameIncludes: ["google-review-sequence-preview"],
         freshnessHours: 72,
-        failurePatterns: ["Traceback", "ModuleNotFoundError", "unauthorized_client"],
+        failurePatterns: [
+          "Traceback",
+          "ModuleNotFoundError",
+          "unauthorized_client",
+        ],
         successPatterns: ["Approval file", "Denial file", "review"],
       },
     ],
@@ -389,9 +470,28 @@ export const loopRegistry: LoopRegistryEntry[] = [
         nameIncludes: ["appointment-prep"],
         freshnessHours: 36,
         failurePatterns: ["Traceback", "failed", "error"],
-        successPatterns: ["Appointments:", "Blocked:", "Needs Review:", "Ready:"],
+        successPatterns: [
+          "Appointments:",
+          "Blocked:",
+          "Needs Review:",
+          "Ready:",
+        ],
       },
     ],
+  },
+  {
+    id: "gaf_measurements_to_jobnimbus",
+    name: "GAF measurements → JobNimbus",
+    businessPromise:
+      "A GAF measurement report with verified attachment provenance becomes an eligible roof_measurements row, is entered through the authenticated JobNimbus browser, and is confirmed by a fresh readback.",
+    owner: "Sales / Estimate Prep / AI Ops",
+    sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors",
+    actionSurface: jobNimbusMeasurementActionSurface,
+    cadence: "daily",
+    approvalRequired: false,
+    nextAction:
+      "Require the owning runner to publish the v1 count contract and a verified JobNimbus readback or verified zero-work outcome; a deployed skill or queue scan is not business proof.",
+    proofSources: [],
   },
   {
     id: "appointment-sms-reminders",
@@ -410,14 +510,22 @@ export const loopRegistry: LoopRegistryEntry[] = [
         label: "appointment SMS sender function",
         kind: "file",
         path: "/Users/maverick_ai/worktrees/ops-automation-loop-fixes/supabase/functions/send-appointment-sms/index.ts",
-        successPatterns: ["scheduled_outreach", "failure_reason", "send-appointment-sms"],
+        successPatterns: [
+          "scheduled_outreach",
+          "failure_reason",
+          "send-appointment-sms",
+        ],
         failurePatterns: ["TODO", "not implemented"],
       },
       {
         label: "appointment SMS queue health script",
         kind: "file",
         path: "/Users/maverick_ai/worktrees/ops-automation-loop-fixes/scripts/sms_health_check.py",
-        successPatterns: ["scheduled_outreach", "send-appointment-sms", "--json"],
+        successPatterns: [
+          "scheduled_outreach",
+          "send-appointment-sms",
+          "--json",
+        ],
         failurePatterns: ["Traceback", "failed"],
       },
       {
@@ -456,7 +564,11 @@ export const loopRegistry: LoopRegistryEntry[] = [
         path: "/Users/maverick_ai/supabase-maverick-exteriors/reports/permit-loop-approval-requests.json",
         freshnessHours: 72,
         failurePatterns: ["Traceback", "HTTP 500", "failed"],
-        successPatterns: ["review_only", "request_count", "ready_for_review_count"],
+        successPatterns: [
+          "review_only",
+          "request_count",
+          "ready_for_review_count",
+        ],
       },
       {
         label: "latest permit digest log",
@@ -486,8 +598,17 @@ export const loopRegistry: LoopRegistryEntry[] = [
         kind: "file",
         path: "/Users/maverick_ai/.codex/automations/daily-shingle-color-sms-report/memory.md",
         freshnessHours: 48,
-        failurePatterns: ["Could not verify live", "Cloudflare 522", "CROSS_CANDIDATE_MISMATCH", "timed out"],
-        successPatterns: ["NO_SHINGLE_COLOR_MENTIONS", "No JobNimbus/OpenPhone write was attempted", "Write results"],
+        failurePatterns: [
+          "Could not verify live",
+          "Cloudflare 522",
+          "CROSS_CANDIDATE_MISMATCH",
+          "timed out",
+        ],
+        successPatterns: [
+          "NO_SHINGLE_COLOR_MENTIONS",
+          "No JobNimbus/OpenPhone write was attempted",
+          "Write results",
+        ],
       },
     ],
   },
@@ -509,8 +630,17 @@ export const loopRegistry: LoopRegistryEntry[] = [
         kind: "file",
         path: "/Users/maverick_ai/.codex/automations/richards-billtrust-daily-invoice-ingestion/memory.md",
         freshnessHours: 48,
-        failurePatterns: ["Traceback", "download failed", "edge extraction failed", "HTTP 500"],
-        successPatterns: ["GP-ready after run", "New invoice rows inserted", "JobNimbus upload verification"],
+        failurePatterns: [
+          "Traceback",
+          "download failed",
+          "edge extraction failed",
+          "HTTP 500",
+        ],
+        successPatterns: [
+          "GP-ready after run",
+          "New invoice rows inserted",
+          "JobNimbus upload verification",
+        ],
       },
     ],
   },
@@ -545,7 +675,8 @@ export const loopRegistry: LoopRegistryEntry[] = [
     businessPromise:
       "Supplier invoice coverage, line totals, exception queues, and material costs stay visible before gross-profit numbers are trusted.",
     owner: "Finance / Jack",
-    sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors/reports/invoice-ledger-health",
+    sourceRepoPath:
+      "/Users/maverick_ai/supabase-maverick-exteriors/reports/invoice-ledger-health",
     actionSurface: dailyTouchListActionSurface,
     cadence: "weekly",
     approvalRequired: false,
@@ -589,8 +720,17 @@ export const loopRegistry: LoopRegistryEntry[] = [
         kind: "file",
         path: "/Users/maverick_ai/supabase-maverick-exteriors/reports/weekly-learning-scorecard/weekly-loop-audit-latest.md",
         freshnessHours: 240,
-        failurePatterns: ["critical / feedback_loop", "learning_loop_not_ready", "invalid API key", "instrumentation_blocked"],
-        successPatterns: ["Weekly Intelligence Loop Audit", "Downstream Value", "Feature Learning Coverage"],
+        failurePatterns: [
+          "critical / feedback_loop",
+          "learning_loop_not_ready",
+          "invalid API key",
+          "instrumentation_blocked",
+        ],
+        successPatterns: [
+          "Weekly Intelligence Loop Audit",
+          "Downstream Value",
+          "Feature Learning Coverage",
+        ],
       },
       {
         label: "weekly learning scorecard",

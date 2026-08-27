@@ -9,7 +9,8 @@ export type LoopFamilyId =
   | "readiness"
   | "learning-infrastructure";
 
-export type RuntimeSignalSource = "launchd" | "hermes" | "crontab" | "openclaw";
+export type RuntimeSignalSource =
+  "launchd" | "hermes" | "crontab" | "openclaw" | "runner";
 
 export interface RuntimeSignalRef {
   source: RuntimeSignalSource;
@@ -45,7 +46,8 @@ export const loopFamilies: LoopFamilyDefinition[] = [
   {
     id: "production",
     label: "Production communication",
-    promise: "One verified production schedule reaches homeowners and the team, and replies return to the right owner.",
+    promise:
+      "One verified production schedule reaches homeowners and the team, and replies return to the right owner.",
     recommendation:
       "Keep one Production Communication Graph. Materials/install dates are one schedule-version lane; team updates and other supervised homeowner messages become child lanes, not separate top-level loops.",
     targetShape: "3 cards → 1 graph with 3 lanes",
@@ -53,23 +55,26 @@ export const loopFamilies: LoopFamilyDefinition[] = [
   {
     id: "operations",
     label: "Daily operations",
-    promise: "Exceptions reach the right person without turning the dashboard itself into another business loop.",
+    promise:
+      "Exceptions reach the right person without turning the dashboard itself into another business loop.",
     recommendation:
       "Keep stuck-job detection as a business capability. Treat Michelle Daily Touch as the shared action surface and monitor its publisher as infrastructure rather than calling the packet a separate business loop.",
     targetShape: "2 cards → 1 capability + 1 shared surface",
   },
   {
     id: "sales",
-    label: "Appointment lifecycle",
-    promise: "Every appointment is prepared, confirmed, attended, and followed up through one stateful customer journey.",
+    label: "Sales / estimate prep",
+    promise:
+      "Every sales appointment has verified source measurements, a prepared rep, and a confirmed customer journey.",
     recommendation:
-      "Merge appointment prep and appointment reminders into one Appointment Lifecycle Graph with prep, confirmation, 24-hour, 2-hour, reply, and no-show nodes.",
-    targetShape: "2 cards → 1 graph",
+      "Keep one Sales Readiness Graph. GAF ingest and verified JobNimbus entry feed appointment prep; confirmation, reminders, replies, and no-shows remain downstream nodes rather than separate executive loops.",
+    targetShape: "3 cards → 1 graph with estimate-prep and appointment lanes",
   },
   {
     id: "finance",
     label: "Job closeout and cash",
-    promise: "Supplier documents become job costs, completed work becomes invoices, warranties close, and final payments are collected.",
+    promise:
+      "Supplier documents become job costs, completed work becomes invoices, warranties close, and final payments are collected.",
     recommendation:
       "Merge supplier ingestion, invoice matching, warranty readiness, ledger health, and collections into one Job Closeout & Cash Graph. Preserve each vendor/parser as a node, not a separate executive loop.",
     targetShape: "5 cards → 1 graph with vendor and closeout nodes",
@@ -77,7 +82,8 @@ export const loopFamilies: LoopFamilyDefinition[] = [
   {
     id: "growth",
     label: "Growth and reputation",
-    promise: "The site earns demand and completed customers create reputation without duplicate schedulers.",
+    promise:
+      "The site earns demand and completed customers create reputation without duplicate schedulers.",
     recommendation:
       "Merge indexing and content operations into one Website Growth Graph, retire the paused ClickFlow scheduler cluster after confirming it is intentionally replaced, and keep reviews as the reputation branch triggered by job completion.",
     targetShape: "3 cards → 2 graphs; retire paused duplicates",
@@ -85,7 +91,8 @@ export const loopFamilies: LoopFamilyDefinition[] = [
   {
     id: "readiness",
     label: "Pre-production readiness",
-    promise: "Permits, product selections, and materials are complete before scheduling creates customer promises.",
+    promise:
+      "Permits, product selections, and materials are complete before scheduling creates customer promises.",
     recommendation:
       "Merge permit readiness and shingle/color readiness into one Pre-Production Readiness Graph with city-rule and product-selection branches.",
     targetShape: "2 cards → 1 graph",
@@ -93,7 +100,8 @@ export const loopFamilies: LoopFamilyDefinition[] = [
   {
     id: "learning-infrastructure",
     label: "Learning and infrastructure",
-    promise: "The automation platform stays maintainable without obscuring business-loop health.",
+    promise:
+      "The automation platform stays maintainable without obscuring business-loop health.",
     recommendation:
       "Move learning cadence and repo/worktree cleanliness to a separate Agent & Infrastructure Health page. They matter, but they are not customer or revenue loops.",
     targetShape: "2 business cards → infrastructure page",
@@ -107,7 +115,11 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     stage: "other supervised homeowner messages",
     dependsOn: [],
     runtimeSignals: [
-      { source: "launchd", loopName: "com.maverick.daily-production-check", label: "Morning production runner" },
+      {
+        source: "launchd",
+        loopName: "com.maverick.daily-production-check",
+        label: "Morning production runner",
+      },
       {
         source: "launchd",
         loopName: "com.maverick.daily-production-check-afternoon",
@@ -117,7 +129,8 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     simplification: {
       action: "split",
       target: "Production Communication Graph / supervised-message lane",
-      reason: "Materials and install dates already have their own shared schedule-version graph; keep only message types with a different trigger or approval policy here.",
+      reason:
+        "Materials and install dates already have their own shared schedule-version graph; keep only message types with a different trigger or approval policy here.",
     },
   },
   {
@@ -126,7 +139,11 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     stage: "internal production updates",
     dependsOn: [],
     runtimeSignals: [
-      { source: "launchd", loopName: "com.maverick.daily-production-check", label: "Morning production runner" },
+      {
+        source: "launchd",
+        loopName: "com.maverick.daily-production-check",
+        label: "Morning production runner",
+      },
       {
         source: "launchd",
         loopName: "com.maverick.daily-production-check-afternoon",
@@ -136,7 +153,8 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     simplification: {
       action: "merge",
       target: "Production Communication Graph / team-update lane",
-      reason: "It reads the same work-order and schedule state as homeowner communication; only the audience and approval rule differ.",
+      reason:
+        "It reads the same work-order and schedule state as homeowner communication; only the audience and approval rule differ.",
     },
   },
   {
@@ -161,7 +179,8 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     simplification: {
       action: "keep",
       target: "Production Communication Graph",
-      reason: "Material delivery and install date are one schedule version and must be corrected together when a homeowner objects.",
+      reason:
+        "Material delivery and install date are one schedule version and must be corrected together when a homeowner objects.",
     },
   },
   {
@@ -179,7 +198,8 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     simplification: {
       action: "keep",
       target: "Daily Operations Graph / stuck-work detector",
-      reason: "This is a distinct exception detector with a clear business promise and owner.",
+      reason:
+        "This is a distinct exception detector with a clear business promise and owner.",
     },
   },
   {
@@ -202,16 +222,21 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     simplification: {
       action: "move",
       target: "Shared action-surface infrastructure",
-      reason: "Daily Touch is where multiple loops are worked; monitoring its publisher is necessary, but it is not a separate customer outcome.",
+      reason:
+        "Daily Touch is where multiple loops are worked; monitoring its publisher is necessary, but it is not a separate customer outcome.",
     },
   },
   {
     loopId: "appointment-prep-loop",
     family: "sales",
     stage: "prepare appointment",
-    dependsOn: [],
+    dependsOn: ["gaf_measurements_to_jobnimbus"],
     runtimeSignals: [
-      { source: "launchd", loopName: "com.maverick.appointment-prep-loop", label: "Appointment prep launchd" },
+      {
+        source: "launchd",
+        loopName: "com.maverick.appointment-prep-loop",
+        label: "Appointment prep launchd",
+      },
       {
         source: "hermes",
         loopName: "Maverick Appointment Prep Daily Email",
@@ -222,7 +247,29 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     simplification: {
       action: "merge",
       target: "Appointment Lifecycle Graph",
-      reason: "Prep and reminder decisions share the same appointment task and should advance one appointment state machine.",
+      reason:
+        "Prep and reminder decisions share the same appointment task and should advance one appointment state machine.",
+    },
+  },
+  {
+    loopId: "gaf_measurements_to_jobnimbus",
+    family: "sales",
+    stage: "GAF ingest → verified source row → JobNimbus entry → readback",
+    dependsOn: [],
+    runtimeSignals: [
+      {
+        source: "runner",
+        loopName: "gaf_measurements_to_jobnimbus",
+        label: "GAF measurements owning runner",
+      },
+    ],
+    maxSnapshotAgeHours: 36,
+    maxRunAgeHours: 36,
+    simplification: {
+      action: "merge",
+      target: "Sales Readiness Graph / estimate-prep lane",
+      reason:
+        "Email ingest, provenance validation, browser entry, and readback are dependent nodes of one measurement promise, not four independent loops.",
     },
   },
   {
@@ -231,14 +278,19 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     stage: "confirm and monitor appointment",
     dependsOn: ["appointment-prep-loop"],
     runtimeSignals: [
-      { source: "launchd", loopName: "com.maverick.daily-sms-sync", label: "SMS sync runtime" },
+      {
+        source: "launchd",
+        loopName: "com.maverick.daily-sms-sync",
+        label: "SMS sync runtime",
+      },
     ],
     maxSnapshotAgeHours: 1,
     maxRunAgeHours: 1,
     simplification: {
       action: "merge",
       target: "Appointment Lifecycle Graph",
-      reason: "Confirmation, reminders, replies, and no-shows are successive states of the same appointment rather than independent loops.",
+      reason:
+        "Confirmation, reminders, replies, and no-shows are successive states of the same appointment rather than independent loops.",
     },
   },
   {
@@ -256,7 +308,8 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     simplification: {
       action: "merge",
       target: "Job Closeout & Cash Graph / subcontractor-invoice node",
-      reason: "Gutter matching is one vendor-specific branch between work completion and the common cost ledger.",
+      reason:
+        "Gutter matching is one vendor-specific branch between work completion and the common cost ledger.",
     },
   },
   {
@@ -274,23 +327,41 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     simplification: {
       action: "merge",
       target: "Job Closeout & Cash Graph / supplier-ingestion node",
-      reason: "Richards is a source adapter whose output should feed the shared invoice and job-cost graph.",
+      reason:
+        "Richards is a source adapter whose output should feed the shared invoice and job-cost graph.",
     },
   },
   {
     loopId: "invoice-ledger-health-loop",
     family: "finance",
     stage: "reconcile job costs and invoice state",
-    dependsOn: ["richards-billtrust-invoice-loop", "gutter-invoice-reconciliation-loop"],
+    dependsOn: [
+      "richards-billtrust-invoice-loop",
+      "gutter-invoice-reconciliation-loop",
+    ],
     runtimeSignals: [
-      { source: "launchd", loopName: "com.maverick.invoice-fast", label: "Fast invoice scanner" },
-      { source: "launchd", loopName: "com.maverick.invoice-full", label: "Full invoice scanner", required: false },
-      { source: "launchd", loopName: "com.maverick.invoice-due-date-loop", label: "Due-date alignment" },
+      {
+        source: "launchd",
+        loopName: "com.maverick.invoice-fast",
+        label: "Fast invoice scanner",
+      },
+      {
+        source: "launchd",
+        loopName: "com.maverick.invoice-full",
+        label: "Full invoice scanner",
+        required: false,
+      },
+      {
+        source: "launchd",
+        loopName: "com.maverick.invoice-due-date-loop",
+        label: "Due-date alignment",
+      },
     ],
     simplification: {
       action: "merge",
       target: "Job Closeout & Cash Graph / ledger node",
-      reason: "This is the shared state between every supplier parser, warranty closeout, final invoice, and collections action.",
+      reason:
+        "This is the shared state between every supplier parser, warranty closeout, final invoice, and collections action.",
     },
   },
   {
@@ -302,7 +373,8 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     simplification: {
       action: "merge",
       target: "Job Closeout & Cash Graph / warranty node",
-      reason: "Warranty submission is a closeout milestone dependent on installed work and verified product data, not a standalone operating loop.",
+      reason:
+        "Warranty submission is a closeout milestone dependent on installed work and verified product data, not a standalone operating loop.",
     },
   },
   {
@@ -325,7 +397,8 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     simplification: {
       action: "merge",
       target: "Job Closeout & Cash Graph / collections node",
-      reason: "Collections is the final state of the same invoice graph and should inherit verified balance, due date, and contact policy.",
+      reason:
+        "Collections is the final state of the same invoice graph and should inherit verified balance, due date, and contact policy.",
     },
   },
   {
@@ -348,7 +421,8 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     simplification: {
       action: "retire",
       target: "Website Growth Graph",
-      reason: "The ClickFlow scheduler cluster is paused; confirm the SEO operator replaced it, then delete the duplicate schedules and keep ClickFlow only as an input source if still useful.",
+      reason:
+        "The ClickFlow scheduler cluster is paused; confirm the SEO operator replaced it, then delete the duplicate schedules and keep ClickFlow only as an input source if still useful.",
     },
   },
   {
@@ -357,12 +431,17 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     stage: "inspect crawl and index state",
     dependsOn: [],
     runtimeSignals: [
-      { source: "hermes", loopName: "maverick-seo-daily-operator", label: "Daily SEO operator" },
+      {
+        source: "hermes",
+        loopName: "maverick-seo-daily-operator",
+        label: "Daily SEO operator",
+      },
     ],
     simplification: {
       action: "merge",
       target: "Website Growth Graph",
-      reason: "Index inspection is the gate before content work and belongs in the same inspect-decide-publish-measure graph.",
+      reason:
+        "Index inspection is the gate before content work and belongs in the same inspect-decide-publish-measure graph.",
     },
   },
   {
@@ -385,7 +464,8 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     simplification: {
       action: "keep",
       target: "Reputation Graph",
-      reason: "Reviews have a distinct customer outcome, but eligibility should be triggered by verified completion rather than another independent scan of the world.",
+      reason:
+        "Reviews have a distinct customer outcome, but eligibility should be triggered by verified completion rather than another independent scan of the world.",
     },
   },
   {
@@ -394,7 +474,11 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     stage: "permit readiness",
     dependsOn: [],
     runtimeSignals: [
-      { source: "launchd", loopName: "com.maverick.permit-loop-mia-digest", label: "Permit digest runner" },
+      {
+        source: "launchd",
+        loopName: "com.maverick.permit-loop-mia-digest",
+        label: "Permit digest runner",
+      },
       {
         source: "hermes",
         loopName: "maverick-permit-loop-mia-email-digest",
@@ -405,7 +489,8 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     simplification: {
       action: "merge",
       target: "Pre-Production Readiness Graph / permit branch",
-      reason: "Permit readiness and product readiness both gate the same scheduling decision and should expose blockers through one graph.",
+      reason:
+        "Permit readiness and product readiness both gate the same scheduling decision and should expose blockers through one graph.",
     },
   },
   {
@@ -428,7 +513,8 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     simplification: {
       action: "merge",
       target: "Pre-Production Readiness Graph / product branch",
-      reason: "Color, material, permit, and schedule readiness are constraints on the same job-ready decision.",
+      reason:
+        "Color, material, permit, and schedule readiness are constraints on the same job-ready decision.",
     },
   },
   {
@@ -437,13 +523,23 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     stage: "capture reusable learning",
     dependsOn: [],
     runtimeSignals: [
-      { source: "hermes", loopName: "lastweek-learning-weekly", label: "Weekly learning compiler" },
-      { source: "hermes", loopName: "Weekly GBrain Growth Update", label: "GBrain growth update", required: false },
+      {
+        source: "hermes",
+        loopName: "lastweek-learning-weekly",
+        label: "Weekly learning compiler",
+      },
+      {
+        source: "hermes",
+        loopName: "Weekly GBrain Growth Update",
+        label: "GBrain growth update",
+        required: false,
+      },
     ],
     simplification: {
       action: "move",
       target: "Agent & Infrastructure Health",
-      reason: "Learning improves every loop but is platform maintenance, not a direct customer or revenue promise.",
+      reason:
+        "Learning improves every loop but is platform maintenance, not a direct customer or revenue promise.",
     },
   },
   {
@@ -453,17 +549,24 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     dependsOn: [],
     runtimeSignals: [
       { source: "crontab", loopName: "git-sync.sh", label: "Git sync runtime" },
-      { source: "crontab", loopName: "daily-pull-all.sh", label: "Daily repo pull" },
+      {
+        source: "crontab",
+        loopName: "daily-pull-all.sh",
+        label: "Daily repo pull",
+      },
     ],
     simplification: {
       action: "move",
       target: "Agent & Infrastructure Health",
-      reason: "A dirty worktree is an engineering condition and should never appear as a failed customer-facing business loop.",
+      reason:
+        "A dirty worktree is an engineering condition and should never appear as a failed customer-facing business loop.",
     },
   },
 ];
 
-export const loopGraphById = new Map(loopGraphDefinitions.map((definition) => [definition.loopId, definition]));
+export const loopGraphById = new Map(
+  loopGraphDefinitions.map((definition) => [definition.loopId, definition]),
+);
 
 export function defaultFreshnessHours(cadence: LoopCadence): number | null {
   return {
