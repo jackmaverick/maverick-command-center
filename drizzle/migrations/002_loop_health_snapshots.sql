@@ -24,6 +24,9 @@ create index if not exists idx_loop_health_snapshots_loop_checked
 create index if not exists idx_loop_health_snapshots_status
   on loop_health_snapshots (status, checked_at desc);
 
+grant select, insert on table loop_health_snapshots to service_role;
+grant usage, select on sequence loop_health_snapshots_id_seq to service_role;
+
 create table if not exists loop_health_lessons (
   id bigserial primary key,
   loop_id text not null,
