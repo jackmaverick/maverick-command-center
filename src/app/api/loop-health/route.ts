@@ -8,7 +8,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const localOnly = url.searchParams.get("localOnly") === "1";
     const health = await buildLoopHealth({ includeSnapshots: !localOnly });
-    const statusCode = health.summary.failing > 0 ? 207 : 200;
+    const statusCode = health.summary.failing > 0 || health.summary.stale > 0 ? 207 : 200;
     return NextResponse.json(health, { status: statusCode });
   } catch (error) {
     console.error("Error building loop health:", error);

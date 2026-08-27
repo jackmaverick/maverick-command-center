@@ -12,7 +12,7 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const sql = await readFile(new URL("../drizzle/migrations/002_loop_health_snapshots.sql", import.meta.url), "utf8");
+const migrations = ["002_loop_health_snapshots.sql", "003_loop_health_graph_statuses.sql"];
 const pool = new Pool({
   connectionString: databaseUrl,
   max: 1,
@@ -21,12 +21,15 @@ const pool = new Pool({
 });
 
 try {
-  await pool.query(sql);
+  for (const migration of migrations) {
+    const sql = await readFile(new URL(`../drizzle/migrations/${migration}`, import.meta.url), "utf8");
+    await pool.query(sql);
+  }
   console.log(
     JSON.stringify(
       {
         status: "ok",
-        migration: "002_loop_health_snapshots.sql",
+        migrations,
       },
       null,
       2

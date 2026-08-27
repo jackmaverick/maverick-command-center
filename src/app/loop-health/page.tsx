@@ -11,6 +11,9 @@ import {
   FileSearch,
   FolderGit2,
   ListChecks,
+  GitMerge,
+  Network,
+  PauseCircle,
   Radio,
   ShieldCheck,
   TerminalSquare,
@@ -20,7 +23,7 @@ import type { LoopStatus } from "@/lib/loop-registry";
 
 type LoopProof = {
   label: string;
-  kind: "file" | "directory" | "git" | "snapshot";
+  kind: "file" | "directory" | "git" | "snapshot" | "runtime";
   path: string;
   available: boolean;
   checkedAt: string;
@@ -54,11 +57,43 @@ type LoopHealthEntry = {
   lastRun: string;
   lastProof: string;
   status: LoopStatus;
+  reportedStatus: LoopStatus | null;
+  monitorStatus: "healthy" | "warning" | "failing" | "paused" | "unknown";
+  healthReason: string;
   nextAction: string;
   approvalRequired: boolean;
   cadence: string;
-  healthSource: "supabase-snapshot" | "local-proof";
+  healthSource: "graph-monitor" | "supabase-snapshot" | "local-proof";
   snapshotCheckedAt: string | null;
+  lastObservedAt: string | null;
+  freshness: {
+    snapshotAgeHours: number | null;
+    runAgeHours: number | null;
+    maxSnapshotAgeHours: number | null;
+    maxRunAgeHours: number | null;
+  };
+  graph: {
+    family: string;
+    familyLabel: string;
+    stage: string;
+    dependsOn: string[];
+    simplification: {
+      action: "keep" | "merge" | "split" | "retire" | "move";
+      target: string;
+      reason: string;
+    };
+  };
+  blockedBy: Array<{ id: string; name: string; status: LoopStatus }>;
+  runtimeSignals: Array<{
+    source: string;
+    loopName: string;
+    status: "ok" | "red" | "paused" | "stale" | "unknown";
+    detail: string;
+    lastRunAt: string | null;
+    schedule: string | null;
+    snapshotAt: string;
+    label?: string;
+  }>;
   proofs: LoopProof[];
 };
 
@@ -67,9 +102,22 @@ type LoopHealthResponse = {
   mode: "live-health" | "read-only";
   dataSources: {
     supabaseSnapshots: boolean;
+    runtimeWatchdog: boolean;
+    runtimeCheckedAt: string | null;
     localProofFallback: boolean;
   };
   summary: Record<LoopStatus, number> & { total: number; approvalRequired: number };
+  graph: {
+    families: Array<{
+      id: string;
+      label: string;
+      promise: string;
+      recommendation: string;
+      targetShape: string;
+      status: LoopStatus;
+      loopIds: string[];
+    }>;
+  };
   loops: LoopHealthEntry[];
 };
 
@@ -100,6 +148,22 @@ const STATUS_STYLE: Record<
     bg: "bg-[#2d1515]",
     border: "border-[#da3633]",
     dot: "bg-[#f85149]",
+  },
+  stale: {
+    label: "Stale",
+    icon: Clock3,
+    text: "text-[#f0883e]",
+    bg: "bg-[#2d1f0f]",
+    border: "border-[#bd561d]",
+    dot: "bg-[#f0883e]",
+  },
+  paused: {
+    label: "Paused",
+    icon: PauseCircle,
+    text: "text-[#a371f7]",
+    bg: "bg-[#241a35]",
+    border: "border-[#8957e5]",
+    dot: "bg-[#a371f7]",
   },
   unknown: {
     label: "Unknown",
@@ -187,18 +251,21 @@ function ProofRow({ proof }: { proof: LoopProof }) {
 }
 
 function SourceBadge({ loop }: { loop: LoopHealthEntry }) {
-  const isLive = loop.healthSource === "supabase-snapshot";
+  const isGraph = loop.healthSource === "graph-monitor";
+  const isSnapshot = loop.healthSource === "supabase-snapshot";
 
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${
-        isLive
+        isGraph
+          ? "border-[#1f6feb] bg-[#0d2442] text-[#58a6ff]"
+          : isSnapshot
           ? "border-[#238636] bg-[#0f2d1c] text-[#3fb950]"
           : "border-[#30363d] bg-[#21262d] text-[#8b949e]"
       }`}
     >
-      <Radio className="h-3.5 w-3.5" />
-      {isLive ? "Live snapshot" : "Local fallback"}
+      {isGraph ? <Network className="h-3.5 w-3.5" /> : <Radio className="h-3.5 w-3.5" />}
+      {isGraph ? "Graph monitored" : isSnapshot ? "Snapshot only" : "Local fallback"}
     </span>
   );
 }
@@ -269,6 +336,62 @@ function CodexProjectPanel({ loop }: { loop: LoopHealthEntry }) {
   );
 }
 
+function GraphFamilyPanel({
+  family,
+  loops,
+}: {
+  family: LoopHealthResponse["graph"]["families"][number];
+  loops: LoopHealthEntry[];
+}) {
+  return (
+    <article className="rounded-lg border border-[#30363d] bg-[#161b22] p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Network className="h-4 w-4 text-[#58a6ff]" />
+            <h3 className="font-semibold text-[#e6edf3]">{family.label}</h3>
+          </div>
+          <p className="mt-2 text-xs text-[#8b949e]">{family.promise}</p>
+        </div>
+        <StatusBadge status={family.status} />
+      </div>
+      <div className="space-y-2">
+        {loops.map((loop, index) => (
+          <div key={loop.id} className="flex items-center gap-2 text-xs">
+            <span className="w-5 text-center font-mono text-[#484f58]">{index === 0 ? "●" : "↓"}</span>
+            <span className={`h-2 w-2 rounded-full ${STATUS_STYLE[loop.status].dot}`} />
+            <span className="text-[#c9d1d9]">{loop.graph.stage}</span>
+            <span className="ml-auto text-[#8b949e]">{STATUS_STYLE[loop.status].label}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 rounded-md border border-[#1f6feb] bg-[#0d2442] p-3">
+        <div className="flex items-center gap-2 text-xs font-medium text-[#58a6ff]">
+          <GitMerge className="h-4 w-4" />
+          {family.targetShape}
+        </div>
+        <p className="mt-2 text-xs leading-5 text-[#a5d6ff]">{family.recommendation}</p>
+      </div>
+    </article>
+  );
+}
+
+function SimplificationPanel({ loop }: { loop: LoopHealthEntry }) {
+  const recommendation = loop.graph.simplification;
+  return (
+    <div className="mb-4 rounded-md border border-[#1f6feb] bg-[#0d2442] p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <GitMerge className="h-4 w-4 text-[#58a6ff]" />
+        <p className="text-xs font-semibold uppercase tracking-wide text-[#58a6ff]">
+          Simplify: {recommendation.action}
+        </p>
+        <span className="text-xs text-[#a5d6ff]">→ {recommendation.target}</span>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-[#a5d6ff]">{recommendation.reason}</p>
+    </div>
+  );
+}
+
 export default function LoopHealthPage() {
   const { data, isLoading, error } = useQuery<LoopHealthResponse>({
     queryKey: ["loop-health"],
@@ -282,9 +405,18 @@ export default function LoopHealthPage() {
 
   const sortedLoops = useMemo(() => {
     if (!data) return [];
-    const order: Record<LoopStatus, number> = { failing: 0, warning: 1, unknown: 2, healthy: 3 };
+    const order: Record<LoopStatus, number> = {
+      failing: 0,
+      stale: 1,
+      warning: 2,
+      unknown: 3,
+      paused: 4,
+      healthy: 5,
+    };
     return [...data.loops].sort((a, b) => order[a.status] - order[b.status]);
   }, [data]);
+
+  const loopsById = useMemo(() => new Map(data?.loops.map((loop) => [loop.id, loop]) ?? []), [data]);
 
   if (isLoading) {
     return (
@@ -325,11 +457,13 @@ export default function LoopHealthPage() {
         </div>
       </div>
 
-      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-6">
+      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-8">
         <SummaryTile label="Loops" value={data.summary.total} />
         <SummaryTile label="Healthy" value={data.summary.healthy} status="healthy" />
         <SummaryTile label="Warning" value={data.summary.warning} status="warning" />
         <SummaryTile label="Failing" value={data.summary.failing} status="failing" />
+        <SummaryTile label="Stale" value={data.summary.stale} status="stale" />
+        <SummaryTile label="Paused" value={data.summary.paused} status="paused" />
         <SummaryTile label="Unknown" value={data.summary.unknown} status="unknown" />
         <SummaryTile label="Approval-gated" value={data.summary.approvalRequired} />
       </div>
@@ -350,20 +484,44 @@ export default function LoopHealthPage() {
         </div>
       ) : null}
 
-      {data.dataSources.supabaseSnapshots ? (
-        <div className="mb-8 rounded-lg border border-[#238636] bg-[#0f2d1c] p-4">
+      {data.dataSources.runtimeWatchdog ? (
+        <div className="mb-8 rounded-lg border border-[#1f6feb] bg-[#0d2442] p-4">
           <div className="flex items-start gap-3">
-            <Radio className="mt-0.5 h-5 w-5 shrink-0 text-[#3fb950]" />
+            <Network className="mt-0.5 h-5 w-5 shrink-0 text-[#58a6ff]" />
             <div>
-              <h2 className="text-sm font-semibold text-[#e6edf3]">Live snapshot mode</h2>
-              <p className="mt-1 text-sm text-[#9be9a8]">
-                At least one loop is backed by a published Supabase health snapshot. Loops without snapshots still
-                use local proof fallback and should be instrumented next.
+              <h2 className="text-sm font-semibold text-[#e6edf3]">Graph monitor connected</h2>
+              <p className="mt-1 text-sm text-[#a5d6ff]">
+                Scheduler health was checked {data.dataSources.runtimeCheckedAt ? formatGeneratedAt(data.dataSources.runtimeCheckedAt) : "recently"} CT.
+                A green badge now requires fresh business proof; a scheduler-only success cannot turn stale evidence green.
               </p>
             </div>
           </div>
         </div>
       ) : null}
+
+      <section className="mb-8">
+        <div className="mb-4 flex items-center gap-2">
+          <Network className="h-5 w-5 text-[#58a6ff]" />
+          <div>
+            <h2 className="text-lg font-semibold text-[#e6edf3]">Business loop graph</h2>
+            <p className="text-sm text-[#8b949e]">
+              Families show how shared sources, runtimes, actions, and outcomes should collapse into fewer top-level loops.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {data.graph.families.map((family) => (
+            <GraphFamilyPanel
+              key={family.id}
+              family={family}
+              loops={family.loopIds.flatMap((id) => {
+                const loop = loopsById.get(id);
+                return loop ? [loop] : [];
+              })}
+            />
+          ))}
+        </div>
+      </section>
 
       <div className="mb-8 grid grid-cols-1 gap-4 xl:grid-cols-2">
         {sortedLoops.map((loop) => (
@@ -378,9 +536,28 @@ export default function LoopHealthPage() {
                 <p className="text-sm text-[#8b949e]">{loop.businessPromise}</p>
               </div>
               <div className="shrink-0 rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 text-xs">
-                <p className="text-[#8b949e]">Last run</p>
+                <p className="text-[#8b949e]">Last proven run</p>
                 <p className="font-mono text-[#e6edf3]">{loop.lastRun}</p>
+                <p className="mt-1 font-mono text-[#8b949e]">{formatAge(loop.freshness.runAgeHours)}</p>
               </div>
+            </div>
+
+            <div className={`mb-4 rounded-md border p-3 ${STATUS_STYLE[loop.status].border} ${STATUS_STYLE[loop.status].bg}`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className={`text-xs font-semibold ${STATUS_STYLE[loop.status].text}`}>Why this status</p>
+                <span className="text-xs text-[#8b949e]">Monitor: {loop.monitorStatus}</span>
+                {loop.reportedStatus && loop.reportedStatus !== loop.status ? (
+                  <span className="text-xs text-[#8b949e]">
+                    Stored result: {loop.reportedStatus} (overridden)
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-2 text-sm text-[#e6edf3]">{loop.healthReason}</p>
+              {loop.blockedBy.length > 0 ? (
+                <p className="mt-2 text-xs text-[#d29922]">
+                  Upstream: {loop.blockedBy.map((dependency) => `${dependency.name} (${dependency.status})`).join(" · ")}
+                </p>
+              ) : null}
             </div>
 
             <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -404,6 +581,8 @@ export default function LoopHealthPage() {
             </div>
 
             <ActionSurfacePanel loop={loop} />
+
+            <SimplificationPanel loop={loop} />
 
             <div className="mb-4 rounded-md border border-[#30363d] bg-[#0d1117] p-3">
               <p className="mb-1 text-xs text-[#8b949e]">Make healthy</p>

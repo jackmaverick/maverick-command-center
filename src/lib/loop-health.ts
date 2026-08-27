@@ -2,14 +2,22 @@ import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { fetchLatestLoopHealthSnapshots, type LoopHealthSnapshot } from "@/lib/loop-health-snapshots";
+import { defaultFreshnessHours, loopFamilies, loopGraphById } from "@/lib/loop-graph";
+import { evaluateLoopHealth, type MonitorStatus } from "@/lib/loop-health-evaluation";
+import {
+  fetchLatestLoopHealthSnapshots,
+  fetchLatestLoopRuntimeSignals,
+  type LoopHealthSnapshot,
+  type LoopRuntimeSignal,
+  type LoopRuntimeStatus,
+} from "@/lib/loop-health-snapshots";
 import { loopRegistry, type LoopRegistryEntry, type LoopStatus } from "@/lib/loop-registry";
 
 const execFileAsync = promisify(execFile);
 
 export interface LoopProof {
   label: string;
-  kind: "file" | "directory" | "git" | "snapshot";
+  kind: "file" | "directory" | "git" | "snapshot" | "runtime";
   path: string;
   available: boolean;
   checkedAt: string;
@@ -31,11 +39,34 @@ export interface LoopHealthEntry {
   lastRun: string;
   lastProof: string;
   status: LoopStatus;
+  reportedStatus: LoopStatus | null;
+  monitorStatus: MonitorStatus;
+  healthReason: string;
   nextAction: string;
   approvalRequired: boolean;
   cadence: string;
-  healthSource: "supabase-snapshot" | "local-proof";
+  healthSource: "graph-monitor" | "supabase-snapshot" | "local-proof";
   snapshotCheckedAt: string | null;
+  lastObservedAt: string | null;
+  freshness: {
+    snapshotAgeHours: number | null;
+    runAgeHours: number | null;
+    maxSnapshotAgeHours: number | null;
+    maxRunAgeHours: number | null;
+  };
+  graph: {
+    family: string;
+    familyLabel: string;
+    stage: string;
+    dependsOn: string[];
+    simplification: {
+      action: "keep" | "merge" | "split" | "retire" | "move";
+      target: string;
+      reason: string;
+    };
+  };
+  blockedBy: Array<{ id: string; name: string; status: LoopStatus }>;
+  runtimeSignals: LoopRuntimeSignal[];
   proofs: LoopProof[];
 }
 
@@ -53,9 +84,22 @@ export interface LoopHealthResponse {
   mode: "live-health" | "read-only";
   dataSources: {
     supabaseSnapshots: boolean;
+    runtimeWatchdog: boolean;
+    runtimeCheckedAt: string | null;
     localProofFallback: boolean;
   };
   summary: Record<LoopStatus, number> & { total: number; approvalRequired: number };
+  graph: {
+    families: Array<{
+      id: string;
+      label: string;
+      promise: string;
+      recommendation: string;
+      targetShape: string;
+      status: LoopStatus;
+      loopIds: string[];
+    }>;
+  };
   loops: LoopHealthEntry[];
 }
 
@@ -86,7 +130,7 @@ function hoursSince(date: Date): number {
 }
 
 function statusRank(status: LoopStatus): number {
-  return { failing: 0, warning: 1, unknown: 2, healthy: 3 }[status];
+  return { failing: 0, stale: 1, warning: 2, unknown: 3, paused: 4, healthy: 5 }[status];
 }
 
 function worstStatus(statuses: LoopStatus[]): LoopStatus {
@@ -179,9 +223,9 @@ async function resolveFileProof(source: LoopRegistryEntry["proofSources"][number
   const matchedSuccess = containsAny(text ?? "", source.successPatterns);
   const stale = source.freshnessHours ? ageHours > source.freshnessHours : false;
   const status: LoopStatus = matchedFailure
-    ? "failing"
+    ? "warning"
     : stale
-      ? "warning"
+      ? "stale"
       : matchedSuccess || !source.successPatterns?.length
         ? "healthy"
         : "unknown";
@@ -196,7 +240,7 @@ async function resolveFileProof(source: LoopRegistryEntry["proofSources"][number
     ageHours,
     status,
     summary: matchedFailure
-      ? "Failure pattern found in latest proof."
+      ? "Potential failure marker found; structured runtime verification is required before calling the loop failed."
       : stale
         ? `Proof exists but is older than ${source.freshnessHours} hours.`
         : matchedSuccess
@@ -231,9 +275,9 @@ async function resolveDirectoryProof(source: LoopRegistryEntry["proofSources"][n
   const matchedSuccess = containsAny(text, source.successPatterns);
   const stale = source.freshnessHours ? ageHours > source.freshnessHours : false;
   const status: LoopStatus = matchedFailure
-    ? "failing"
+    ? "warning"
     : stale
-      ? "warning"
+      ? "stale"
       : matchedSuccess || !source.successPatterns?.length
         ? "healthy"
         : "unknown";
@@ -248,7 +292,7 @@ async function resolveDirectoryProof(source: LoopRegistryEntry["proofSources"][n
     ageHours,
     status,
     summary: matchedFailure
-      ? "Failure pattern found in latest directory artifact."
+      ? "Potential failure marker found; structured runtime verification is required before calling the loop failed."
       : stale
         ? `Latest artifact is older than ${source.freshnessHours} hours.`
         : matchedSuccess
@@ -285,7 +329,7 @@ async function resolveGitProof(source: LoopRegistryEntry["proofSources"][number]
         execFileAsync("git", ["status", "--porcelain=v1"], { cwd: source.path }),
       ]);
     const dirtyCount = dirty.split(/\r?\n/).filter(Boolean).length;
-    const status: LoopStatus = dirtyCount === 0 ? "healthy" : dirtyCount > 50 ? "failing" : "warning";
+    const status: LoopStatus = dirtyCount === 0 ? "healthy" : "warning";
 
     return {
       label: source.label,
@@ -412,24 +456,10 @@ function codexProjectFor(entry: LoopRegistryEntry): LoopCodexProject {
   };
 }
 
-function snapshotProof(snapshot: LoopHealthSnapshot): LoopProof {
+function snapshotProof(snapshot: LoopHealthSnapshot, status: LoopStatus, summary: string): LoopProof {
   const checkedAt = snapshot.checkedAt;
   const modifiedAt = snapshot.ranAt ?? snapshot.checkedAt;
   const ageHours = hoursSince(new Date(modifiedAt));
-  const enforceFreshness = snapshot.loopId === "production-communication-closed-loop";
-  const status: LoopStatus = enforceFreshness
-    ? ageHours >= 2
-      ? "failing"
-      : ageHours >= 0.75
-        ? "warning"
-        : snapshot.status
-    : snapshot.status;
-  const freshnessSummary =
-    enforceFreshness && ageHours >= 2
-      ? "Snapshot is over 2 hours old; the collector or underlying loop may be down."
-      : enforceFreshness && ageHours >= 0.75
-        ? "Snapshot is over 45 minutes old; verify the local collector."
-        : null;
 
   return {
     label: snapshot.proofLabel ?? "live health snapshot",
@@ -440,21 +470,74 @@ function snapshotProof(snapshot: LoopHealthSnapshot): LoopProof {
     modifiedAt,
     ageHours,
     status,
-    summary: freshnessSummary ?? snapshot.proofSummary ?? snapshot.lastProof ?? "Latest published loop health snapshot.",
+    summary,
     evidence: snapshot.proofEvidence,
+  };
+}
+
+function runtimeProof(signal: LoopRuntimeSignal): LoopProof {
+  const status: LoopStatus = ({
+    ok: "healthy",
+    red: "failing",
+    paused: "paused",
+    stale: "stale",
+    unknown: "unknown",
+  } satisfies Record<LoopRuntimeStatus, LoopStatus>)[signal.status];
+  return {
+    label: signal.label ?? signal.loopName,
+    kind: "runtime",
+    path: `${signal.source}:${signal.loopName}`,
+    available: true,
+    checkedAt: signal.snapshotAt,
+    modifiedAt: signal.lastRunAt ?? signal.snapshotAt,
+    ageHours: hoursSince(new Date(signal.lastRunAt ?? signal.snapshotAt)),
+    status,
+    summary: signal.detail,
+    evidence: signal.schedule ? `Schedule: ${signal.schedule}` : signal.source,
   };
 }
 
 export async function buildLoopHealth(options: { includeSnapshots?: boolean } = {}): Promise<LoopHealthResponse> {
   const includeSnapshots = options.includeSnapshots ?? true;
-  const snapshots = includeSnapshots ? await fetchLatestLoopHealthSnapshots() : new Map();
+  const [snapshots, runtimeSignalMap] = includeSnapshots
+    ? await Promise.all([fetchLatestLoopHealthSnapshots(), fetchLatestLoopRuntimeSignals()])
+    : [new Map<string, LoopHealthSnapshot>(), new Map<string, LoopRuntimeSignal>()];
   const loops = await Promise.all(
     loopRegistry.map(async (entry) => {
       const snapshot = snapshots.get(entry.id);
       const localProofs = snapshot ? [] : await Promise.all(entry.proofSources.map(resolveProof));
-      const liveSnapshotProof = snapshot ? snapshotProof(snapshot) : null;
-      const proofs = liveSnapshotProof ? [liveSnapshotProof, ...localProofs] : localProofs;
-      const status = liveSnapshotProof?.status ?? worstStatus(localProofs.map((proof) => proof.status));
+      const graph = loopGraphById.get(entry.id);
+      const requiredRefs = graph?.runtimeSignals.filter((signal) => signal.required !== false) ?? [];
+      const runtimeSignals = (graph?.runtimeSignals ?? []).flatMap((reference) => {
+        const signal = runtimeSignalMap.get(`${reference.source}:${reference.loopName}`);
+        return signal ? [{ ...signal, label: reference.label }] : [];
+      });
+      const requiredRuntimeSignals = requiredRefs.flatMap((reference) => {
+        const signal = runtimeSignalMap.get(`${reference.source}:${reference.loopName}`);
+        return signal ? [{ ...signal, label: reference.label }] : [];
+      });
+      const defaultFreshness = defaultFreshnessHours(entry.cadence);
+      const maxSnapshotAgeHours = graph?.maxSnapshotAgeHours ?? defaultFreshness;
+      const maxRunAgeHours = graph?.maxRunAgeHours ?? defaultFreshness;
+      const localStatus = localProofs.length
+        ? worstStatus(localProofs.map((proof) => proof.status))
+        : null;
+      const evaluation = evaluateLoopHealth({
+        snapshot: snapshot ?? null,
+        runtimeSignals: requiredRuntimeSignals,
+        requiredRuntimeSignalCount: requiredRefs.length,
+        localStatus,
+        maxSnapshotAgeHours,
+        maxRunAgeHours,
+      });
+      const liveSnapshotProof = snapshot
+        ? snapshotProof(snapshot, evaluation.status, evaluation.reason)
+        : null;
+      const runtimeProofs = runtimeSignals.map(runtimeProof);
+      const proofs = liveSnapshotProof
+        ? [liveSnapshotProof, ...runtimeProofs]
+        : [...runtimeProofs, ...localProofs];
+      const family = loopFamilies.find((candidate) => candidate.id === graph?.family);
 
       return {
         id: entry.id,
@@ -466,32 +549,94 @@ export async function buildLoopHealth(options: { includeSnapshots?: boolean } = 
         codexProject: codexProjectFor(entry),
         lastRun: snapshot ? formatTimestamp(snapshot.ranAt ?? snapshot.checkedAt) : formatLastRun(localProofs),
         lastProof: snapshot?.lastProof ?? formatLastProof(localProofs),
-        status,
+        status: evaluation.status,
+        reportedStatus: evaluation.reportedStatus,
+        monitorStatus: evaluation.monitorStatus,
+        healthReason: evaluation.reason,
         nextAction: snapshot?.nextAction ?? entry.nextAction,
         approvalRequired: snapshot?.approvalRequired ?? entry.approvalRequired,
         cadence: entry.cadence,
-        healthSource: snapshot ? ("supabase-snapshot" as const) : ("local-proof" as const),
+        healthSource: runtimeSignals.length
+          ? ("graph-monitor" as const)
+          : snapshot
+            ? ("supabase-snapshot" as const)
+            : ("local-proof" as const),
         snapshotCheckedAt: snapshot?.checkedAt ?? null,
+        lastObservedAt: snapshot?.ranAt ?? snapshot?.checkedAt ?? null,
+        freshness: {
+          snapshotAgeHours: evaluation.snapshotAgeHours,
+          runAgeHours: evaluation.runAgeHours,
+          maxSnapshotAgeHours,
+          maxRunAgeHours,
+        },
+        graph: {
+          family: graph?.family ?? "unmapped",
+          familyLabel: family?.label ?? "Unmapped",
+          stage: graph?.stage ?? "unmapped",
+          dependsOn: graph?.dependsOn ?? [],
+          simplification: graph?.simplification ?? {
+            action: "keep" as const,
+            target: entry.name,
+            reason: "No simplification decision has been recorded.",
+          },
+        },
+        blockedBy: [],
+        runtimeSignals,
         proofs,
       };
     })
   );
+
+  const firstPassById = new Map(loops.map((loop) => [loop.id, loop]));
+  const resolvedLoops = loops.map((loop) => {
+    const blockedBy = loop.graph.dependsOn.flatMap((dependencyId) => {
+      const dependency = firstPassById.get(dependencyId);
+      return dependency && ["failing", "stale", "unknown"].includes(dependency.status)
+        ? [{ id: dependency.id, name: dependency.name, status: dependency.status }]
+        : [];
+    });
+    if (blockedBy.length === 0 || loop.status !== "healthy") return { ...loop, blockedBy };
+    return {
+      ...loop,
+      status: "warning" as const,
+      healthReason: `This loop has fresh proof, but ${blockedBy.map((dependency) => dependency.name).join(", ")} is not currently proven.`,
+      blockedBy,
+    };
+  });
+
+  const graphFamilies = loopFamilies.map((family) => {
+    const familyLoops = resolvedLoops.filter((loop) => loop.graph.family === family.id);
+    return {
+      ...family,
+      status: worstStatus(familyLoops.map((loop) => loop.status)),
+      loopIds: familyLoops.map((loop) => loop.id),
+    };
+  });
+  const runtimeCheckedAt = [...runtimeSignalMap.values()]
+    .map((signal) => signal.snapshotAt)
+    .sort()
+    .at(-1) ?? null;
 
   return {
     generatedAt: new Date().toISOString(),
     mode: snapshots.size > 0 ? "live-health" : "read-only",
     dataSources: {
       supabaseSnapshots: includeSnapshots && snapshots.size > 0,
+      runtimeWatchdog: includeSnapshots && runtimeSignalMap.size > 0,
+      runtimeCheckedAt,
       localProofFallback: true,
     },
     summary: {
-      total: loops.length,
-      healthy: loops.filter((loop) => loop.status === "healthy").length,
-      warning: loops.filter((loop) => loop.status === "warning").length,
-      failing: loops.filter((loop) => loop.status === "failing").length,
-      unknown: loops.filter((loop) => loop.status === "unknown").length,
-      approvalRequired: loops.filter((loop) => loop.approvalRequired).length,
+      total: resolvedLoops.length,
+      healthy: resolvedLoops.filter((loop) => loop.status === "healthy").length,
+      warning: resolvedLoops.filter((loop) => loop.status === "warning").length,
+      failing: resolvedLoops.filter((loop) => loop.status === "failing").length,
+      stale: resolvedLoops.filter((loop) => loop.status === "stale").length,
+      paused: resolvedLoops.filter((loop) => loop.status === "paused").length,
+      unknown: resolvedLoops.filter((loop) => loop.status === "unknown").length,
+      approvalRequired: resolvedLoops.filter((loop) => loop.approvalRequired).length,
     },
-    loops,
+    graph: { families: graphFamilies },
+    loops: resolvedLoops,
   };
 }

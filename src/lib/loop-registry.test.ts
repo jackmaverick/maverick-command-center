@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { loopRegistry } from "./loop-registry";
+import { loopGraphDefinitions } from "./loop-graph";
 
 describe("gutter invoice reconciliation proof patterns", () => {
   const gutterLoop = loopRegistry.find((entry) => entry.id === "gutter-invoice-reconciliation-loop");
@@ -39,5 +40,42 @@ describe("production communication closed loop", () => {
     expect(loop?.actionSurface.name).toBe("Michelle Daily Touch List");
     expect(loop?.proofSources[0]?.path).toContain("production-communication-graph/health-latest.json");
     expect(loop?.proofSources[0]?.freshnessHours).toBe(0.75);
+  });
+});
+
+describe("loop graph registry", () => {
+  it("maps every dashboard loop exactly once", () => {
+    const registryIds = loopRegistry.map((entry) => entry.id).sort();
+    const graphIds = loopGraphDefinitions.map((entry) => entry.loopId).sort();
+
+    expect(graphIds).toEqual(registryIds);
+    expect(new Set(graphIds).size).toBe(graphIds.length);
+  });
+
+  it("references only registered dependency loops", () => {
+    const registryIds = new Set(loopRegistry.map((entry) => entry.id));
+    const dependencyIds = loopGraphDefinitions.flatMap((entry) => entry.dependsOn);
+
+    expect(dependencyIds.filter((id) => !registryIds.has(id))).toEqual([]);
+  });
+
+  it("does not create dependency cycles", () => {
+    const dependencies = new Map(loopGraphDefinitions.map((entry) => [entry.loopId, entry.dependsOn]));
+
+    const visit = (id: string, path: string[]): void => {
+      expect(path).not.toContain(id);
+      for (const dependency of dependencies.get(id) ?? []) visit(dependency, [...path, id]);
+    };
+
+    for (const id of dependencies.keys()) visit(id, []);
+  });
+
+  it("keeps materials and install dates in one production schedule graph", () => {
+    const productionGraph = loopGraphDefinitions.find(
+      (entry) => entry.loopId === "production-communication-closed-loop"
+    );
+
+    expect(productionGraph?.simplification.action).toBe("keep");
+    expect(productionGraph?.simplification.reason).toContain("one schedule version");
   });
 });

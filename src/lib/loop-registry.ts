@@ -1,4 +1,4 @@
-export type LoopStatus = "healthy" | "warning" | "failing" | "unknown";
+export type LoopStatus = "healthy" | "warning" | "failing" | "stale" | "paused" | "unknown";
 
 export type LoopCadence = "daily" | "weekly" | "continuous" | "manual";
 

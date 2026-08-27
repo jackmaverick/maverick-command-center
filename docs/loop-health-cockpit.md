@@ -10,10 +10,20 @@ Open `/loop-health` in the Command Center and read it from top to bottom:
 4. For approval-gated loops, approve from the source workflow only after checking the proof trail.
 5. Use the registry table when deciding which repo or artifact to inspect next.
 
-The cockpit has two layers:
+The cockpit has three evidence layers:
 
-- Live health: read loop snapshots from Supabase when available.
+- Business proof: structured or artifact-backed loop snapshots in `loop_health_snapshots`.
+- Runtime graph: current launchd, Hermes, crontab, and OpenClaw state from the watchdog's `loop_health` table.
 - Local fallback: check local files, recent generated artifacts, and git worktree status when no snapshot exists.
+
+A scheduler exit code does not prove the business outcome. A fresh business snapshot does not hide a current scheduler failure. The dashboard evaluates both sides:
+
+- `healthy`: fresh business proof and no failing required runtime.
+- `failing`: a current required runtime or fresh structured business result is failing.
+- `stale`: the old result may have been green or red, but it is too old to describe current operation.
+- `paused`: all required schedulers are intentionally paused.
+- `unknown`: the loop has no authoritative current proof.
+- `warning`: the loop is running but needs human attention or only weak artifact evidence exists.
 
 Customer-facing and system mutations remain approval-gated. The cockpit and publisher do not send texts, send emails, mutate JobNimbus, or mutate OpenPhone. The publisher writes only loop-health metadata to Supabase.
 
@@ -26,11 +36,11 @@ Returns:
 - `generatedAt`
 - `mode: live-health` when at least one Supabase snapshot is present, otherwise `read-only`
 - `dataSources`
-- summary counts for `healthy`, `warning`, `failing`, and `unknown`
+- summary counts for `healthy`, `warning`, `failing`, `stale`, `paused`, and `unknown`
 - one row per registered loop with owner, source path, last run, last proof, status, next action, approval requirement, and proof details
 - `actionSurface`, which tells Jack where the human team actually works the loop
 
-The route returns `207` when at least one loop is failing so dashboards can distinguish "the API loaded" from "every loop is fine".
+The route returns `207` when at least one loop is failing or stale so dashboards can distinguish "the API loaded" from "every loop is currently proven".
 
 Use `GET /api/loop-health?localOnly=1` for collector jobs that need fresh local proof without re-reading previously published snapshots.
 
@@ -48,19 +58,15 @@ Publish current local proof into Supabase:
 npm run loop-health:publish
 ```
 
-By default the publisher reads:
+The graph publisher writes one row per generic loop into `loop_health_snapshots`. It intentionally skips `production-communication-closed-loop`, which has a dedicated 15-minute structured collector. The production Vercel cockpit reads the latest row per loop, so Vercel never needs direct access to `/Users/maverick_ai/...` proof files.
 
-```text
-http://localhost:3000/api/loop-health?localOnly=1
-```
-
-To publish from a different local Command Center URL:
+Install the recurring 30-minute local graph publisher:
 
 ```bash
-npm run loop-health:publish -- --source=http://localhost:3001/api/loop-health?localOnly=1
+npm run loop-health:install-publisher
 ```
 
-The publisher writes one row per loop into `loop_health_snapshots`. The production Vercel cockpit reads the latest row per loop, so Vercel no longer needs direct access to `/Users/maverick_ai/...` proof files.
+The publisher reads the local proof files, writes only loop-health metadata, and does not send customer messages or mutate JobNimbus/OpenPhone.
 
 ## Snapshot Tables
 
@@ -132,6 +138,20 @@ Each loop records:
 - approval requirement
 
 When a real source is unavailable, the cockpit labels the loop `unknown` rather than filling in fake proof.
+
+## Business Graph and Simplification
+
+`src/lib/loop-graph.ts` maps every registered loop to a business family, stage, runtime dependencies, upstream loop dependencies, freshness policy, and simplification recommendation.
+
+The current target structure is:
+
+- Production communication: one graph with materials/install, team-update, and supervised-message lanes.
+- Daily operations: one stuck-work capability feeding the shared Daily Touch action surface.
+- Appointment lifecycle: one graph for prep, confirmation, reminders, replies, and no-shows.
+- Job closeout and cash: one graph for supplier intake, matching, ledger, warranty, invoicing, and collections.
+- Growth and reputation: one Website Growth graph plus one Reputation graph; retire duplicate paused ClickFlow schedules after verification.
+- Pre-production readiness: one graph with permit and product-selection branches.
+- Learning and repo hygiene: move to Agent & Infrastructure Health rather than counting them as customer/revenue loops.
 
 ## Action Surfaces
 
