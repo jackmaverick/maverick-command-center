@@ -12,7 +12,11 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const migrations = ["002_loop_health_snapshots.sql", "003_loop_health_graph_statuses.sql"];
+const migrations = [
+  "002_loop_health_snapshots.sql",
+  "003_loop_health_graph_statuses.sql",
+  "004_loop_health_snapshot_grants.sql",
+];
 const pool = new Pool({
   connectionString: databaseUrl,
   max: 1,
