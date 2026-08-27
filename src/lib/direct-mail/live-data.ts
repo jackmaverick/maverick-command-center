@@ -10,6 +10,12 @@ import type {
 type QueryFn = <T>(sql: string, params?: unknown[]) => Promise<T[]>;
 type DatabaseError = Error & { code?: string };
 
+interface GlobalRow {
+  unique_addresses_confirmed_mailed: string | number;
+  confirmed_mail_touch_count: string | number;
+  repeat_mail_touch_count: string | number;
+}
+
 interface CampaignRow {
   campaign_id: string; campaign_slug: string; campaign_name: string; segment: string;
   campaign_status: string; drive_web_url: string | null; storm_event_code: string | null;
@@ -29,7 +35,8 @@ interface DropRow {
   packaged_recipient_count: string | number; submitted_recipient_count: string | number;
   accepted_recipient_count: string | number; addresses_confirmed_mailed: string | number;
   total_address_gaps: string | number; eligible_not_packaged: string | number;
-  packaged_not_submitted: string | number; unconfirmed_after_postal_drop: string | number;
+  packaged_not_submitted: string | number; vendor_rejected_recipient_count: string | number;
+  unconfirmed_after_postal_drop: string | number;
   attributed_leads: string | number; attributed_sales: string | number; attributed_revenue: string | number;
 }
 
@@ -67,7 +74,9 @@ function mapDrop(row: DropRow): DirectMailDropReport {
     packagedRecipientCount: numeric(row.packaged_recipient_count), submittedRecipientCount: numeric(row.submitted_recipient_count),
     acceptedRecipientCount: numeric(row.accepted_recipient_count), addressesConfirmedMailed: numeric(row.addresses_confirmed_mailed),
     totalAddressGaps: numeric(row.total_address_gaps), eligibleNotPackaged: numeric(row.eligible_not_packaged),
-    packagedNotSubmitted: numeric(row.packaged_not_submitted), unconfirmedAfterPostalDrop: numeric(row.unconfirmed_after_postal_drop),
+    packagedNotSubmitted: numeric(row.packaged_not_submitted),
+    vendorRejectedRecipientCount: numeric(row.vendor_rejected_recipient_count),
+    unconfirmedAfterPostalDrop: numeric(row.unconfirmed_after_postal_drop),
     attributedLeads: numeric(row.attributed_leads), attributedSales: numeric(row.attributed_sales),
     attributedRevenue: numeric(row.attributed_revenue),
   };
@@ -88,17 +97,15 @@ function mapRecommendation(row: RecommendationRow): DirectMailMessageRecommendat
 }
 
 export async function loadDirectMailDashboard(query: QueryFn): Promise<DirectMailDashboardData> {
-  const [campaignRows, dropRows, recommendationRows] = await Promise.all([
+  const [globalRows, campaignRows, dropRows, recommendationRows] = await Promise.all([
+    query<GlobalRow>("SELECT * FROM public.v_direct_mail_global_reporting"),
     query<CampaignRow>("SELECT * FROM public.v_direct_mail_campaign_reporting ORDER BY campaign_name"),
     query<DropRow>("SELECT * FROM public.v_direct_mail_drop_reporting ORDER BY planned_mail_date DESC NULLS LAST, drop_number DESC"),
     query<RecommendationRow>("SELECT * FROM public.v_direct_mail_message_recommendations ORDER BY current_hail_age_days, campaign_name"),
   ]);
   const campaigns = campaignRows.map(mapCampaign);
-  const summary = campaigns.reduce((total, row) => ({
+  const campaignTotals = campaigns.reduce((total, row) => ({
     campaignCount: total.campaignCount + 1, dropCount: total.dropCount + row.dropCount,
-    uniqueAddressesConfirmedMailed: total.uniqueAddressesConfirmedMailed + row.uniqueAddressesConfirmedMailed,
-    confirmedMailTouches: total.confirmedMailTouches + row.confirmedMailTouches,
-    repeatMailTouches: total.repeatMailTouches + row.repeatMailTouches,
     totalAddressGaps: total.totalAddressGaps + row.totalAddressGaps,
     attributedLeads: total.attributedLeads + row.attributedLeads,
     confirmedLeads: total.confirmedLeads + row.confirmedLeads,
@@ -106,10 +113,16 @@ export async function loadDirectMailDashboard(query: QueryFn): Promise<DirectMai
     attributedRevenue: total.attributedRevenue + row.attributedRevenue,
     totalCost: total.totalCost + row.totalCampaignCost,
   }), {
-    campaignCount: 0, dropCount: 0, uniqueAddressesConfirmedMailed: 0, confirmedMailTouches: 0,
-    repeatMailTouches: 0, totalAddressGaps: 0, attributedLeads: 0, confirmedLeads: 0,
+    campaignCount: 0, dropCount: 0, totalAddressGaps: 0, attributedLeads: 0, confirmedLeads: 0,
     attributedSales: 0, attributedRevenue: 0, totalCost: 0,
   });
+  const global = globalRows[0];
+  const summary = {
+    ...campaignTotals,
+    uniqueAddressesConfirmedMailed: numeric(global?.unique_addresses_confirmed_mailed ?? 0),
+    confirmedMailTouches: numeric(global?.confirmed_mail_touch_count ?? 0),
+    repeatMailTouches: numeric(global?.repeat_mail_touch_count ?? 0),
+  };
 
   return {
     available: true, generatedAt: new Date().toISOString(),

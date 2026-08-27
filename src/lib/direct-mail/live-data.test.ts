@@ -8,6 +8,10 @@ describe("loadDirectMailDashboard", () => {
   it("maps numeric database values and computes evidence-bounded totals", async () => {
     const query = vi.fn()
       .mockResolvedValueOnce([{
+        unique_addresses_confirmed_mailed: "490", confirmed_mail_touch_count: "725",
+        repeat_mail_touch_count: "235",
+      }])
+      .mockResolvedValueOnce([{
         campaign_id: "campaign-1", campaign_slug: "kensington", campaign_name: "Kensington",
         segment: "storm_hail", campaign_status: "active", drive_web_url: "https://drive.example/campaign",
         storm_event_code: "HAIL-2026-03-10", storm_date: "2026-03-10", drop_count: "2",
@@ -22,7 +26,8 @@ describe("loadDirectMailDashboard", () => {
         drive_web_url: "https://drive.example/drop", hail_age_days: "171", source_recipient_count: "504",
         eligible_recipient_count: "500", packaged_recipient_count: "500", submitted_recipient_count: "500",
         accepted_recipient_count: "500", addresses_confirmed_mailed: "500", total_address_gaps: "0",
-        eligible_not_packaged: "0", packaged_not_submitted: "0", unconfirmed_after_postal_drop: "0",
+        eligible_not_packaged: "0", packaged_not_submitted: "0", vendor_rejected_recipient_count: "3",
+        unconfirmed_after_postal_drop: "0",
         attributed_leads: "9", attributed_sales: "2", attributed_revenue: "42000.50",
       }])
       .mockResolvedValueOnce([{
@@ -36,16 +41,19 @@ describe("loadDirectMailDashboard", () => {
     const result = await loadDirectMailDashboard(query);
 
     expect(result.summary).toMatchObject({
-      campaignCount: 1, dropCount: 2, uniqueAddressesConfirmedMailed: 500,
-      confirmedMailTouches: 725, repeatMailTouches: 225, totalAddressGaps: 4,
+      campaignCount: 1, dropCount: 2, uniqueAddressesConfirmedMailed: 490,
+      confirmedMailTouches: 725, repeatMailTouches: 235, totalAddressGaps: 4,
       attributedLeads: 9, confirmedLeads: 3, attributedSales: 2,
       attributedRevenue: 42000.5, totalCost: 1150.25,
     });
-    expect(result.drops[0]).toMatchObject({ addressesConfirmedMailed: 500, hailAgeDays: 171 });
+    expect(result.drops[0]).toMatchObject({
+      addressesConfirmedMailed: 500, hailAgeDays: 171, vendorRejectedRecipientCount: 3,
+    });
     expect(result.recommendations[0]).toMatchObject({
       sampleSize: 99, observedResponseRate: 0.0182, evidenceStrength: "directional_only",
     });
-    expect(query).toHaveBeenCalledTimes(3);
+    expect(query).toHaveBeenCalledTimes(4);
+    expect(query).toHaveBeenNthCalledWith(1, "SELECT * FROM public.v_direct_mail_global_reporting");
   });
 
   it("returns empty honest totals when no campaigns exist", async () => {
@@ -57,6 +65,7 @@ describe("loadDirectMailDashboard", () => {
 
   it("does not require claims review for an empty JSON rule list", async () => {
     const query = vi.fn()
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{

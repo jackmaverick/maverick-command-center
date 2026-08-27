@@ -9,14 +9,10 @@ import {
 import type {
   DirectMailDashboardData, DirectMailDashboardResponse, DirectMailDropReport,
 } from "@/lib/direct-mail/types";
+import { formatDirectMailDate } from "@/lib/direct-mail/format";
 
 const number = new Intl.NumberFormat("en-US");
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-
-function formatDate(value: string | null) {
-  if (!value) return "Not proven";
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
-}
 
 function StatCard({ label, value, detail, icon: Icon, tone = "text-[#58a6ff]" }: {
   label: string; value: string; detail: string; icon: ComponentType<{ className?: string }>; tone?: string;
@@ -70,7 +66,7 @@ function CampaignScorecard({ data }: { data: DirectMailDashboardData }) {
         <th className="px-4 py-3">Campaign</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Homes</th><th className="px-4 py-3 text-right">Touches</th><th className="px-4 py-3 text-right">Gaps</th><th className="px-4 py-3 text-right">Leads</th><th className="px-4 py-3 text-right">Sales</th><th className="px-4 py-3 text-right">Revenue</th>
       </tr></thead>
       <tbody>{data.campaigns.map((row) => <tr key={row.campaignId} className="border-b border-[#30363d]/70">
-        <td className="px-4 py-3"><div className="flex items-center gap-2 font-medium text-[#e6edf3]">{row.campaignName}{row.driveWebUrl ? <a href={row.driveWebUrl} target="_blank" rel="noreferrer" aria-label={`Open ${row.campaignName} in Drive`}><ExternalLink className="h-3.5 w-3.5 text-[#58a6ff]" /></a> : null}</div><div className="mt-1 text-xs text-[#8b949e]">{row.stormEventCode ?? "Evergreen"} · {formatDate(row.stormDate)}</div></td>
+        <td className="px-4 py-3"><div className="flex items-center gap-2 font-medium text-[#e6edf3]">{row.campaignName}{row.driveWebUrl ? <a href={row.driveWebUrl} target="_blank" rel="noreferrer" aria-label={`Open ${row.campaignName} in Drive`}><ExternalLink className="h-3.5 w-3.5 text-[#58a6ff]" /></a> : null}</div><div className="mt-1 text-xs text-[#8b949e]">{row.stormEventCode ?? "Evergreen"} · {formatDirectMailDate(row.stormDate)}</div></td>
         <td className="px-4 py-3"><StatusBadge status={row.campaignStatus} /></td>
         <td className="px-4 py-3 text-right font-mono text-[#e6edf3]">{number.format(row.uniqueAddressesConfirmedMailed)}</td>
         <td className="px-4 py-3 text-right font-mono text-[#e6edf3]">{number.format(row.confirmedMailTouches)}</td>
@@ -88,11 +84,11 @@ function DropFunnels({ data }: { data: DirectMailDashboardData }) {
     <div><h2 className="font-semibold text-[#e6edf3]">Drop-by-drop funnel</h2><p className="mt-1 text-xs text-[#8b949e]">Every dated mailing keeps its own frozen package, proof state, and gaps.</p></div>
     {data.drops.map((drop) => <article key={drop.dropId} className="rounded-lg border border-[#30363d] bg-[#161b22] p-5">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div><div className="flex items-center gap-2"><h3 className="font-medium text-[#e6edf3]">{drop.campaignName} · Drop {drop.dropNumber}</h3>{drop.driveWebUrl ? <a href={drop.driveWebUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4 text-[#58a6ff]" /></a> : null}</div><div className="mt-1 text-xs text-[#8b949e]">Planned {formatDate(drop.plannedMailDate)} · Postal proof {formatDate(drop.postalDropAt)} · {drop.hailAgeDays ?? "unknown"} hail days</div></div>
+        <div><div className="flex items-center gap-2"><h3 className="font-medium text-[#e6edf3]">{drop.campaignName} · Drop {drop.dropNumber}</h3>{drop.driveWebUrl ? <a href={drop.driveWebUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4 text-[#58a6ff]" /></a> : null}</div><div className="mt-1 text-xs text-[#8b949e]">Planned {formatDirectMailDate(drop.plannedMailDate)} · Postal proof {formatDirectMailDate(drop.postalDropAt)} · {drop.hailAgeDays ?? "unknown"} hail days</div></div>
         <StatusBadge status={drop.dropStatus} />
       </div>
       <Funnel drop={drop} />
-      {drop.totalAddressGaps > 0 ? <div className="mt-4 text-xs text-[#d29922]">Gaps: {number.format(drop.eligibleNotPackaged)} eligible not packaged · {number.format(drop.packagedNotSubmitted)} packaged not submitted · {number.format(drop.unconfirmedAfterPostalDrop)} unconfirmed after postal drop</div> : null}
+      {drop.totalAddressGaps > 0 ? <div className="mt-4 text-xs text-[#d29922]">Gaps: {number.format(drop.eligibleNotPackaged)} eligible not packaged · {number.format(drop.packagedNotSubmitted)} packaged not submitted · {number.format(drop.vendorRejectedRecipientCount)} vendor rejected · {number.format(drop.unconfirmedAfterPostalDrop)} unconfirmed after postal drop</div> : null}
     </article>)}
     {data.drops.length === 0 ? <div className="rounded-lg border border-dashed border-[#30363d] p-8 text-center text-sm text-[#8b949e]">No dated drops have been recorded yet.</div> : null}
   </section>;

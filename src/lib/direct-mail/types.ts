@@ -52,6 +52,7 @@ export interface DirectMailDropReport {
   totalAddressGaps: number;
   eligibleNotPackaged: number;
   packagedNotSubmitted: number;
+  vendorRejectedRecipientCount: number;
   unconfirmedAfterPostalDrop: number;
   attributedLeads: number;
   attributedSales: number;
