@@ -1,806 +1,155 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { ComponentType } from "react";
 import {
-  AlertTriangle,
-  BarChart3 as BarChart3Icon,
-  CheckCircle2,
-  Clock3,
-  ExternalLink,
-  Layers,
-  Mail,
-  MapPin,
-  MousePointer2,
-  Printer,
-  RadioTower,
+  AlertTriangle, BarChart3, CheckCircle2, Clock3, ExternalLink, Mail, MapPin,
+  PackageCheck, Printer, RadioTower, RefreshCw, ShieldCheck,
 } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
-  DIRECT_MAIL_BATCH,
-  DIRECT_MAIL_CAMPAIGNS,
-  DIRECT_MAIL_PERFORMANCE,
-  DIRECT_MAIL_PROCESS_STEPS,
-  DirectMailCampaignCell,
-  DirectMailPerformanceCell,
-  getDirectMailPerformanceSummary,
-  getDirectMailSummary,
-} from "@/lib/direct-mail/june-2026-olathe-hail";
-import { cn } from "@/lib/utils";
+import type {
+  DirectMailDashboardData, DirectMailDashboardResponse, DirectMailDropReport,
+} from "@/lib/direct-mail/types";
 
-const statusConfig = {
-  intake: {
-    label: "Intake",
-    dot: "bg-[#d29922]",
-    text: "text-[#d29922]",
-    bg: "bg-[#d29922]/10",
-    border: "border-[#d29922]/30",
-  },
-  sent_to_ron: {
-    label: "Sent to Ron",
-    dot: "bg-[#58a6ff]",
-    text: "text-[#58a6ff]",
-    bg: "bg-[#58a6ff]/10",
-    border: "border-[#58a6ff]/30",
-  },
-  confirmed_sent: {
-    label: "Confirmed Sent",
-    dot: "bg-[#3fb950]",
-    text: "text-[#3fb950]",
-    bg: "bg-[#3fb950]/10",
-    border: "border-[#3fb950]/30",
-  },
-  responding: {
-    label: "Responding",
-    dot: "bg-[#a371f7]",
-    text: "text-[#a371f7]",
-    bg: "bg-[#a371f7]/10",
-    border: "border-[#a371f7]/30",
-  },
-  resend_due: {
-    label: "Resend Due",
-    dot: "bg-[#f85149]",
-    text: "text-[#f85149]",
-    bg: "bg-[#f85149]/10",
-    border: "border-[#f85149]/30",
-  },
-} as const;
-
-const campaignColors = [
-  "#58a6ff",
-  "#3fb950",
-  "#d29922",
-  "#a371f7",
-  "#f778ba",
-  "#56d4dd",
-  "#ffa657",
-  "#7ee787",
-];
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat("en-US").format(value);
-}
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: value >= 1000 ? 0 : 2,
-  }).format(value);
-}
-
-function formatPercent(value: number | null) {
-  if (value === null || Number.isNaN(value)) return "Pending";
-  return `${value.toFixed(value >= 100 ? 0 : 1)}%`;
-}
-
-function formatDateTime(value: string | null) {
-  if (!value) return "Not confirmed";
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
+const number = new Intl.NumberFormat("en-US");
+const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
 function formatDate(value: string | null) {
-  if (!value) return "Pending";
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(value));
+  if (!value) return "Not proven";
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
 }
 
-function StatCard({
-  label,
-  value,
-  detail,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  icon: ComponentType<{ className?: string }>;
+function StatCard({ label, value, detail, icon: Icon, tone = "text-[#58a6ff]" }: {
+  label: string; value: string; detail: string; icon: ComponentType<{ className?: string }>; tone?: string;
 }) {
-  return (
-    <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
-      <div className="flex items-center gap-2 text-[#8b949e] text-xs mb-2">
-        <Icon className="h-4 w-4" />
-        {label}
-      </div>
-      <div className="text-2xl font-semibold text-[#e6edf3]">{value}</div>
-      <div className="text-xs text-[#8b949e] mt-1">{detail}</div>
-    </div>
-  );
+  return <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-4">
+    <div className={`flex items-center gap-2 text-xs ${tone}`}><Icon className="h-4 w-4" />{label}</div>
+    <div className="mt-2 text-2xl font-semibold text-[#e6edf3]">{value}</div>
+    <div className="mt-1 text-xs leading-5 text-[#8b949e]">{detail}</div>
+  </div>;
 }
 
-function StatusBadge({ status }: { status: DirectMailCampaignCell["status"] }) {
-  const config = statusConfig[status];
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
-        config.bg,
-        config.border,
-        config.text
-      )}
-    >
-      <span className={cn("h-1.5 w-1.5 rounded-full", config.dot)} />
-      {config.label}
-    </span>
-  );
+function StatusBadge({ status }: { status: string }) {
+  const proven = ["postal_confirmed", "complete"].includes(status);
+  return <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${proven
+    ? "border-[#3fb950]/30 bg-[#3fb950]/10 text-[#3fb950]"
+    : "border-[#d29922]/30 bg-[#d29922]/10 text-[#d29922]"}`}>
+    {status.replaceAll("_", " ")}
+  </span>;
 }
 
-function CampaignMap({
-  selectedId,
-  onSelect,
-}: {
-  selectedId: string;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <div className="relative min-h-[500px] overflow-hidden rounded-lg border border-[#30363d] bg-[#0d1117]">
-      <div className="absolute inset-0 opacity-30">
-        <div className="absolute left-[9%] top-0 h-full w-px bg-[#30363d]" />
-        <div className="absolute left-[25%] top-0 h-full w-px bg-[#30363d]" />
-        <div className="absolute left-[42%] top-0 h-full w-px bg-[#30363d]" />
-        <div className="absolute left-[58%] top-0 h-full w-px bg-[#30363d]" />
-        <div className="absolute left-[75%] top-0 h-full w-px bg-[#30363d]" />
-        <div className="absolute top-[20%] left-0 h-px w-full bg-[#30363d]" />
-        <div className="absolute top-[40%] left-0 h-px w-full bg-[#30363d]" />
-        <div className="absolute top-[60%] left-0 h-px w-full bg-[#30363d]" />
-        <div className="absolute top-[80%] left-0 h-px w-full bg-[#30363d]" />
+function Funnel({ drop }: { drop: DirectMailDropReport }) {
+  const stages = [
+    ["Source", drop.sourceRecipientCount], ["Eligible", drop.eligibleRecipientCount],
+    ["Packaged", drop.packagedRecipientCount], ["Submitted", drop.submittedRecipientCount],
+    ["Accepted", drop.acceptedRecipientCount], ["Mailed proof", drop.addressesConfirmedMailed],
+  ] as const;
+  const maximum = Math.max(drop.sourceRecipientCount, 1);
+  return <div className="grid gap-3 md:grid-cols-6">{stages.map(([label, value]) =>
+    <div key={label} className="rounded-md border border-[#30363d] bg-[#0d1117] p-3">
+      <div className="text-xs text-[#8b949e]">{label}</div>
+      <div className="mt-1 font-mono text-lg text-[#e6edf3]">{number.format(value)}</div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#21262d]">
+        <div className="h-full rounded-full bg-[#58a6ff]" style={{ width: `${Math.min(100, value / maximum * 100)}%` }} />
       </div>
-
-      <div className="absolute left-4 top-4 z-20 rounded-md border border-[#30363d] bg-[#161b22]/95 px-3 py-2">
-        <div className="flex items-center gap-2 text-xs font-medium text-[#e6edf3]">
-          <Layers className="h-4 w-4 text-[#58a6ff]" />
-          Campaign cells
-        </div>
-        <div className="mt-1 text-[11px] text-[#8b949e]">
-          Approximate geography until address geocoding is enabled.
-        </div>
-      </div>
-
-      <div className="absolute bottom-4 left-4 z-20 rounded-md border border-[#30363d] bg-[#161b22]/95 px-3 py-2 text-[11px] text-[#8b949e]">
-        West Olathe / De Soto
-      </div>
-      <div className="absolute bottom-4 right-4 z-20 rounded-md border border-[#30363d] bg-[#161b22]/95 px-3 py-2 text-[11px] text-[#8b949e]">
-        Central Olathe
-      </div>
-      <div className="absolute right-4 top-4 z-20 rounded-md border border-[#30363d] bg-[#161b22]/95 px-3 py-2 text-[11px] text-[#8b949e]">
-        Shawnee
-      </div>
-
-      {DIRECT_MAIL_CAMPAIGNS.map((campaign, index) => {
-        const selected = selectedId === campaign.id;
-        const color = campaignColors[index % campaignColors.length];
-        const size = Math.max(36, campaign.map.radius * 13);
-        return (
-          <button
-            key={campaign.id}
-            type="button"
-            onClick={() => onSelect(campaign.id)}
-            className={cn(
-              "absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-full border text-left transition-all hover:z-30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-[#58a6ff]",
-              selected ? "z-30 scale-110 border-[#e6edf3]" : "border-white/20"
-            )}
-            style={{
-              left: `${campaign.map.x}%`,
-              top: `${campaign.map.y}%`,
-              width: `${size}px`,
-              height: `${size}px`,
-              background: `${color}2b`,
-              boxShadow: selected
-                ? `0 0 0 5px ${color}30, 0 0 32px ${color}55`
-                : `0 0 24px ${color}22`,
-            }}
-            aria-label={`Select ${campaign.name}`}
-          >
-            <span
-              className="absolute inset-2 rounded-full border"
-              style={{ borderColor: `${color}80` }}
-            />
-            <span
-              className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
-              style={{ backgroundColor: color }}
-            />
-            <span className="sr-only">{campaign.name}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
+    </div>)}</div>;
 }
 
-function CampaignDetail({ campaign }: { campaign: DirectMailCampaignCell }) {
-  const excluded = campaign.sheetRows - campaign.usableRows;
-  return (
-    <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-xs text-[#8b949e]">
-            <MapPin className="h-4 w-4" />
-            {campaign.city} · {campaign.county}
-          </div>
-          <h2 className="mt-2 text-xl font-semibold text-[#e6edf3]">
-            {campaign.name}
-          </h2>
-        </div>
-        <StatusBadge status={campaign.status} />
-      </div>
-
-      <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-        <div className="rounded-md border border-[#30363d] bg-[#0d1117] p-3">
-          <div className="text-xs text-[#8b949e]">Sheet rows</div>
-          <div className="mt-1 font-mono text-lg text-[#e6edf3]">
-            {formatNumber(campaign.sheetRows)}
-          </div>
-        </div>
-        <div className="rounded-md border border-[#30363d] bg-[#0d1117] p-3">
-          <div className="text-xs text-[#8b949e]">Usable rows</div>
-          <div className="mt-1 font-mono text-lg text-[#e6edf3]">
-            {formatNumber(campaign.usableRows)}
-          </div>
-        </div>
-        <div className="rounded-md border border-[#30363d] bg-[#0d1117] p-3">
-          <div className="text-xs text-[#8b949e]">Sent to mailhouse</div>
-          <div className="mt-1 font-mono text-lg text-[#e6edf3]">
-            {formatDateTime(campaign.sentToRonAt)}
-          </div>
-        </div>
-        <div className="rounded-md border border-[#30363d] bg-[#0d1117] p-3">
-          <div className="text-xs text-[#8b949e]">Postal drop</div>
-          <div className="mt-1 font-mono text-lg text-[#8b949e]">
-            {formatDate(campaign.confirmedSentAt)}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-5 space-y-3 text-sm">
-        <div className="flex items-start gap-2 text-[#8b949e]">
-          <Printer className="mt-0.5 h-4 w-4 text-[#d29922]" />
-          <span>
-            Mailhouse request is recorded. Add the final postal drop date once
-            Ron / Mail Works confirms print and mail completion.
-          </span>
-        </div>
-        <div className="flex items-start gap-2 text-[#8b949e]">
-          <RadioTower className="mt-0.5 h-4 w-4 text-[#58a6ff]" />
-          <span>{campaign.notes}</span>
-        </div>
-        {excluded > 0 ? (
-          <div className="flex items-start gap-2 text-[#d29922]">
-            <AlertTriangle className="mt-0.5 h-4 w-4" />
-            <span>{excluded} malformed row(s) should be excluded internally.</span>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
+function Unavailable({ response }: { response: Exclude<DirectMailDashboardResponse, DirectMailDashboardData> }) {
+  return <div className="rounded-lg border border-[#d29922]/40 bg-[#d29922]/10 p-6">
+    <div className="flex items-center gap-2 text-[#d29922]"><AlertTriangle className="h-5 w-5" /><h2 className="font-semibold">Live reporting is not available yet</h2></div>
+    <p className="mt-3 max-w-3xl text-sm leading-6 text-[#c9d1d9]">{response.message}</p>
+    <p className="mt-2 text-xs text-[#8b949e]">No historical sample campaign data is being substituted. Deploy the v2 reporting migration, then refresh this page.</p>
+  </div>;
 }
 
-
-function ChartTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: Array<{ name?: string; value?: number; color?: string }>;
-  label?: string;
-}) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 shadow-xl">
-      <div className="mb-1 text-xs font-medium text-[#e6edf3]">{label}</div>
-      <div className="space-y-1">
-        {payload.map((item) => (
-          <div key={`${item.name}-${item.value}`} className="flex items-center gap-2 text-xs">
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: item.color ?? "#58a6ff" }}
-            />
-            <span className="text-[#8b949e]">{item.name}</span>
-            <span className="font-mono text-[#e6edf3]">
-              {typeof item.value === "number" ? formatNumber(item.value) : item.value}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+function CampaignScorecard({ data }: { data: DirectMailDashboardData }) {
+  return <section className="mt-8 rounded-lg border border-[#30363d] bg-[#161b22]">
+    <div className="border-b border-[#30363d] p-5"><h2 className="font-semibold text-[#e6edf3]">Campaign scorecard</h2><p className="mt-1 text-xs text-[#8b949e]">Aggregate reporting only; homeowner names and addresses stay out of the browser.</p></div>
+    <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+      <thead className="text-xs uppercase text-[#8b949e]"><tr className="border-b border-[#30363d]">
+        <th className="px-4 py-3">Campaign</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Homes</th><th className="px-4 py-3 text-right">Touches</th><th className="px-4 py-3 text-right">Gaps</th><th className="px-4 py-3 text-right">Leads</th><th className="px-4 py-3 text-right">Sales</th><th className="px-4 py-3 text-right">Revenue</th>
+      </tr></thead>
+      <tbody>{data.campaigns.map((row) => <tr key={row.campaignId} className="border-b border-[#30363d]/70">
+        <td className="px-4 py-3"><div className="flex items-center gap-2 font-medium text-[#e6edf3]">{row.campaignName}{row.driveWebUrl ? <a href={row.driveWebUrl} target="_blank" rel="noreferrer" aria-label={`Open ${row.campaignName} in Drive`}><ExternalLink className="h-3.5 w-3.5 text-[#58a6ff]" /></a> : null}</div><div className="mt-1 text-xs text-[#8b949e]">{row.stormEventCode ?? "Evergreen"} · {formatDate(row.stormDate)}</div></td>
+        <td className="px-4 py-3"><StatusBadge status={row.campaignStatus} /></td>
+        <td className="px-4 py-3 text-right font-mono text-[#e6edf3]">{number.format(row.uniqueAddressesConfirmedMailed)}</td>
+        <td className="px-4 py-3 text-right font-mono text-[#e6edf3]">{number.format(row.confirmedMailTouches)}</td>
+        <td className="px-4 py-3 text-right font-mono text-[#d29922]">{number.format(row.totalAddressGaps)}</td>
+        <td className="px-4 py-3 text-right font-mono text-[#e6edf3]">{number.format(row.attributedLeads)}</td>
+        <td className="px-4 py-3 text-right font-mono text-[#e6edf3]">{number.format(row.attributedSales)}</td>
+        <td className="px-4 py-3 text-right font-mono text-[#3fb950]">{money.format(row.attributedRevenue)}</td>
+      </tr>)}{data.campaigns.length === 0 ? <tr><td colSpan={8} className="px-4 py-10 text-center text-[#8b949e]">No direct-mail campaigns have been recorded yet.</td></tr> : null}</tbody>
+    </table></div>
+  </section>;
 }
 
-function MoneyTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: Array<{ name?: string; value?: number; color?: string }>;
-  label?: string;
-}) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 shadow-xl">
-      <div className="mb-1 text-xs font-medium text-[#e6edf3]">{label}</div>
-      <div className="space-y-1">
-        {payload.map((item) => (
-          <div key={`${item.name}-${item.value}`} className="flex items-center gap-2 text-xs">
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: item.color ?? "#3fb950" }}
-            />
-            <span className="text-[#8b949e]">{item.name}</span>
-            <span className="font-mono text-[#e6edf3]">
-              {typeof item.value === "number" ? formatCurrency(item.value) : item.value}
-            </span>
-          </div>
-        ))}
+function DropFunnels({ data }: { data: DirectMailDashboardData }) {
+  return <section className="mt-8 space-y-4">
+    <div><h2 className="font-semibold text-[#e6edf3]">Drop-by-drop funnel</h2><p className="mt-1 text-xs text-[#8b949e]">Every dated mailing keeps its own frozen package, proof state, and gaps.</p></div>
+    {data.drops.map((drop) => <article key={drop.dropId} className="rounded-lg border border-[#30363d] bg-[#161b22] p-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div><div className="flex items-center gap-2"><h3 className="font-medium text-[#e6edf3]">{drop.campaignName} · Drop {drop.dropNumber}</h3>{drop.driveWebUrl ? <a href={drop.driveWebUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4 text-[#58a6ff]" /></a> : null}</div><div className="mt-1 text-xs text-[#8b949e]">Planned {formatDate(drop.plannedMailDate)} · Postal proof {formatDate(drop.postalDropAt)} · {drop.hailAgeDays ?? "unknown"} hail days</div></div>
+        <StatusBadge status={drop.dropStatus} />
       </div>
-    </div>
-  );
+      <Funnel drop={drop} />
+      {drop.totalAddressGaps > 0 ? <div className="mt-4 text-xs text-[#d29922]">Gaps: {number.format(drop.eligibleNotPackaged)} eligible not packaged · {number.format(drop.packagedNotSubmitted)} packaged not submitted · {number.format(drop.unconfirmedAfterPostalDrop)} unconfirmed after postal drop</div> : null}
+    </article>)}
+    {data.drops.length === 0 ? <div className="rounded-lg border border-dashed border-[#30363d] p-8 text-center text-sm text-[#8b949e]">No dated drops have been recorded yet.</div> : null}
+  </section>;
 }
 
-function DirectMailProcessGraph() {
-  return (
-    <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
-      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="font-semibold text-[#e6edf3]">Whole Loop: Target → Revenue</h2>
-          <p className="mt-1 text-xs text-[#8b949e]">
-            This is the actual direct-mail operating chain, not a lonely postcard scoreboard.
-          </p>
-        </div>
-        <span className="rounded-full border border-[#d29922]/30 bg-[#d29922]/10 px-3 py-1 text-xs text-[#d29922]">
-          Read-only attribution run · Aug 18
-        </span>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-6">
-        {DIRECT_MAIL_PROCESS_STEPS.map((step, index) => (
-          <div key={step.step} className="relative rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
-            {index < DIRECT_MAIL_PROCESS_STEPS.length - 1 ? (
-              <div className="absolute right-[-14px] top-1/2 z-10 hidden h-px w-7 bg-[#30363d] lg:block" />
-            ) : null}
-            <div className="text-xs uppercase tracking-wide text-[#8b949e]">{step.step}</div>
-            <div className="mt-2 text-lg font-semibold text-[#e6edf3]">{step.metric}</div>
-            <div className="mt-2 text-xs leading-5 text-[#8b949e]">{step.detail}</div>
-            <div className="mt-3 inline-flex rounded-full border border-[#30363d] px-2 py-1 text-[11px] text-[#58a6ff]">
-              {step.status}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+function MessageGuidance({ data }: { data: DirectMailDashboardData }) {
+  return <section className="mt-8 rounded-lg border border-[#30363d] bg-[#161b22] p-5">
+    <div className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-[#a371f7]" /><h2 className="font-semibold text-[#e6edf3]">Next-touch message guidance</h2></div>
+    <p className="mt-1 text-xs text-[#8b949e]">Rules are selected from hail age, touch number, storm confidence, and observed message performance.</p>
+    <div className="mt-4 grid gap-4 xl:grid-cols-2">{data.recommendations.map((item) => <div key={item.campaignId} className="rounded-md border border-[#30363d] bg-[#0d1117] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="font-medium text-[#e6edf3]">{item.campaignName}</div><div className="mt-1 text-xs text-[#8b949e]">Day {item.currentHailAgeDays} · touch {item.nextTouchNumber} · {item.hailAgeBand}</div></div><span className="rounded-full border border-[#30363d] px-2 py-1 text-xs text-[#a371f7]">{item.messageLane ?? "No matching rule"}</span></div>
+      <p className="mt-3 text-sm leading-6 text-[#c9d1d9]">{item.copyGuidance ?? "The current rule set has no approved recommendation for this campaign."}</p>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs"><span className="rounded border border-[#30363d] px-2 py-1 text-[#8b949e]">{item.timingAction ?? "Review timing"}</span><span className="rounded border border-[#30363d] px-2 py-1 text-[#8b949e]">{item.evidenceStrength.replaceAll("_", " ")} · n={number.format(item.sampleSize)} · {item.observedResponseRate === null ? "No evidence" : `${(item.observedResponseRate * 100).toFixed(1)}%`}</span>{item.requiredClaimsReview ? <span className="rounded border border-[#d29922]/30 px-2 py-1 text-[#d29922]">claims review required</span> : null}</div>
+    </div>)}{data.recommendations.length === 0 ? <div className="text-sm text-[#8b949e]">No active campaign currently has a storm-based recommendation.</div> : null}</div>
+  </section>;
 }
 
-function DirectMailPerformanceCharts() {
-  const chartData = DIRECT_MAIL_PERFORMANCE.map((campaign) => ({
-    ...campaign,
-    shortName: campaign.name.replace("Carriage ", "Car. ").replace("Hunter's ", "Hun. "),
-    responseRate: campaign.targetCount > 0 ? (campaign.matchedContacts / campaign.targetCount) * 100 : 0,
-    returnMultiple: campaign.costAllocated > 0 ? campaign.matchedRevenue / campaign.costAllocated : 0,
-  }));
-
-  const funnelData = [
-    { stage: "Targets", count: 1418 },
-    { stage: "Matched Contacts", count: 11 },
-    { stage: "Matched Jobs", count: 16 },
-    { stage: "Sold Jobs", count: 2 },
-  ];
-
-  return (
-    <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-      <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
-        <h2 className="font-semibold text-[#e6edf3]">Attribution Funnel</h2>
-        <p className="mt-1 text-xs text-[#8b949e]">
-          Loaded campaign rows down to matched revenue proof. This makes drop-off visible.
-        </p>
-        <div className="mt-5 h-[280px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={funnelData} margin={{ top: 10, right: 10, bottom: 20, left: 0 }}>
-              <CartesianGrid stroke="#30363d" strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="stage" tick={{ fill: "#8b949e", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "#8b949e", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(88,166,255,0.08)" }} />
-              <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
-                {funnelData.map((entry, index) => (
-                  <Cell key={entry.stage} fill={campaignColors[index % campaignColors.length]} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
-        <h2 className="font-semibold text-[#e6edf3]">Revenue vs Spend by Campaign</h2>
-        <p className="mt-1 text-xs text-[#8b949e]">
-          Shows where money came back, and where the mailbox goblin is still just eating postage.
-        </p>
-        <div className="mt-5 h-[280px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 10, right: 10, bottom: 20, left: 0 }}>
-              <CartesianGrid stroke="#30363d" strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="shortName" tick={{ fill: "#8b949e", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "#8b949e", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <Tooltip content={<MoneyTooltip />} cursor={{ fill: "rgba(63,185,80,0.08)" }} />
-              <Bar dataKey="matchedRevenue" name="Matched revenue" radius={[4, 4, 0, 0]} fill="#3fb950" />
-              <Bar dataKey="costAllocated" name="Allocated cost" radius={[4, 4, 0, 0]} fill="#d29922" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
-        <h2 className="font-semibold text-[#e6edf3]">Response Rate by Neighborhood</h2>
-        <p className="mt-1 text-xs text-[#8b949e]">
-          Matched contacts divided by campaign target count. Good roofing direct mail usually wants this above 2%.
-        </p>
-        <div className="mt-5 h-[260px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 10, right: 15, bottom: 20, left: 0 }}>
-              <CartesianGrid stroke="#30363d" strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="shortName" tick={{ fill: "#8b949e", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "#8b949e", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value) => `${value}%`} />
-              <Tooltip
-                content={({ active, payload, label }) => {
-                  if (!active || !payload?.length) return null;
-                  const value = payload[0]?.value;
-                  return (
-                    <div className="rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 shadow-xl">
-                      <div className="text-xs font-medium text-[#e6edf3]">{label}</div>
-                      <div className="mt-1 text-xs text-[#8b949e]">
-                        Response rate: <span className="font-mono text-[#e6edf3]">{typeof value === "number" ? formatPercent(value) : value}</span>
-                      </div>
-                    </div>
-                  );
-                }}
-              />
-              <Line type="monotone" dataKey="responseRate" name="Response rate" stroke="#58a6ff" strokeWidth={3} dot={{ r: 4, fill: "#58a6ff" }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
-        <h2 className="font-semibold text-[#e6edf3]">Campaign Economics</h2>
-        <p className="mt-1 text-xs text-[#8b949e]">
-          Cost per matched lead and return multiple. Pending values mean no sold job or no matched lead yet.
-        </p>
-        <div className="mt-4 space-y-3">
-          {DIRECT_MAIL_PERFORMANCE.map((campaign: DirectMailPerformanceCell) => {
-            const returnMultiple = campaign.costAllocated > 0 ? campaign.matchedRevenue / campaign.costAllocated : 0;
-            return (
-              <div key={campaign.id} className="rounded-md border border-[#30363d] bg-[#0d1117] p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-medium text-[#e6edf3]">{campaign.name}</div>
-                    <div className="mt-1 text-xs text-[#8b949e]">{campaign.attributionNotes}</div>
-                  </div>
-                  <div className="text-right font-mono text-sm text-[#3fb950]">
-                    {returnMultiple > 0 ? `${returnMultiple.toFixed(1)}x` : "Pending"}
-                  </div>
-                </div>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                  <div>
-                    <div className="text-[#8b949e]">Cost / lead</div>
-                    <div className="font-mono text-[#e6edf3]">{campaign.costPerMatchedLead === null ? "Pending" : formatCurrency(campaign.costPerMatchedLead)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[#8b949e]">Sold jobs</div>
-                    <div className="font-mono text-[#e6edf3]">{campaign.matchedSoldJobs}</div>
-                  </div>
-                  <div>
-                    <div className="text-[#8b949e]">ROI</div>
-                    <div className="font-mono text-[#e6edf3]">{formatPercent(campaign.roiPercent)}</div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+function Dashboard({ data }: { data: DirectMailDashboardData }) {
+  const { summary } = data;
+  return <>
+    <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
+      <StatCard label="Confirmed homes" value={number.format(summary.uniqueAddressesConfirmedMailed)} detail="Unique addresses with postal evidence" icon={MapPin} tone="text-[#3fb950]" />
+      <StatCard label="Confirmed touches" value={number.format(summary.confirmedMailTouches)} detail={`${number.format(summary.repeatMailTouches)} repeat touches`} icon={Mail} />
+      <StatCard label="Address gaps" value={number.format(summary.totalAddressGaps)} detail="Eligible, packaging, or confirmation gaps" icon={AlertTriangle} tone="text-[#d29922]" />
+      <StatCard label="Attributed leads" value={number.format(summary.attributedLeads)} detail={`${number.format(summary.confirmedLeads)} confirmed direct-mail leads`} icon={RadioTower} />
+      <StatCard label="Attributed sales" value={number.format(summary.attributedSales)} detail={`${money.format(summary.attributedRevenue)} attributed revenue`} icon={BarChart3} tone="text-[#3fb950]" />
     </div>
-  );
+    <div className="mt-5 grid gap-4 sm:grid-cols-3">
+      <StatCard label="Campaigns" value={number.format(summary.campaignCount)} detail={`${number.format(summary.dropCount)} dated drops`} icon={Printer} />
+      <StatCard label="Recorded cost" value={money.format(summary.totalCost)} detail="Print plus postage currently recorded" icon={PackageCheck} />
+      <StatCard label="Evidence policy" value="Recipient level" detail="Upload, request, and acceptance are not postal proof" icon={ShieldCheck} tone="text-[#a371f7]" />
+    </div>
+    <CampaignScorecard data={data} /><DropFunnels data={data} /><MessageGuidance data={data} />
+  </>;
 }
 
 export default function DirectMailPage() {
-  const summary = getDirectMailSummary();
-  const performanceSummary = getDirectMailPerformanceSummary();
-  const [selectedId, setSelectedId] = useState(DIRECT_MAIL_CAMPAIGNS[0]?.id ?? "");
-  const [query, setQuery] = useState("");
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<DirectMailDashboardResponse>({
+    queryKey: ["direct-mail-dashboard"],
+    queryFn: async () => {
+      const response = await fetch("/api/direct-mail", { cache: "no-store" });
+      const body = await response.json() as DirectMailDashboardResponse;
+      if (!response.ok && body.available !== false) throw new Error("Direct-mail reporting could not be loaded.");
+      return body;
+    },
+    staleTime: 60_000,
+  });
 
-  const selectedCampaign =
-    DIRECT_MAIL_CAMPAIGNS.find((campaign) => campaign.id === selectedId) ??
-    DIRECT_MAIL_CAMPAIGNS[0];
-
-  const filteredCampaigns = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return DIRECT_MAIL_CAMPAIGNS;
-    return DIRECT_MAIL_CAMPAIGNS.filter((campaign) =>
-      [campaign.name, campaign.city, campaign.notes]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalized)
-    );
-  }, [query]);
-
-  const largestCampaign = useMemo(
-    () =>
-      [...DIRECT_MAIL_CAMPAIGNS].sort((a, b) => b.usableRows - a.usableRows)[0],
-    []
-  );
-
-  return (
-    <div>
-      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-sm text-[#58a6ff]">
-            <Mail className="h-4 w-4" />
-            Direct Mail Operating System
-          </div>
-          <h1 className="mt-2 text-2xl font-bold text-[#e6edf3]">
-            Direct Mail Loop
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#8b949e]">
-            Team-facing view of the full direct mail process: target lists, mailhouse
-            handoff, cost, call/source attribution, matched jobs, sold revenue, and
-            which campaign cells still need final postal-drop confirmation.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <a
-            href={DIRECT_MAIL_BATCH.googleSheetUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-2 rounded-md border border-[#30363d] bg-[#161b22] px-3 py-2 text-sm text-[#e6edf3] hover:bg-[#21262d]"
-          >
-            Google Sheet
-            <ExternalLink className="h-4 w-4" />
-          </a>
-          <a
-            href={DIRECT_MAIL_BATCH.googleFolderUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-2 rounded-md border border-[#30363d] bg-[#161b22] px-3 py-2 text-sm text-[#e6edf3] hover:bg-[#21262d]"
-          >
-            Drive Folder
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        </div>
-      </div>
-
-      <div className="mb-8 grid grid-cols-2 gap-4 xl:grid-cols-5">
-        <StatCard
-          label="Campaign cells"
-          value={formatNumber(summary.totalCampaigns)}
-          detail="Neighborhood tabs in the Google Sheet"
-          icon={Layers}
-        />
-        <StatCard
-          label="Sheet rows"
-          value={formatNumber(summary.totalSheetRows)}
-          detail="Rows found across campaign tabs"
-          icon={Mail}
-        />
-        <StatCard
-          label="Usable recipients"
-          value={formatNumber(summary.totalUsableRows)}
-          detail="After excluding known malformed rows"
-          icon={CheckCircle2}
-        />
-        <StatCard
-          label="Sent to Mail Works"
-          value={formatNumber(summary.sentToMailhouse)}
-          detail="Campaign cells with recorded handoff times"
-          icon={Printer}
-        />
-        <StatCard
-          label="Need postal date"
-          value={formatNumber(summary.pendingRon)}
-          detail="Waiting on final mailhouse confirmation"
-          icon={Clock3}
-        />
-      </div>
-
-      <div className="mb-8 grid grid-cols-2 gap-4 xl:grid-cols-5">
-        <StatCard
-          label="Matched targets"
-          value={formatNumber(performanceSummary.totalTargets)}
-          detail="Campaign rows in the current scorecard"
-          icon={MapPin}
-        />
-        <StatCard
-          label="Matched contacts"
-          value={formatNumber(performanceSummary.totalMatchedContacts)}
-          detail={`${formatPercent(performanceSummary.responseRate)} response rate`}
-          icon={RadioTower}
-        />
-        <StatCard
-          label="Matched jobs"
-          value={formatNumber(performanceSummary.totalMatchedJobs)}
-          detail={`${formatNumber(performanceSummary.totalSoldJobs)} sold jobs attributed`}
-          icon={CheckCircle2}
-        />
-        <StatCard
-          label="Matched revenue"
-          value={formatCurrency(performanceSummary.totalRevenue)}
-          detail={`${performanceSummary.returnMultiple.toFixed(1)}x return on known spend`}
-          icon={BarChart3Icon}
-        />
-        <StatCard
-          label="Known spend"
-          value={formatCurrency(performanceSummary.totalCost)}
-          detail="Loaded Mail Works cost allocation"
-          icon={Printer}
-        />
-      </div>
-
-      <div className="mb-8">
-        <DirectMailProcessGraph />
-      </div>
-
-      <div className="mb-8">
-        <DirectMailPerformanceCharts />
-      </div>
-
-      <div className="mb-8 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <CampaignMap selectedId={selectedCampaign.id} onSelect={setSelectedId} />
-        <CampaignDetail campaign={selectedCampaign} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="bg-[#161b22] border border-[#30363d] rounded-lg">
-          <div className="flex flex-col gap-3 border-b border-[#30363d] p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="font-semibold text-[#e6edf3]">Campaign Queue</h2>
-              <p className="mt-1 text-xs text-[#8b949e]">
-                Subject lines should match these campaign names while you send Ron each PDF and CSV.
-              </p>
-            </div>
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Filter campaigns"
-              className="h-9 rounded-md border border-[#30363d] bg-[#0d1117] px-3 text-sm text-[#e6edf3] placeholder:text-[#6e7681] focus:outline-none focus:ring-2 focus:ring-[#58a6ff]"
-            />
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-xs uppercase text-[#8b949e]">
-                <tr className="border-b border-[#30363d]">
-                  <th className="px-4 py-3 font-medium">Campaign</th>
-                  <th className="px-4 py-3 font-medium">City</th>
-                  <th className="px-4 py-3 text-right font-medium">Recipients</th>
-                  <th className="px-4 py-3 font-medium">Sent to Mail Works</th>
-                  <th className="px-4 py-3 font-medium">Postal Drop</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredCampaigns.map((campaign) => (
-                  <tr
-                    key={campaign.id}
-                    onClick={() => setSelectedId(campaign.id)}
-                    className={cn(
-                      "cursor-pointer border-b border-[#30363d]/70 transition-colors hover:bg-[#21262d]/60",
-                      selectedCampaign.id === campaign.id && "bg-[#58a6ff]/5"
-                    )}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-[#e6edf3]">
-                        {campaign.name}
-                      </div>
-                      <div className="mt-1 text-xs text-[#8b949e]">
-                        {campaign.sourceSheetTab}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-[#8b949e]">{campaign.city}</td>
-                    <td className="px-4 py-3 text-right font-mono text-[#e6edf3]">
-                      {formatNumber(campaign.usableRows)}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-[#e6edf3]">
-                      {formatDateTime(campaign.sentToRonAt)}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-[#8b949e]">
-                      {formatDate(campaign.confirmedSentAt)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={campaign.status} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="space-y-5">
-          <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
-            <h2 className="font-semibold text-[#e6edf3]">Build Sequence</h2>
-            <div className="mt-4 space-y-3 text-sm">
-              {[
-                ["Now", "Send each PDF and CSV to Ron using the campaign tab name."],
-                ["Next", "Record Ron confirmation: final count, mail date, cost if available."],
-                ["Then", "Sync confirmed campaigns into marketing_campaigns and mailer_addresses."],
-                ["Later", "Overlay calls, forms, JobNimbus matches, and resend due dates."],
-              ].map(([label, detail]) => (
-                <div key={label} className="flex gap-3">
-                  <div className="mt-1 h-2 w-2 rounded-full bg-[#58a6ff]" />
-                  <div>
-                    <div className="font-medium text-[#e6edf3]">{label}</div>
-                    <div className="text-[#8b949e]">{detail}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
-            <div className="flex items-center gap-2 text-[#d29922]">
-              <AlertTriangle className="h-4 w-4" />
-              <h2 className="font-semibold">Precision Boundary</h2>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-[#8b949e]">
-              This first map shows campaign cells, not exact property dots. The
-              Google Sheet has mailing addresses but no latitude/longitude yet.
-              Exact property markers require a geocoding pass or a PropStream
-              export that includes coordinates.
-            </p>
-          </div>
-
-          <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5">
-            <div className="flex items-center gap-2 text-[#3fb950]">
-              <MousePointer2 className="h-4 w-4" />
-              <h2 className="font-semibold">Largest Cell</h2>
-            </div>
-            <p className="mt-3 text-sm text-[#8b949e]">
-              {largestCampaign.name} has{" "}
-              <span className="font-mono text-[#e6edf3]">
-                {formatNumber(largestCampaign.usableRows)}
-              </span>{" "}
-              usable recipients. It should be reviewed first when response data starts coming in.
-            </p>
-          </div>
-        </div>
-      </div>
+  return <div>
+    <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div><div className="flex items-center gap-2 text-sm text-[#58a6ff]"><Mail className="h-4 w-4" />Direct Mail Operating System</div><h1 className="mt-2 text-2xl font-bold text-[#e6edf3]">Closed-loop scorecard</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-[#8b949e]">From target list through frozen Drive package, postal proof, repeat touches, JobNimbus attribution, and revenue.</p></div>
+      <button type="button" onClick={() => refetch()} disabled={isFetching} className="inline-flex items-center gap-2 self-start rounded-md border border-[#30363d] bg-[#161b22] px-3 py-2 text-sm text-[#e6edf3] hover:bg-[#21262d] disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />Refresh</button>
     </div>
-  );
+    {isLoading ? <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-8 text-sm text-[#8b949e]">Loading direct-mail evidence…</div> : null}
+    {isError ? <div className="rounded-lg border border-[#f85149]/40 bg-[#f85149]/10 p-6 text-sm text-[#f85149]">{error instanceof Error ? error.message : "Direct-mail reporting could not be loaded."}</div> : null}
+    {data?.available === false ? <Unavailable response={data} /> : null}
+    {data?.available === true ? <Dashboard data={data} /> : null}
+    <div className="mt-6 flex items-start gap-2 text-xs leading-5 text-[#8b949e]"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#3fb950]" />{data?.available === true ? `${data.evidenceBoundary} Refreshed ${new Date(data.generatedAt).toLocaleString()}.` : "The page intentionally distinguishes prepared, submitted, accepted, and confirmed mailed states."}</div>
+  </div>;
 }
