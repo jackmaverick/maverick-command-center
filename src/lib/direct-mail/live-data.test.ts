@@ -29,7 +29,7 @@ describe("loadDirectMailDashboard", () => {
         campaign_id: "campaign-1", campaign_name: "Kensington", event_code: "HAIL-2026-03-10",
         event_date: "2026-03-10", current_hail_age_days: "171", hail_age_band: "091-180",
         next_touch_number: "3", rule_slug: "delayed-damage", message_lane: "education",
-        timing_action: "review", copy_guidance: "Explain delayed storm damage.", required_claims_review: true,
+        timing_action: "review", copy_guidance: "Explain delayed storm damage.", required_claims_review: ["storm_date"],
         prohibited_claims: ["guaranteed damage"], sample_size: "99", observed_response_rate: "0.0182",
       }]);
 
@@ -53,6 +53,22 @@ describe("loadDirectMailDashboard", () => {
     expect(result.summary.campaignCount).toBe(0);
     expect(result.summary.confirmedMailTouches).toBe(0);
     expect(result.campaigns).toEqual([]);
+  });
+
+  it("does not require claims review for an empty JSON rule list", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{
+        campaign_id: "campaign-1", campaign_name: "Evergreen", event_code: "HAIL-OLD",
+        event_date: "2025-01-01", current_hail_age_days: "600", hail_age_band: "366-plus",
+        next_touch_number: "1", rule_slug: "evergreen", message_lane: "evergreen_homeowner",
+        timing_action: "retire", copy_guidance: "Use evergreen education.", required_claims_review: [],
+        prohibited_claims: ["recent_storm"], sample_size: "0", observed_response_rate: null,
+      }]);
+
+    const result = await loadDirectMailDashboard(query);
+    expect(result.recommendations[0].requiredClaimsReview).toBe(false);
   });
 });
 

@@ -37,7 +37,7 @@ interface RecommendationRow {
   campaign_id: string; campaign_name: string; event_code: string; event_date: string;
   current_hail_age_days: string | number; hail_age_band: string; next_touch_number: string | number;
   rule_slug: string | null; message_lane: string | null; timing_action: string | null;
-  copy_guidance: string | null; required_claims_review: boolean | null;
+  copy_guidance: string | null; required_claims_review: string[] | null;
   prohibited_claims: string[] | null; sample_size: string | number;
   observed_response_rate: string | number | null;
 }
@@ -80,7 +80,8 @@ function mapRecommendation(row: RecommendationRow): DirectMailMessageRecommendat
     eventDate: row.event_date, currentHailAgeDays: numeric(row.current_hail_age_days), hailAgeBand: row.hail_age_band,
     nextTouchNumber: numeric(row.next_touch_number), ruleSlug: row.rule_slug, messageLane: row.message_lane,
     timingAction: row.timing_action, copyGuidance: row.copy_guidance,
-    requiredClaimsReview: Boolean(row.required_claims_review), prohibitedClaims: row.prohibited_claims ?? [],
+    requiredClaimsReview: (row.required_claims_review ?? []).length > 0,
+    prohibitedClaims: row.prohibited_claims ?? [],
     sampleSize, observedResponseRate: nullableNumber(row.observed_response_rate),
     evidenceStrength: sampleSize === 0 ? "no_evidence" : sampleSize < 100 ? "directional_only" : "usable_sample",
   };
