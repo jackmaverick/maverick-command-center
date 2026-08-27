@@ -62,9 +62,9 @@ const commandCenterActionSurface = {
 export const loopRegistry: LoopRegistryEntry[] = [
   {
     id: "homeowner-production-texts",
-    name: "Homeowner production texts",
+    name: "Other supervised homeowner production messages",
     businessPromise:
-      "Homeowners get timely install, schedule-change, and production-status updates without unapproved live sends.",
+      "Distinct install-morning, insurance, gutter, and introduction messages remain review-gated until each is separately validated.",
     owner: "Jack / Michael",
     sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors/daily-production-check",
     actionSurface: dailyTouchListActionSurface,
@@ -79,7 +79,7 @@ export const loopRegistry: LoopRegistryEntry[] = [
         path: "/Users/maverick_ai/supabase-maverick-exteriors/daily-production-check/runs",
         freshnessHours: 36,
         failurePatterns: ["HTTPError", "522 Server Error", "failed immediately"],
-        successPatterns: ["homeowner_approval_tasks", "prod_install_morning", "prod_work_order_reschedule_notice"],
+        successPatterns: ["homeowner_approval_tasks", "prod_install_morning", "prod_manager_intro_chester"],
       },
       {
         label: "scheduler memory",
@@ -139,13 +139,13 @@ export const loopRegistry: LoopRegistryEntry[] = [
         path: "/Users/maverick_ai/supabase-maverick-exteriors/reports/production-communication-graph/health-latest.json",
         freshnessHours: 0.75,
         failurePatterns: ["\"status\": \"failing\"", "Production communication graph poll failed"],
-        successPatterns: ["\"status\": \"healthy\"", "Reply monitor ran successfully"],
+        successPatterns: ["\"status\": \"healthy\"", "Sender and reply monitor ran successfully"],
       },
       {
         label: "production communication graph runner",
         kind: "file",
         path: "/Users/maverick_ai/supabase-maverick-exteriors/scripts/run_production_communication_graph.sh",
-        successPatterns: ["--apply", "--notify-slack", "--lookback-days 2"],
+        successPatterns: ["--apply", "--notify-slack", "--lookback-days 1"],
       },
     ],
   },
