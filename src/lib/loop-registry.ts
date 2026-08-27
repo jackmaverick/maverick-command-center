@@ -121,6 +121,35 @@ export const loopRegistry: LoopRegistryEntry[] = [
     ],
   },
   {
+    id: "production-communication-closed-loop",
+    name: "Production delivery/install communication closed loop",
+    businessPromise:
+      "Homeowners receive one verified delivery/install schedule, one correction when dates change, and a fast human handoff when they object or ask for help.",
+    owner: "Chester / Mia / AI Ops",
+    sourceRepoPath: "/Users/maverick_ai/supabase-maverick-exteriors/scripts/production_communication_graph.py",
+    actionSurface: dailyTouchListActionSurface,
+    cadence: "continuous",
+    approvalRequired: false,
+    nextAction:
+      "If warning, Chester or Mia should resolve the active homeowner reply case. If failing or stale, open the Codex repair prompt, inspect launchd and the structured heartbeat, then rerun dry-run before restoring the poller.",
+    proofSources: [
+      {
+        label: "production communication graph heartbeat",
+        kind: "file",
+        path: "/Users/maverick_ai/supabase-maverick-exteriors/reports/production-communication-graph/health-latest.json",
+        freshnessHours: 0.75,
+        failurePatterns: ["\"status\": \"failing\"", "Production communication graph poll failed"],
+        successPatterns: ["\"status\": \"healthy\"", "Reply monitor ran successfully"],
+      },
+      {
+        label: "production communication graph runner",
+        kind: "file",
+        path: "/Users/maverick_ai/supabase-maverick-exteriors/scripts/run_production_communication_graph.sh",
+        successPatterns: ["--apply", "--notify-slack", "--lookback-days 2"],
+      },
+    ],
+  },
+  {
     id: "stuck-status-jobs",
     name: "Jobs stuck in status too long",
     businessPromise:

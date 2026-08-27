@@ -364,20 +364,27 @@ function formatLastProof(proofs: LoopProof[]): string {
 function codexProjectFor(entry: LoopRegistryEntry): LoopCodexProject {
   const isWebsiteLoop = entry.id.startsWith("website-");
   const isCommandCenterLoop = entry.id === "repo-worktree-health";
+  const isProductionCommunicationLoop = entry.id === "production-communication-closed-loop";
   const folder = isWebsiteLoop
     ? "/Users/maverick_ai/worktrees/website-growth-loop"
     : isCommandCenterLoop
       ? "/Users/maverick_ai/worktrees/loop-health-cockpit"
+      : isProductionCommunicationLoop
+        ? "/Users/maverick_ai/supabase-maverick-exteriors"
       : "/Users/maverick_ai/worktrees/ops-automation-loop-fixes";
   const repo = isWebsiteLoop
     ? "jackmaverick/website"
     : isCommandCenterLoop
       ? "jackmaverick/maverick-command-center"
+      : isProductionCommunicationLoop
+        ? "jackmaverick/supabase-maverick-exteriors"
       : "jackmaverick/supabase-maverick-exteriors";
   const branch = isWebsiteLoop
     ? "codex/website-growth-loop"
     : isCommandCenterLoop
       ? "codex/loop-health-cockpit"
+      : isProductionCommunicationLoop
+        ? "codex/daily-production-check"
       : "codex/ops-automation-loop-fixes";
 
   return {
@@ -385,6 +392,8 @@ function codexProjectFor(entry: LoopRegistryEntry): LoopCodexProject {
       ? "Website Growth Loop"
       : isCommandCenterLoop
         ? "Loop Health Cockpit"
+        : isProductionCommunicationLoop
+          ? "Production Communication Graph"
         : "Ops Automation Loop Fixes",
     mode: "Local",
     folder,
@@ -409,6 +418,20 @@ function snapshotProof(snapshot: LoopHealthSnapshot): LoopProof {
   const checkedAt = snapshot.checkedAt;
   const modifiedAt = snapshot.ranAt ?? snapshot.checkedAt;
   const ageHours = hoursSince(new Date(modifiedAt));
+  const enforceFreshness = snapshot.loopId === "production-communication-closed-loop";
+  const status: LoopStatus = enforceFreshness
+    ? ageHours >= 2
+      ? "failing"
+      : ageHours >= 0.75
+        ? "warning"
+        : snapshot.status
+    : snapshot.status;
+  const freshnessSummary =
+    enforceFreshness && ageHours >= 2
+      ? "Snapshot is over 2 hours old; the collector or underlying loop may be down."
+      : enforceFreshness && ageHours >= 0.75
+        ? "Snapshot is over 45 minutes old; verify the local collector."
+        : null;
 
   return {
     label: snapshot.proofLabel ?? "live health snapshot",
@@ -418,8 +441,8 @@ function snapshotProof(snapshot: LoopHealthSnapshot): LoopProof {
     checkedAt,
     modifiedAt,
     ageHours,
-    status: snapshot.status,
-    summary: snapshot.proofSummary ?? snapshot.lastProof ?? "Latest published loop health snapshot.",
+    status,
+    summary: freshnessSummary ?? snapshot.proofSummary ?? snapshot.lastProof ?? "Latest published loop health snapshot.",
     evidence: snapshot.proofEvidence,
   };
 }
@@ -431,8 +454,9 @@ export async function buildLoopHealth(options: { includeSnapshots?: boolean } = 
     loopRegistry.map(async (entry) => {
       const localProofs = await Promise.all(entry.proofSources.map(resolveProof));
       const snapshot = snapshots.get(entry.id);
-      const proofs = snapshot ? [snapshotProof(snapshot), ...localProofs] : localProofs;
-      const status = snapshot?.status ?? worstStatus(localProofs.map((proof) => proof.status));
+      const liveSnapshotProof = snapshot ? snapshotProof(snapshot) : null;
+      const proofs = liveSnapshotProof ? [liveSnapshotProof, ...localProofs] : localProofs;
+      const status = liveSnapshotProof?.status ?? worstStatus(localProofs.map((proof) => proof.status));
 
       return {
         id: entry.id,

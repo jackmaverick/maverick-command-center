@@ -29,3 +29,15 @@ describe("gutter invoice reconciliation proof patterns", () => {
     ).toBe(true);
   });
 });
+
+describe("production communication closed loop", () => {
+  const loop = loopRegistry.find((entry) => entry.id === "production-communication-closed-loop");
+
+  it("registers the structured heartbeat and repair surface", () => {
+    expect(loop).toBeDefined();
+    expect(loop?.cadence).toBe("continuous");
+    expect(loop?.actionSurface.name).toBe("Michelle Daily Touch List");
+    expect(loop?.proofSources[0]?.path).toContain("production-communication-graph/health-latest.json");
+    expect(loop?.proofSources[0]?.freshnessHours).toBe(0.75);
+  });
+});

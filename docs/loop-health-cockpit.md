@@ -102,6 +102,18 @@ For a loop such as `Homeowner production texts`:
 5. Run the local Command Center and publish a fresh snapshot with `npm run loop-health:publish`.
 6. Refresh the production cockpit and confirm the loop says `Live snapshot`.
 
+## Production Communication Closed Loop
+
+`production-communication-closed-loop` monitors the automatic material-delivery/install-date homeowner workflow.
+
+- The reply graph polls every 15 minutes.
+- Replies are linked to the communicated schedule for 24 hours, then monitoring ages out.
+- A fresh successful heartbeat with no open cases is `healthy`.
+- An unresolved homeowner scheduling reply is `warning` and routes to Chester/Mia in Daily Touch and Slack.
+- A case older than 24 hours, a runtime failure, or a heartbeat older than two hours is `failing`.
+- The production cockpit snapshot publisher runs every 15 minutes. If it stops, snapshot freshness independently downgrades the card.
+- The card's Codex starter prompt points to the runner, heartbeat, launchd logs, and safe dry-run recovery sequence.
+
 ## Registry
 
 The durable registry lives in `src/lib/loop-registry.ts`.
