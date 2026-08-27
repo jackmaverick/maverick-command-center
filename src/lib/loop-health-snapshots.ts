@@ -62,6 +62,19 @@ type RuntimeSignalRow = {
   snapshot_at: string | Date;
 };
 
+export const LATEST_LOOP_RUNTIME_SIGNALS_SQL = `
+  select distinct on (source, loop_name)
+    source,
+    loop_name,
+    status,
+    detail,
+    last_run_at,
+    schedule,
+    snapshot_at
+  from loop_health
+  order by source, loop_name, snapshot_at desc
+`;
+
 function iso(value: string | Date | null): string | null {
   if (!value) return null;
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
@@ -126,23 +139,7 @@ export async function fetchLatestLoopRuntimeSignals(): Promise<Map<string, LoopR
   if (!process.env.DATABASE_URL) return new Map();
 
   try {
-    const rows = await query<RuntimeSignalRow>(`
-      with latest as (
-        select max(snapshot_at) as snapshot_at
-        from loop_health
-      )
-      select
-        source,
-        loop_name,
-        status,
-        detail,
-        last_run_at,
-        schedule,
-        loop_health.snapshot_at
-      from loop_health
-      join latest on loop_health.snapshot_at = latest.snapshot_at
-      order by source, loop_name
-    `);
+    const rows = await query<RuntimeSignalRow>(LATEST_LOOP_RUNTIME_SIGNALS_SQL);
 
     return new Map(
       rows.map((row) => {
