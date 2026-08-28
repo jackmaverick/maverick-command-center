@@ -77,7 +77,7 @@ export const loopFamilies: LoopFamilyDefinition[] = [
       "Supplier documents become job costs, completed work becomes invoices, warranties close, and final payments are collected.",
     recommendation:
       "Merge supplier ingestion, invoice matching, warranty readiness, ledger health, and collections into one Job Closeout & Cash Graph. Preserve each vendor/parser as a node, not a separate executive loop.",
-    targetShape: "5 cards → 1 graph with vendor and closeout nodes",
+    targetShape: "Finance nodes → 1 graph with vendor and closeout lanes",
   },
   {
     id: "growth",
@@ -351,17 +351,33 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
         label: "Full invoice scanner",
         required: false,
       },
-      {
-        source: "launchd",
-        loopName: "com.maverick.invoice-due-date-loop",
-        label: "Due-date alignment",
-      },
     ],
     simplification: {
       action: "merge",
       target: "Job Closeout & Cash Graph / ledger node",
       reason:
         "This is the shared state between every supplier parser, warranty closeout, final invoice, and collections action.",
+    },
+  },
+  {
+    loopId: "invoice-due-date-alignment-loop",
+    family: "finance",
+    stage: "align customer invoice due dates to required Work Order dates",
+    dependsOn: [],
+    runtimeSignals: [
+      {
+        source: "launchd",
+        loopName: "com.maverick.invoice-due-date-loop",
+        label: "Invoice due-date runner",
+      },
+    ],
+    maxSnapshotAgeHours: 20,
+    maxRunAgeHours: 20,
+    simplification: {
+      action: "keep",
+      target: "Job Closeout & Cash Graph / due-date alignment node",
+      reason:
+        "The runner closes its own detect, update, readback, and health cycle; only warnings, failures, or stale proof belong in the Command Center.",
     },
   },
   {
@@ -381,17 +397,16 @@ export const loopGraphDefinitions: LoopGraphDefinition[] = [
     loopId: "collections-final-payment-follow-up",
     family: "finance",
     stage: "collect final payment",
-    dependsOn: ["invoice-ledger-health-loop", "manufacturer-warranty-loop"],
+    dependsOn: [
+      "invoice-ledger-health-loop",
+      "invoice-due-date-alignment-loop",
+      "manufacturer-warranty-loop",
+    ],
     runtimeSignals: [
       {
         source: "hermes",
         loopName: "maverick-repair-collections-payment-texts",
         label: "Collections follow-up runner",
-      },
-      {
-        source: "launchd",
-        loopName: "com.maverick.invoice-due-date-loop",
-        label: "Invoice due-date runner",
       },
     ],
     simplification: {

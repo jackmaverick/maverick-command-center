@@ -76,6 +76,13 @@ const commandCenterActionSurface = {
   actions: ["Investigate", "Update registry", "Deploy cockpit"],
 };
 
+const autonomousLoopHealthSurface = {
+  name: "Command Center Loop Health",
+  purpose: "Autonomous loop health only. No Daily Touch task queue is created; investigate only when health warns or fails.",
+  pathOrUrl: "/loop-health",
+  actions: ["Monitor health", "Inspect latest audit", "Repair warning or failure"],
+};
+
 export const loopRegistry: LoopRegistryEntry[] = [
   {
     id: "homeowner-production-texts",
@@ -192,6 +199,30 @@ export const loopRegistry: LoopRegistryEntry[] = [
         kind: "file",
         path: "/Users/maverick_ai/supabase-maverick-exteriors/scripts/run_production_communication_graph.sh",
         successPatterns: ["--apply", "--notify-slack", "--lookback-days 1"],
+      },
+    ],
+  },
+  {
+    id: "invoice-due-date-alignment-loop",
+    name: "Invoice due-date alignment closed loop",
+    businessPromise:
+      "Customer invoice due dates automatically follow the latest required Work Order date, with a rolling 14-day fallback when required Work Order scheduling is incomplete.",
+    owner: "Mia / AI Ops",
+    sourceRepoPath:
+      "/Users/maverick_ai/runners/invoice-due-dates/supabase-maverick-exteriors/scripts/run_invoice_due_date_loop.sh",
+    actionSurface: autonomousLoopHealthSurface,
+    cadence: "daily",
+    approvalRequired: false,
+    nextAction:
+      "No routine action. If warning or failing, inspect the latest runtime audit, LaunchAgent exit code, and JobNimbus readback proof before the next scheduled run.",
+    proofSources: [
+      {
+        label: "invoice due-date runtime health",
+        kind: "file",
+        path: "/Users/maverick_ai/supabase-maverick-exteriors/reports/invoice-due-date-loop/health-latest.json",
+        freshnessHours: 20,
+        failurePatterns: ["\"status\":\"failing\"", "monitor_publish_error"],
+        successPatterns: ["\"status\":\"healthy\"", "\"mode\":\"live\""],
       },
     ],
   },

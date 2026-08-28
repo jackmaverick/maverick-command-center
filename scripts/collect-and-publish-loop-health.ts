@@ -3,13 +3,9 @@ import process from "node:process";
 import pg from "pg";
 
 import { buildLoopHealth, type LoopHealthEntry } from "../src/lib/loop-health";
+import { shouldPublishGenericLoopSnapshot } from "../src/lib/loop-health-publication";
 
 const { Pool } = pg;
-
-const SPECIALIZED_LOOP_IDS = new Set([
-  "production-communication-closed-loop",
-  "gaf_measurements_to_jobnimbus",
-]);
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -46,7 +42,7 @@ async function publish(
       // This loop has a dedicated 15-minute collector with structured reply,
       // delivery, and active-case evidence. A generic artifact scan must never
       // overwrite its more authoritative snapshot.
-      if (SPECIALIZED_LOOP_IDS.has(loop.id)) continue;
+      if (!shouldPublishGenericLoopSnapshot(loop.id)) continue;
       const proof = bestProof(loop);
       await client.query(
         `
@@ -128,7 +124,7 @@ async function main() {
       status: "ok",
       generatedAt: health.generatedAt,
       loopsPublished: health.loops.filter(
-        (loop) => !SPECIALIZED_LOOP_IDS.has(loop.id),
+        (loop) => shouldPublishGenericLoopSnapshot(loop.id),
       ).length,
       summary: health.summary,
     }),
