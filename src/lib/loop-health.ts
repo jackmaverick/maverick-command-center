@@ -474,39 +474,46 @@ function formatLastProof(proofs: LoopProof[]): string {
   return `${proof.label}: ${proof.summary}`;
 }
 
-function codexProjectFor(entry: LoopRegistryEntry): LoopCodexProject {
-  const isWebsiteLoop = entry.id.startsWith("website-");
-  const isCommandCenterLoop = entry.id === "repo-worktree-health";
-  const isProductionCommunicationLoop =
-    entry.id === "production-communication-closed-loop";
-  const folder = isWebsiteLoop
-    ? "/Users/maverick_ai/worktrees/website-growth-loop"
-    : isCommandCenterLoop
-      ? "/Users/maverick_ai/worktrees/loop-health-cockpit"
-      : isProductionCommunicationLoop
-        ? "/Users/maverick_ai/supabase-maverick-exteriors"
-        : "/Users/maverick_ai/worktrees/ops-automation-loop-fixes";
-  const repo = isWebsiteLoop
-    ? "jackmaverick/website"
-    : isCommandCenterLoop
-      ? "jackmaverick/maverick-command-center"
-      : "jackmaverick/supabase-maverick-exteriors";
-  const branch = isWebsiteLoop
-    ? "codex/website-growth-loop"
-    : isCommandCenterLoop
-      ? "codex/loop-health-cockpit"
-      : isProductionCommunicationLoop
-        ? "codex/daily-production-check"
-        : "codex/ops-automation-loop-fixes";
+export function codexProjectFor(entry: LoopRegistryEntry): LoopCodexProject {
+  const defaultRoute = {
+    projectName: "Ops Automation Loop Fixes",
+    folder: "/Users/maverick_ai/worktrees/ops-automation-loop-fixes",
+    repo: "jackmaverick/supabase-maverick-exteriors",
+    branch: "codex/ops-automation-loop-fixes",
+  };
+  const routes: Record<string, Omit<LoopCodexProject, "mode" | "starterPrompt">> = {
+    "repo-worktree-health": {
+      projectName: "Loop Health Cockpit",
+      folder: "/Users/maverick_ai/worktrees/loop-health-cockpit",
+      repo: "jackmaverick/maverick-command-center",
+      branch: "codex/loop-health-cockpit",
+    },
+    "production-communication-closed-loop": {
+      projectName: "Production Communication Graph",
+      folder: "/Users/maverick_ai/supabase-maverick-exteriors",
+      repo: "jackmaverick/supabase-maverick-exteriors",
+      branch: "codex/daily-production-check",
+    },
+    "invoice-due-date-alignment-loop": {
+      projectName: "Invoice Due Date Loop",
+      folder: path.dirname(path.dirname(entry.sourceRepoPath)),
+      repo: "jackmaverick/supabase-maverick-exteriors",
+      branch: "main",
+    },
+  };
+  const websiteRoute = {
+    projectName: "Website Growth Loop",
+    folder: "/Users/maverick_ai/worktrees/website-growth-loop",
+    repo: "jackmaverick/website",
+    branch: "codex/website-growth-loop",
+  };
+  const route = entry.id.startsWith("website-")
+    ? websiteRoute
+    : (routes[entry.id] ?? defaultRoute);
+  const { projectName, folder, repo, branch } = route;
 
   return {
-    projectName: isWebsiteLoop
-      ? "Website Growth Loop"
-      : isCommandCenterLoop
-        ? "Loop Health Cockpit"
-        : isProductionCommunicationLoop
-          ? "Production Communication Graph"
-          : "Ops Automation Loop Fixes",
+    projectName,
     mode: "Local",
     folder,
     repo,

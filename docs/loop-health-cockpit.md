@@ -204,6 +204,8 @@ For loops such as `Gutter invoice reconciliation loop`, the intended flow is:
 3. The ops loop refreshes proof and publishes a new health snapshot.
 4. Cockpit reports whether the task surface is fresh and healthy.
 
+For the `Invoice due-date alignment closed loop`, there is deliberately no Daily Touch task surface. The twice-daily runner publishes a structured snapshot after its update-and-readback cycle, while the runtime watchdog independently reports whether `com.maverick.invoice-due-date-loop` is loaded and succeeding. The cockpit shows the result as current for 20 hours; missed or unpublished runs age to `stale` instead of leaving an old green result on screen.
+
 ## Indexing Loop
 
 The `Website indexing loop` is the crawl/indexability guardrail for website growth work.
@@ -242,5 +244,6 @@ Default routing:
 - Command Center / cockpit work: `/Users/maverick_ai/worktrees/loop-health-cockpit`
 - Website growth and indexing work: `/Users/maverick_ai/worktrees/website-growth-loop`
 - Operations automation loops: `/Users/maverick_ai/worktrees/ops-automation-loop-fixes`
+- Invoice due-date alignment: `/Users/maverick_ai/runners/invoice-due-dates/supabase-maverick-exteriors` on `main`
 
 When opening a Codex task from a failing loop, create or select the project that points at the folder shown on that loop card, then paste the generated starter prompt. The prompt tells the agent to confirm folder, remote, branch, dirty count, proof path, and safety boundaries before editing.
