@@ -246,7 +246,7 @@ export default function JobProfit({
   const q = useJobProfits(reviewId);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
-  const [basis, setBasis] = useState("completion");
+  const [basis, setBasis] = useState(monthlyOnly ? "mailing" : "completion");
   const [selectedMonth, setSelectedMonth] = useState("all");
   if (q.isPending)
     return (

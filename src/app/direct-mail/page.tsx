@@ -725,8 +725,8 @@ function Monthly({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
           {monthLabel(d.months[0].month)}.
         </div>
       </Panel>
-      <JobProfit d={d} reviewId={reviewId} monthlyOnly />
       <MailReturns d={d} reviewId={reviewId} />
+      <JobProfit d={d} reviewId={reviewId} monthlyOnly />
     </>
   );
 }
