@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { Fragment, useState, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -18,6 +18,10 @@ import {
 } from "lucide-react";
 import type { WeeklyReview, WeeklyAction } from "@/lib/direct-mail/weekly";
 import { invoicePricing, projectedCost } from "@/lib/direct-mail/pricing";
+import JobProfit, {
+  CampaignJobProfit,
+  useJobProfits,
+} from "@/components/direct-mail/job-profit";
 import MailingProof from "@/components/direct-mail/mailing-proof";
 import styles from "./weekly.module.css";
 
@@ -27,6 +31,7 @@ const tabs = [
   "Budget planner",
   "Monthly results",
   "List performance",
+  "Job profit",
   "Roof opportunities",
   "Audience",
   "Evidence",
@@ -719,6 +724,7 @@ function Monthly({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
           {monthLabel(d.months[0].month)}.
         </div>
       </Panel>
+      <JobProfit d={d} reviewId={reviewId} monthlyOnly />
       <div className={styles.twoCol}>
         <Panel
           title="Lifetime return"
@@ -756,6 +762,7 @@ function Monthly({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
   );
 }
 function Lists({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
+  const profit = useJobProfits(reviewId);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("leads");
   const [filter, setFilter] = useState("all");
@@ -837,7 +844,7 @@ function Lists({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
                   "Requested",
                   "Rows",
                   "Linked leads",
-                  "Linked invoices",
+                  "Invoiced revenue",
                   "Review date",
                   "Later touches",
                   "Evidence",
@@ -848,45 +855,66 @@ function Lists({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
             </thead>
             <tbody>
               {rows.map((c) => (
-                <tr key={c.id}>
-                  <td className={styles.listName}>
-                    <strong>{c.name}</strong>
-                    <small>
-                      {c.invoiced > 0
-                        ? "Promising revenue signal"
-                        : c.leads > 0
-                          ? "Response signal; watch outcomes"
-                          : "No linked outcome yet; assess maturity"}
-                    </small>
-                  </td>
-                  <td>
-                    {day(c.requestedDate)}
-                    <small>Planned {day(c.plannedDate)}</small>
-                  </td>
-                  <td>{num(c.requested)}</td>
-                  <td>{c.leads}</td>
-                  <td className={c.invoiced > 0 ? styles.greenText : undefined}>
-                    {money(c.invoiced)}
-                  </td>
-                  <td>
-                    {day(c.reviewDate)}
-                    <small>{c.reviewBasis}</small>
-                  </td>
-                  <td>
-                    {num(c.laterTouches)}
-                    <small>Addresses</small>
-                  </td>
-                  <td>
-                    <a
-                      href={c.evidence}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={`Open sent email for ${c.name}`}
+                <Fragment key={c.id}>
+                  <tr>
+                    <td className={styles.listName}>
+                      <strong>{c.name}</strong>
+                      <small>
+                        {c.invoiced > 0
+                          ? "Promising revenue signal"
+                          : c.leads > 0
+                            ? "Response signal; watch outcomes"
+                            : "No linked outcome yet; assess maturity"}
+                      </small>
+                    </td>
+                    <td>
+                      {day(c.requestedDate)}
+                      <small>Planned {day(c.plannedDate)}</small>
+                    </td>
+                    <td>{num(c.requested)}</td>
+                    <td>{c.leads}</td>
+                    <td
+                      className={c.invoiced > 0 ? styles.greenText : undefined}
                     >
-                      Sent email <ExternalLink size={12} />
-                    </a>
-                  </td>
-                </tr>
+                      {money(c.invoiced)}
+                    </td>
+                    <td>
+                      {day(c.reviewDate)}
+                      <small>{c.reviewBasis}</small>
+                    </td>
+                    <td>
+                      {num(c.laterTouches)}
+                      <small>Addresses</small>
+                    </td>
+                    <td>
+                      <a
+                        href={c.evidence}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={`Open sent email for ${c.name}`}
+                      >
+                        Sent email <ExternalLink size={12} />
+                      </a>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colSpan={8}>
+                      {profit.data ? (
+                        <CampaignJobProfit
+                          d={d}
+                          jobs={profit.data.jobs}
+                          campaignId={c.id}
+                        />
+                      ) : (
+                        <small>
+                          {profit.isError
+                            ? "Job profit unavailable; use Job profit to retry."
+                            : "Loading linked jobs…"}
+                        </small>
+                      )}
+                    </td>
+                  </tr>
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -1149,6 +1177,7 @@ function Evidence({
   );
 }
 export default function DirectMailPage() {
+  const queryClient = useQueryClient();
   const [active, setActive] = useState<Tab>("Overview");
   const [lane, setLane] = useState("All");
   const [actionSort, setActionSort] = useState("priority");
@@ -1187,7 +1216,12 @@ export default function DirectMailPage() {
         </div>
         <button
           className={styles.secondary}
-          onClick={() => q.refetch()}
+          onClick={() => {
+            q.refetch();
+            queryClient.invalidateQueries({
+              queryKey: ["direct-mail-job-profit"],
+            });
+          }}
           disabled={q.isFetching}
         >
           <RefreshCw
@@ -1379,6 +1413,7 @@ export default function DirectMailPage() {
           {active === "Monthly results" && (
             <Monthly d={d} reviewId={q.data!.id} />
           )}
+          {active === "Job profit" && <JobProfit d={d} reviewId={q.data!.id} />}
           {active === "List performance" && (
             <Lists d={d} reviewId={q.data!.id} />
           )}

@@ -30,6 +30,23 @@ export const weeklySchema = z
     asOf: date,
     generatedAt: z.iso.datetime({ offset: true }),
     sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
+    jobLinks: z
+      .array(
+        z
+          .object({
+            jobId: z.string().regex(/^[a-zA-Z0-9_-]{10,80}$/),
+            leadMonth: month,
+            campaignId: text.nullable(),
+            linkage: z.enum([
+              "single_prior_list_address_match",
+              "multiple_prior_lists_review",
+              "no_exact_prior_list_match",
+            ]),
+          })
+          .strict(),
+      )
+      .max(10000)
+      .optional(),
     summary: z
       .object({
         leads: count,
@@ -130,6 +147,21 @@ export const weeklySchema = z
   })
   .strict()
   .superRefine((data, ctx) => {
+    const campaignIds = new Set(data.campaigns.map((c) => c.id));
+    const jobIds = new Set<string>();
+    for (const link of data.jobLinks ?? []) {
+      if (
+        jobIds.has(link.jobId) ||
+        (link.campaignId !== null && !campaignIds.has(link.campaignId)) ||
+        (link.linkage === "single_prior_list_address_match") !==
+          (link.campaignId !== null)
+      )
+        ctx.addIssue({
+          code: "custom",
+          message: "Invalid or duplicate job linkage",
+        });
+      jobIds.add(link.jobId);
+    }
     const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
     for (const [label, total, actual] of [
       [

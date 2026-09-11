@@ -906,3 +906,47 @@
   font-size: 11px;
   max-width: 210px;
 }
+
+.profitMetrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+  padding: 20px;
+}
+.profitMetrics > div {
+  border: 1px solid var(--border, #28323d);
+  border-radius: 10px;
+  padding: 18px;
+  background: rgba(19, 28, 37, 0.7);
+}
+.profitMetrics strong {
+  display: block;
+  font-size: 25px;
+  margin: 10px 0;
+  color: #e5eee9;
+}
+.profitMetrics small {
+  display: block;
+  color: #a2b1bf;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.profitDetails {
+  min-width: 280px;
+}
+.profitDetails > summary {
+  cursor: pointer;
+  color: #99d4bd;
+  padding: 10px 0;
+  line-height: 1.7;
+}
+.profitInset {
+  padding: 12px;
+  min-width: min(900px, 75vw);
+}
+.profitNote {
+  color: #a2b1bf;
+  font-size: 13px;
+  line-height: 1.7;
+  padding: 0 20px 16px;
+}
