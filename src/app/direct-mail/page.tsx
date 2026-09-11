@@ -17,12 +17,14 @@ import {
   TrendingUp,
 } from "lucide-react";
 import type { WeeklyReview, WeeklyAction } from "@/lib/direct-mail/weekly";
+import { invoicePricing, projectedCost } from "@/lib/direct-mail/pricing";
 import MailingProof from "@/components/direct-mail/mailing-proof";
 import styles from "./weekly.module.css";
 
 const tabs = [
   "Overview",
   "Next sends",
+  "Budget planner",
   "Monthly results",
   "List performance",
   "Roof opportunities",
@@ -63,6 +65,8 @@ const monthLabel = (m: string) =>
   });
 const ratio = (n: number | null) =>
   n === null ? "Unknown" : `${n.toFixed(2)}×`;
+const unitMoney = (n: number | null) =>
+  n === null ? "Unknown" : `$${n.toFixed(4)}`;
 function exportUrl(
   id: string,
   view: string,
@@ -114,7 +118,15 @@ function Notice({ children }: { children: ReactNode }) {
     </div>
   );
 }
-function ActionCard({ a, asOf }: { a: WeeklyAction; asOf: string }) {
+function ActionCard({
+  a,
+  asOf,
+  rate,
+}: {
+  a: WeeklyAction;
+  asOf: string;
+  rate: number | null;
+}) {
   return (
     <article className={styles.action}>
       <div className={styles.actionTop}>
@@ -145,7 +157,10 @@ function ActionCard({ a, asOf }: { a: WeeklyAction; asOf: string }) {
           </span>
         )}
         {a.proposedQuantity !== null && (
-          <span>Up to {num(a.proposedQuantity)} homes · proposed</span>
+          <span>
+            Up to {num(a.proposedQuantity)} homes · proposed · Est. Ron cost{" "}
+            {exactMoney(projectedCost(a.proposedQuantity, rate))}
+          </span>
         )}
       </div>
       <details>
@@ -318,7 +333,261 @@ function Overview({ d, onTab }: { d: WeeklyReview; onTab: (t: Tab) => void }) {
     </>
   );
 }
+function BudgetPlanner({ d }: { d: WeeklyReview }) {
+  const [basis, setBasis] = useState("all");
+  const [rows, setRows] = useState("1000");
+  const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [sort, setSort] = useState("priority");
+  const pricing = invoicePricing(d.invoices, basis);
+  const parseQuantity = (v: string) =>
+    v.trim() === ""
+      ? null
+      : /^\d+$/.test(v) && Number.isSafeInteger(Number(v))
+        ? Number(v)
+        : null;
+  const quantity = (a: WeeklyAction) =>
+    parseQuantity(
+      quantities[a.id] ??
+        (a.proposedQuantity === null ? "" : String(a.proposedQuantity)),
+    );
+  const mailings = d.actions.filter((a) => a.lane !== "Resolve evidence");
+  const planned = mailings.filter((a) => quantity(a) !== null);
+  const plannedTotal =
+    pricing.rate === null
+      ? null
+      : Math.round(
+          planned.reduce(
+            (sum, a) => sum + (projectedCost(quantity(a), pricing.rate) ?? 0),
+            0,
+          ) * 100,
+        ) / 100;
+  const plannedRows = planned.reduce((sum, a) => sum + (quantity(a) ?? 0), 0);
+  const ordered = [...mailings].sort((a, b) =>
+    sort === "priority"
+      ? a.priority - b.priority
+      : quantity(a) === null
+        ? 1
+        : quantity(b) === null
+          ? -1
+          : sort === "high"
+            ? (quantity(b) ?? 0) - (quantity(a) ?? 0)
+            : (quantity(a) ?? 0) - (quantity(b) ?? 0),
+  );
+  return (
+    <>
+      <div className={styles.sectionIntro}>
+        <div>
+          <h2>What will the next mailing cost?</h2>
+          <p>
+            Projected Ron invoice = planned pieces × average invoiced cost per
+            piece.
+          </p>
+        </div>
+      </div>
+      <div className={styles.toolbar}>
+        <label>
+          Cost basis{" "}
+          <select value={basis} onChange={(e) => setBasis(e.target.value)}>
+            <option value="all">All invoices · weighted average</option>
+            <option value="latest">Latest invoice only</option>
+          </select>
+        </label>
+      </div>
+      <div className={styles.stats}>
+        <div>
+          <span>Invoice-based cost / piece</span>
+          <strong>{unitMoney(pricing.rate)}</strong>
+          <small>
+            {pricing.rate === null
+              ? "Quantity evidence needed"
+              : `${(pricing.rate * 100).toFixed(2)}¢ per physical piece`}
+          </small>
+        </div>
+        <div>
+          <span>Invoice total in this basis</span>
+          <strong>{exactMoney(pricing.total)}</strong>
+          <small>
+            {pricing.invoiceCount} invoice
+            {pricing.invoiceCount === 1 ? "" : "s"} · payment date does not
+            affect this
+          </small>
+        </div>
+        <div>
+          <span>Invoiced pieces</span>
+          <strong>{num(pricing.pieces)}</strong>
+          <small>Counted once, not once per service line</small>
+        </div>
+        <div>
+          <span>Latest invoice cost / piece</span>
+          <strong>
+            {unitMoney(invoicePricing(d.invoices, "latest").rate)}
+          </strong>
+          <small>
+            {pricing.latest
+              ? `Invoice #${pricing.latest.number} · ${day(pricing.latest.invoiceDate)}`
+              : "No invoices found"}
+          </small>
+        </div>
+      </div>
+      <Notice>
+        This estimates Ron’s bill from actual invoices, including their fees,
+        tax and discounts. Additional USPS charges outside those invoices are
+        not included. Small lists may cost more per piece because setup fees are
+        spread over fewer homes.
+      </Notice>
+      <Panel
+        title="Quick estimate"
+        detail="Use any planned piece count. No payment or mailing is created."
+      >
+        <div className={styles.budgetCalculator}>
+          <label>
+            Planned pieces
+            <input
+              aria-label="Planned pieces"
+              type="number"
+              min="0"
+              step="1"
+              value={rows}
+              onChange={(e) => setRows(e.target.value)}
+            />
+          </label>
+          <span>× {unitMoney(pricing.rate)}</span>
+          <div>
+            <small>Projected Ron invoice</small>
+            <strong aria-live="polite">
+              {exactMoney(projectedCost(parseQuantity(rows), pricing.rate))}
+            </strong>
+          </div>
+        </div>
+      </Panel>
+      <Panel
+        title="Budget the next-send queue"
+        detail="Edit quantities to compare scenarios. These what-if values are local to this tab and do not change the approved mailing plan."
+        aside={
+          <label className={styles.checkbox}>
+            Sort{" "}
+            <select
+              className={styles.budgetSelect}
+              value={sort}
+              onChange={(e) => setSort(e.target.value)}
+            >
+              <option value="priority">Priority</option>
+              <option value="high">Projected cost: high to low</option>
+              <option value="low">Projected cost: low to high</option>
+            </select>
+          </label>
+        }
+      >
+        <div className={styles.tableWrap}>
+          <table>
+            <thead>
+              <tr>
+                <th>Mailing / neighborhood</th>
+                <th>Status</th>
+                <th>Planned pieces</th>
+                <th>Projected Ron cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ordered.map((a) => (
+                <tr key={a.id}>
+                  <td>
+                    <strong>{a.neighborhood}</strong>
+                    <small>
+                      {a.lane} · review {day(a.due)}
+                    </small>
+                  </td>
+                  <td>
+                    <Pill tone={a.status === "Hold" ? "amber" : "blue"}>
+                      {a.status}
+                    </Pill>
+                  </td>
+                  <td>
+                    <input
+                      className={styles.budgetInput}
+                      aria-label={`Planned pieces for ${a.neighborhood}`}
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="Enter pieces"
+                      value={
+                        quantities[a.id] ??
+                        (a.proposedQuantity === null
+                          ? ""
+                          : String(a.proposedQuantity))
+                      }
+                      onChange={(e) =>
+                        setQuantities({ ...quantities, [a.id]: e.target.value })
+                      }
+                    />
+                  </td>
+                  <td>
+                    {quantity(a) === null
+                      ? "Enter quantity"
+                      : exactMoney(projectedCost(quantity(a), pricing.rate))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className={styles.footnote}>
+          <strong>
+            {num(plannedRows)} pieces → {exactMoney(plannedTotal)} projected Ron
+            cost
+          </strong>{" "}
+          across {planned.length} of {mailings.length} mailing opportunities
+          with entered quantities. Holds remain on hold; this total is not
+          authorization to send.
+        </div>
+      </Panel>
+      <Panel
+        title="Invoices behind the average"
+        detail="Weighted average = sum of invoice amounts ÷ sum of their physical pieces, never an average of the individual rates."
+      >
+        <div className={styles.tableWrap}>
+          <table>
+            <thead>
+              <tr>
+                <th>Invoice</th>
+                <th>Service month</th>
+                <th>Invoice amount</th>
+                <th>Pieces</th>
+                <th>Cost / piece</th>
+                <th>Evidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.invoices.map((i) => (
+                <tr key={i.number}>
+                  <td>#{i.number}</td>
+                  <td>{monthLabel(i.serviceMonth)}</td>
+                  <td>{exactMoney(i.amount)}</td>
+                  <td>{num(i.pieces)}</td>
+                  <td>
+                    {unitMoney(i.pieces > 0 ? i.amount / i.pieces : null)}
+                  </td>
+                  <td>
+                    <a
+                      href={i.invoiceEvidence}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Invoice <ExternalLink size={12} />
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </>
+  );
+}
+
 function Monthly({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
+  const [showPayments, setShowPayments] = useState(false);
   const [selected, setSelected] = useState("all");
   const rows = d.months.filter(
     (m) => selected === "all" || m.month === selected,
@@ -347,11 +616,20 @@ function Monthly({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
           <ArrowDownToLine size={15} />
           Export monthly CSV
         </a>
+        <label className={styles.checkbox}>
+          <input
+            type="checkbox"
+            checked={showPayments}
+            onChange={(e) => setShowPayments(e.target.checked)}
+          />
+          Show payment timing
+        </label>
       </div>
       <Notice>
-        Revenue below follows the month the lead was created. Vendor expenses
-        follow service month; payments follow payment month. These columns
-        cannot be divided to produce a valid monthly campaign return.
+        Ron’s invoices count as committed costs when received, regardless of
+        payment timing. They are grouped below by service month. Customer
+        revenue follows lead creation month, so these columns are not matching
+        campaign groups for ROI.
       </Notice>
       <Panel
         title="Monthly performance"
@@ -366,8 +644,10 @@ function Monthly({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
                   "Requested",
                   "New leads",
                   "Approved invoices¹",
-                  "Vendor service cost²",
-                  "Vendor cash paid²",
+                  "Ron invoices²",
+                  "Invoiced pieces",
+                  "Cost / piece²",
+                  ...(showPayments ? ["Payments recorded"] : []),
                   "ROAS",
                   "Profit ROI",
                 ].map((h) => (
@@ -387,8 +667,38 @@ function Monthly({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
                   <td>{num(m.requested)}</td>
                   <td>{m.leads}</td>
                   <td>{exactMoney(m.invoiced)}</td>
-                  <td>{exactMoney(m.vendorCost)}</td>
-                  <td>{exactMoney(m.paid)}</td>
+                  <td>
+                    {m.vendorCost === null
+                      ? "No invoice found"
+                      : exactMoney(m.vendorCost)}
+                  </td>
+                  <td>
+                    {invoicePricing(
+                      d.invoices.filter((i) => i.serviceMonth === m.month),
+                    ).pieces
+                      ? num(
+                          invoicePricing(
+                            d.invoices.filter(
+                              (i) => i.serviceMonth === m.month,
+                            ),
+                          ).pieces,
+                        )
+                      : "—"}
+                  </td>
+                  <td>
+                    {unitMoney(
+                      invoicePricing(
+                        d.invoices.filter((i) => i.serviceMonth === m.month),
+                      ).rate,
+                    )}
+                  </td>
+                  {showPayments && (
+                    <td>
+                      {m.paid === null
+                        ? "No payment recorded"
+                        : exactMoney(m.paid)}
+                    </td>
+                  )}
                   <td className={styles.amberText}>{ratio(m.roas)}</td>
                   <td>
                     {m.profitRoi === null
@@ -402,8 +712,11 @@ function Monthly({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
         </div>
         <div className={styles.footnote}>
           ¹ Approved invoices on Direct Mail jobs, grouped by lead month; not
-          collected cash. ² Partial costs, with missing postage and recent
-          bills. Observed history begins {monthLabel(d.months[0].month)}.
+          collected cash. ² Actual invoice totals, not a 50–60¢ assumption.
+          Additional USPS charges may be separate. “No payment recorded” means
+          no payment evidence found in that month, not an unpaid invoice. July’s
+          bill was paid in August. Observed history begins{" "}
+          {monthLabel(d.months[0].month)}.
         </div>
       </Panel>
       <div className={styles.twoCol}>
@@ -756,8 +1069,8 @@ function Evidence({
         </div>
       </Panel>
       <Panel
-        title="Paid vendor invoices"
-        detail="Invoices and separate payment confirmations. These are not complete campaign costs."
+        title="Ron invoices"
+        detail="Counted as committed when received. Payment timing is tracked separately; additional USPS charges may be outside these bills."
       >
         <div className={styles.tableWrap}>
           <table>
@@ -781,7 +1094,7 @@ function Evidence({
                 <tr key={i.number}>
                   <td>#{i.number}</td>
                   <td>{monthLabel(i.serviceMonth)}</td>
-                  <td>{day(i.paidDate)}</td>
+                  <td>{i.paidDate ? day(i.paidDate) : "Not recorded"}</td>
                   <td>{exactMoney(i.amount)}</td>
                   <td>{num(i.pieces)}</td>
                   <td className={styles.scope}>{i.scope}</td>
@@ -793,13 +1106,17 @@ function Evidence({
                     >
                       Invoice <ExternalLink size={12} />
                     </a>
-                    <a
-                      href={i.paymentEvidence}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Payment <ExternalLink size={12} />
-                    </a>
+                    {i.paymentEvidence ? (
+                      <a
+                        href={i.paymentEvidence}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Payment <ExternalLink size={12} />
+                      </a>
+                    ) : (
+                      <small>No payment recorded</small>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -834,6 +1151,7 @@ function Evidence({
 export default function DirectMailPage() {
   const [active, setActive] = useState<Tab>("Overview");
   const [lane, setLane] = useState("All");
+  const [actionSort, setActionSort] = useState("priority");
   const q = useQuery<{
     available: true;
     id: string;
@@ -933,10 +1251,11 @@ export default function DirectMailPage() {
             </small>
           </div>
           <div>
-            <span>Verified vendor payments</span>
-            <strong>{money(d.summary.knownPaid)}</strong>
+            <span>Ron invoices · committed</span>
+            <strong>{money(invoicePricing(d.invoices).total)}</strong>
             <small className={styles.amberText}>
-              Partial spend · ROAS {ratio(d.summary.roas)}
+              {unitMoney(invoicePricing(d.invoices).rate)} / piece ·
+              invoice-based
             </small>
           </div>
         </div>
@@ -1008,6 +1327,21 @@ export default function DirectMailPage() {
                     ))}
                   </select>
                 </label>
+                <label>
+                  Sort{" "}
+                  <select
+                    value={actionSort}
+                    onChange={(e) => setActionSort(e.target.value)}
+                  >
+                    <option value="priority">Priority</option>
+                    <option value="cost-high">
+                      Projected cost: high to low
+                    </option>
+                    <option value="cost-low">
+                      Projected cost: low to high
+                    </option>
+                  </select>
+                </label>
                 <span className={styles.caption}>
                   Proposed quantities are ceilings before suppression. Budget:{" "}
                   {d.summary.budget === null
@@ -1019,13 +1353,29 @@ export default function DirectMailPage() {
               <div className={styles.actions}>
                 {d.actions
                   .filter((a) => lane === "All" || a.lane === lane)
-                  .sort((a, b) => a.priority - b.priority)
+                  .sort((a, b) =>
+                    actionSort === "priority"
+                      ? a.priority - b.priority
+                      : a.proposedQuantity === null
+                        ? 1
+                        : b.proposedQuantity === null
+                          ? -1
+                          : actionSort === "cost-high"
+                            ? b.proposedQuantity - a.proposedQuantity
+                            : a.proposedQuantity - b.proposedQuantity,
+                  )
                   .map((a) => (
-                    <ActionCard key={a.id} a={a} asOf={d.asOf} />
+                    <ActionCard
+                      key={a.id}
+                      a={a}
+                      asOf={d.asOf}
+                      rate={invoicePricing(d.invoices).rate}
+                    />
                   ))}
               </div>
             </>
           )}
+          {active === "Budget planner" && <BudgetPlanner d={d} />}
           {active === "Monthly results" && (
             <Monthly d={d} reviewId={q.data!.id} />
           )}

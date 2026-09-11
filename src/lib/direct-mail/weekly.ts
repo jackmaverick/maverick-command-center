@@ -116,12 +116,12 @@ export const weeklySchema = z
           number: text,
           serviceMonth: month,
           invoiceDate: date,
-          paidDate: date,
+          paidDate: date.nullable(),
           amount,
           pieces: count,
           scope: text,
           invoiceEvidence: evidenceUrl,
-          paymentEvidence: evidenceUrl,
+          paymentEvidence: evidenceUrl.nullable(),
         })
         .strict(),
     ),
@@ -151,7 +151,11 @@ export const weeklySchema = z
       [
         "paid invoices",
         data.summary.knownPaid,
-        sum(data.invoices.map((i) => i.amount)),
+        sum(
+          data.invoices
+            .filter((i) => i.paidDate !== null && i.paymentEvidence !== null)
+            .map((i) => i.amount),
+        ),
       ],
     ] as const)
       if (Math.abs(total - actual) > 0.01)

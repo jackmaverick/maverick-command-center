@@ -865,3 +865,44 @@
     animation: none;
   }
 }
+
+.budgetCalculator {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 8px 22px 24px;
+  color: #a9bdd1;
+}
+.budgetCalculator label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+.budgetCalculator input,
+.budgetInput,
+.budgetSelect {
+  border: 1px solid #40536a;
+  background: #182535;
+  color: #e8edf4;
+  border-radius: 6px;
+  padding: 9px 12px;
+  max-width: 170px;
+}
+.budgetCalculator strong {
+  display: block;
+  color: #b1e6c9;
+  font-size: 32px;
+  font-variant-numeric: tabular-nums;
+}
+.budgetCalculator small {
+  font-size: 11px;
+}
+.budgetInput {
+  width: 130px;
+}
+.budgetSelect {
+  font-size: 11px;
+  max-width: 210px;
+}

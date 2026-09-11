@@ -1,4 +1,5 @@
 import type { WeeklyReview } from "./weekly";
+import { invoicePricing, projectedCost } from "./pricing";
 export function encodeCsv(
   headers: string[],
   rows: (string | number | null)[][],
@@ -27,10 +28,12 @@ export function weeklyCsv(d: WeeklyReview, p: URLSearchParams) {
           "New leads",
           "Approved sales by lead month",
           "Approved invoices by lead month",
-          "Known vendor service cost",
+          "Ron invoices by service month",
           "Verified vendor payments",
           "ROAS",
           "Profit ROI",
+          "Invoiced pieces",
+          "Average Ron invoice cost per piece",
         ],
         d.months
           .filter(
@@ -49,6 +52,10 @@ export function weeklyCsv(d: WeeklyReview, p: URLSearchParams) {
             m.paid,
             m.roas,
             m.profitRoi,
+            invoicePricing(d.invoices.filter((i) => i.serviceMonth === m.month))
+              .pieces,
+            invoicePricing(d.invoices.filter((i) => i.serviceMonth === m.month))
+              .rate,
           ]),
       );
     case "lists": {
@@ -109,6 +116,8 @@ export function weeklyCsv(d: WeeklyReview, p: URLSearchParams) {
           "Owner",
           "Next action",
           "Approval checks",
+          "Projected Ron invoice cost",
+          "Weighted Ron invoice cost per piece",
         ],
         d.actions
           .filter(
@@ -129,6 +138,8 @@ export function weeklyCsv(d: WeeklyReview, p: URLSearchParams) {
             a.owner,
             a.nextStep,
             a.gates.join("; "),
+            projectedCost(a.proposedQuantity, invoicePricing(d.invoices).rate),
+            invoicePricing(d.invoices).rate,
           ]),
       );
     default:
