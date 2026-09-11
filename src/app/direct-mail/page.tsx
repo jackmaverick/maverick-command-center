@@ -961,7 +961,14 @@ export default function DirectMailPage() {
         </div>
       )}
       {active === "Mailing proof" ? (
-        <MailingProof />
+        <div className={styles.content}>
+          <Notice>
+            This tab reads the operational mailing-proof records separately from
+            the weekly review. Missing entries do not mean no mail was requested
+            or money spent; the reviewed email history is in the other tabs.
+          </Notice>
+          <MailingProof />
+        </div>
       ) : d ? (
         <div className={styles.content}>
           {active === "Overview" && <Overview d={d} onTab={setActive} />}
