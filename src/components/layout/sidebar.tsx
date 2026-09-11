@@ -72,7 +72,7 @@ const navGroups = [
     items: [
       { href: "/leads", label: "Leads by Month", icon: TrendingUpDown },
       { href: "/lead-sources", label: "Lead Sources", icon: Target },
-      { href: "/direct-mail", label: "Direct Mail Map", icon: MapPinned },
+      { href: "/direct-mail", label: "Direct Mail", icon: MapPinned },
       { href: "/weekly-review", label: "Weekly Review", icon: CalendarDays },
     ],
   },
