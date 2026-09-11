@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   if (
     !id ||
     !/^[a-f0-9]{64}$/.test(id) ||
-    !["monthly", "lists", "actions"].includes(view || "")
+    !["monthly", "lists", "actions", "costs"].includes(view || "")
   )
     return new Response("Invalid export request", { status: 400 });
   try {

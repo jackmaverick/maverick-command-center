@@ -30,6 +30,30 @@ export const weeklySchema = z
     asOf: date,
     generatedAt: z.iso.datetime({ offset: true }),
     sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
+    costReview: z.object({
+      reviewedAt: z.iso.datetime({ offset: true }),
+      invoiceStamps: z.array(z.object({ number: text, amount }).strict()),
+      allocations: z.array(z.object({
+        campaignId: text,
+        invoiceNumber: text.nullable(),
+        vendorCost: amount.nullable(),
+        method: z.enum(["exact", "allocated", "pending"]),
+        postal: z.object({
+          documentId: text, pieces: count.positive(), total: amount, net: amount,
+          stamps: z.enum(["in_vendor", "outside_vendor", "unresolved"]),
+          evidence: evidenceUrl,
+        }).strict().nullable(),
+        gaps: z.array(text).max(10),
+        note: text,
+      }).strict()).max(10000),
+    }).strict().optional(),
+    cashReview: z.object({
+      verifiedAt: z.iso.datetime({ offset: true }),
+      jobs: z.array(z.object({ jobId: text, applied: amount, unapplied: amount }).strict()).max(10000),
+      months: z.array(z.object({ month, applied: amount, unapplied: amount }).strict()),
+      note: text,
+    }).strict().optional(),
+    jobCostHolds: z.array(z.object({ jobId: text, reason: text }).strict()).max(1000).optional(),
     jobLinks: z
       .array(
         z
@@ -163,6 +187,40 @@ export const weeklySchema = z
       jobIds.add(link.jobId);
     }
     const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+    const fail = (message: string) => ctx.addIssue({ code: "custom", message });
+    if (data.costReview) {
+      const allocations = data.costReview.allocations;
+      if (allocations.length !== campaignIds.size || new Set(allocations.map(a => a.campaignId)).size !== campaignIds.size)
+        fail("Cost review must cover each campaign exactly once");
+      const documents = new Set<string>();
+      for (const a of allocations) {
+        if (!campaignIds.has(a.campaignId)) fail("Unknown cost campaign");
+        if (a.method === "pending" ? a.vendorCost !== null || a.invoiceNumber !== null : a.vendorCost === null || !data.invoices.some(i => i.number === a.invoiceNumber))
+          fail("Invalid invoice allocation");
+        if (a.postal) {
+          if (documents.has(a.postal.documentId) || a.postal.net > a.postal.total) fail("Invalid or duplicate postal statement");
+          documents.add(a.postal.documentId);
+          if (a.postal.stamps === "in_vendor" && a.vendorCost === null) fail("Included stamps require a vendor invoice");
+        }
+      }
+      for (const i of data.invoices)
+        if (Math.abs(sum(allocations.filter(a => a.invoiceNumber === i.number).map(a => a.vendorCost ?? 0)) - i.amount) > 0.005)
+          fail("List costs do not reconcile to invoice " + i.number);
+      const stamps = data.costReview.invoiceStamps;
+      if (stamps.length !== data.invoices.length || new Set(stamps.map(i => i.number)).size !== stamps.length) fail("Stamp review must cover every invoice once");
+      for (const s of stamps) {
+        const invoice = data.invoices.find(i => i.number === s.number);
+        if (!invoice || s.amount > invoice.amount) fail("Invalid invoice stamp total");
+      }
+    }
+    if (data.cashReview) {
+      const cash = data.cashReview;
+      if (cash.jobs.length !== jobIds.size || new Set(cash.jobs.map(j => j.jobId)).size !== jobIds.size || cash.jobs.some(j => !jobIds.has(j.jobId))) fail("Cash review must cover every reviewed job once");
+      if (new Set(cash.months.map(m => m.month)).size !== cash.months.length) fail("Duplicate cash month");
+      for (const field of ["applied", "unapplied"] as const)
+        if (Math.abs(sum(cash.jobs.map(j => j[field])) - sum(cash.months.map(m => m[field]))) > 0.005) fail("Cash months do not reconcile to jobs");
+    }
+    for (const h of data.jobCostHolds ?? []) if (!jobIds.has(h.jobId)) fail("Unknown job cost hold");
     for (const [label, total, actual] of [
       [
         "requested",

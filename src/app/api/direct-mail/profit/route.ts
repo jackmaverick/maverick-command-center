@@ -50,7 +50,7 @@ export async function GET(request: Request) {
         available: true,
         reviewId: id,
         fetchedAt: new Date().toISOString(),
-        jobs: d.jobLinks.map((j) => mapJobProfit(j, byId.get(j.jobId))),
+        jobs: d.jobLinks.map((j) => mapJobProfit(j, byId.get(j.jobId), d)),
       },
       { headers },
     );

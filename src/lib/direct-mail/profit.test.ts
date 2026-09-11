@@ -33,6 +33,14 @@ const row: ProfitRow = {
   completion_observed_at: "2026-09-01T03:00:00Z",
 };
 describe("Direct Mail job profit", () => {
+  it("requires closeout and reopens reconciliation when new review holds arrive", () => {
+    const ready={...row,gp_blockers:[],cost_status:"complete"};
+    expect(mapJobProfit(link,{...ready,status_name:"Work Completed Approved"}).finalProfit).toBeNull();
+    expect(mapJobProfit(link,ready).closeoutStage).toBe("Reconciled");
+    const d=weeklyFixture();d.jobCostHolds=[{jobId:link.jobId,reason:"Unclassified adjustment"}];
+    const held=mapJobProfit(link,ready,d);
+    expect(held.finalProfit).toBeNull();expect(held.closeoutStage).toBe("Closeout review");
+  });
   it("keeps invoice-ready profit provisional while costs are unfinished", () => {
     const j = mapJobProfit(link, row);
     expect(j.grossProfit).toBe(9017.77);

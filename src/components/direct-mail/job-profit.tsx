@@ -9,7 +9,7 @@ import {
   type JobProfit,
   type ProfitResponse,
 } from "@/lib/direct-mail/profit";
-import { invoicePricing, projectedCost } from "@/lib/direct-mail/pricing";
+import { mailingCosts, returnMetrics } from "@/lib/direct-mail/costs";
 import styles from "@/app/direct-mail/weekly.module.css";
 const money = (n: number | null) =>
   n === null
@@ -46,6 +46,7 @@ export function JobProfitTable({ jobs }: { jobs: JobProfit[] }) {
             {[
               "Job",
               "Invoiced revenue",
+              "Applied collections",
               "Recorded job costs",
               "Gross profit to date",
               "Margin",
@@ -78,6 +79,7 @@ export function JobProfitTable({ jobs }: { jobs: JobProfit[] }) {
                 </small>
               </td>
               <td>{money(j.revenue)}</td>
+              <td>{money(j.collected)}{(j.unapplied ?? 0) > 0 && <small>{money(j.unapplied)} unapplied</small>}</td>
               <td>
                 {money(j.knownCost)}
                 <details>
@@ -102,6 +104,7 @@ export function JobProfitTable({ jobs }: { jobs: JobProfit[] }) {
               <td>{j.margin === null ? "—" : j.margin + "%"}</td>
               <td className={styles.listName}>
                 <strong>{j.state}</strong>
+                <small>{j.closeoutStage}</small>
                 {j.state !== "No invoiced revenue" &&
                   j.blockers.map((b) => <small key={b}>{b}</small>)}
                 {j.state === "Reconciled" && (
@@ -144,22 +147,23 @@ export function CampaignJobProfit({
             </small>
           </div>
           <div>
-            <small>Estimated Ron mailing cost</small>
-            <strong>{money(p.estimatedMailCost)}</strong>
-            <small>Requested rows × invoice average</small>
+            <small>{p.reviewedCost ? "Documented mailing cost" : "Estimated Ron mailing cost"}</small>
+            <strong>{money(p.mailCost)}</strong>
+            <small>{p.reviewedCost?.label ?? "Requested rows × invoice average"}</small>
           </div>
           <div>
-            <small>GP less estimated mailing cost</small>
+            <small>GP less mailing cost</small>
             <strong>{money(p.estimatedContribution)}</strong>
-            <small>Provisional contribution · excludes extra USPS</small>
+            <small>Provisional contribution · {p.reviewedCost?.complete ? "vendor + postage covered" : "mailing costs may be incomplete"}</small>
           </div>
         </div>
         <p className={styles.profitNote}>
-          The mailing cost here is a model, not an allocated list invoice.
+          {p.allocation?.note ?? "Mailing cost is estimated from the invoice average."}{" "}
           Address linkage is a response signal, not proof that this specific
           mailing caused the sale. Gross profit deducts recorded job costs;
           mailing cost is deducted once at the list level.
         </p>
+        {p.allocation?.gaps.map(g => <p key={g} className={styles.profitNote}>{g}</p>)}
         <JobProfitTable jobs={p.linked} />
       </div>
     </details>
@@ -175,6 +179,8 @@ function exportJobs(jobs: JobProfit[], d: WeeklyReview) {
       "Lead month",
       "Completion first observed month",
       "Invoiced revenue",
+      "Applied collections",
+      "Unapplied receipts",
       "Recorded job costs",
       "Gross profit to date",
       "Reconciled gross profit",
@@ -192,6 +198,8 @@ function exportJobs(jobs: JobProfit[], d: WeeklyReview) {
       j.leadMonth,
       j.completionMonth,
       j.revenue,
+      j.collected,
+      j.unapplied,
       j.knownCost,
       j.grossProfit,
       j.finalProfit,
@@ -259,7 +267,7 @@ export default function JobProfit({
     );
   const jobs = q.data.jobs,
     totals = profitTotals(jobs),
-    ron = roundMoney(d.invoices.reduce((s, i) => s + i.amount, 0));
+    mail = mailingCosts(d);
   const campaignMonth = new Map(
     d.campaigns.map((c) => [c.id, c.requestedDate.slice(0, 7)]),
   );
@@ -324,17 +332,16 @@ export default function JobProfit({
               </small>
             </div>
             <div>
-              <small>GP less known Ron invoices</small>
+              <small>GP less documented mailing costs</small>
               <strong>
                 {money(
-                  totals.grossProfit === null
+                  totals.grossProfit === null || mail.known === null
                     ? null
-                    : roundMoney(totals.grossProfit - ron),
+                    : roundMoney(totals.grossProfit - mail.known),
                 )}
               </strong>
               <small>
-                Less {money(ron)} vendor cost · extra USPS / missing bills
-                excluded
+                Less {money(mail.known)} · missing expenses excluded
               </small>
             </div>
             <div>
@@ -353,8 +360,10 @@ export default function JobProfit({
           <p className={styles.profitNote}>
             Gross profit = invoiced revenue − recorded materials, finalized
             labor, subcontractors, retail and permit costs. Unfinalized costs
-            can overstate profit. Reconciled means current invoice and cost
-            checks passed; it is not net company profit or cash collected. Read{" "}
+            can overstate profit. Job Close Out starts the review. Reconciled requires
+            closeout status, paid/final invoices and complete cost checks, including
+            any reviewed adjustment holds. New costs or blockers reopen the review;
+            figures are not permanently frozen. This is not net company profit. Read{" "}
             {new Date(q.data.fetchedAt).toLocaleString("en-US", {
               timeZone: "America/Chicago",
             })}{" "}
@@ -388,7 +397,7 @@ export default function JobProfit({
           {basis === "completion"
             ? "Completion month is the first recorded completed/closeout stage in status history. It is an observed milestone, not a verified accounting recognition date. Values show current lifetime job profit, not profit booked that month."
             : basis === "mailing"
-              ? "Jobs are grouped by their single matched mailing request month. Multi-list and unassigned jobs stay out of this comparison. Mailing costs use requested rows and the invoice average; they are estimates."
+              ? "Jobs are grouped by their single matched mailing request month. Multi-list and unassigned jobs stay out of this comparison. Costs use reviewed invoice allocations and recovered postage. Missing expenses can overstate cohort returns; these are current lifetime outcomes of those mailings."
               : "Revenue and current lifetime job profit follow the lead creation month. Ron invoices follow service month; these are different groups and are not subtracted."}{" "}
           {jobs.filter((j) => !groupMonth(j)).length} jobs have no month in this
           grouping.
@@ -404,11 +413,12 @@ export default function JobProfit({
                   "GP to date",
                   "Reconciled GP",
                   basis === "mailing"
-                    ? "Estimated Ron cost"
+                    ? "Documented mailing cost"
                     : "Ron invoices · service month",
                   basis === "mailing"
-                    ? "GP less estimated mail cost"
+                    ? "GP less mailing cost"
                     : "Cost readiness",
+                  ...(basis === "mailing" ? ["Revenue / cost", "Profit ROI to date"] : []),
                 ].map((h) => (
                   <th key={h}>{h}</th>
                 ))}
@@ -417,15 +427,12 @@ export default function JobProfit({
             <tbody>
               {months.map((m) => {
                 const t = profitTotals(jobs.filter((j) => groupMonth(j) === m));
+                const costGroup = mailingCosts(d, d.campaigns.filter(c => c.requestedDate.startsWith(m)).map(c => c.id));
                 const mailCost =
                   basis === "mailing"
-                    ? projectedCost(
-                        d.campaigns
-                          .filter((c) => c.requestedDate.startsWith(m))
-                          .reduce((s, c) => s + c.requested, 0),
-                        invoicePricing(d.invoices).rate,
-                      )
+                    ? costGroup.known
                     : (d.months.find((x) => x.month === m)?.vendorCost ?? null);
+                const returns = returnMetrics(t.revenue, t.grossProfit, mailCost);
                 return (
                   <tr key={m}>
                     <td>
@@ -446,7 +453,7 @@ export default function JobProfit({
                     <td>
                       {t.reconciledJobs ? money(t.finalProfit) : "Not ready"}
                     </td>
-                    <td>{money(mailCost)}</td>
+                    <td>{money(mailCost)}{basis === "mailing" && <small>{costGroup.complete ? "Vendor + postage covered" : "Partial cost"}</small>}</td>
                     <td>
                       {basis === "mailing"
                         ? money(
@@ -456,6 +463,7 @@ export default function JobProfit({
                           )
                         : `${t.provisionalJobs} provisional · ${t.reconciledJobs} reconciled`}
                     </td>
+                    {basis === "mailing" && <><td>{returns.roas === null ? "Pending" : returns.roas.toFixed(2)+"×"}<small>Provisional</small></td><td>{returns.roi === null ? "Pending" : (returns.roi*100).toFixed(1)+"%"}<small>Provisional</small></td></>}
                   </tr>
                 );
               })}

@@ -1,5 +1,6 @@
 import type { WeeklyReview } from "./weekly";
 import { invoicePricing, projectedCost } from "./pricing";
+import { allocationCost } from "./costs";
 export type JobLink = NonNullable<WeeklyReview["jobLinks"]>[number];
 export interface ProfitRow {
   jnid: string;
@@ -29,6 +30,9 @@ export interface JobProfit extends JobLink {
   finalProfit: number | null;
   margin: number | null;
   state: "Reconciled" | "Provisional" | "No invoiced revenue" | "Unavailable";
+  closeoutStage: "In progress" | "Closeout review" | "Reconciled";
+  collected: number | null;
+  unapplied: number | null;
   blockers: string[];
   updatedAt: string | null;
   completionMonth: string | null;
@@ -57,7 +61,7 @@ const value = (v: string | number | null | undefined): number | null =>
     ? null
     : roundMoney(Number(v));
 const iso = (v: string | Date | null) => (v ? new Date(v).toISOString() : null);
-export function mapJobProfit(link: JobLink, row?: ProfitRow): JobProfit {
+export function mapJobProfit(link: JobLink, row?: ProfitRow, review?: WeeklyReview): JobProfit {
   const revenue = value(row?.revenue_for_gp),
     knownCost = value(row?.total_known_cost);
   const grossProfit =
@@ -65,6 +69,9 @@ export function mapJobProfit(link: JobLink, row?: ProfitRow): JobProfit {
       ? null
       : roundMoney(revenue - knownCost);
   const blockers = [...(row?.gp_blockers ?? [])];
+  const closeout = ["Job Close Out", "Paid & Closed"].includes(row?.status_name ?? "");
+  if ((revenue ?? 0) > 0 && !closeout) blockers.push("Awaiting Job Close Out");
+  blockers.push(...(review?.jobCostHolds ?? []).filter(h => h.jobId === link.jobId).map(h => h.reason));
   if (revenue !== null && revenue > 0 && row?.cost_status !== "complete")
     blockers.push(row?.cost_status || "Cost completeness is unverified");
   const reconciled =
@@ -79,6 +86,9 @@ export function mapJobProfit(link: JobLink, row?: ProfitRow): JobProfit {
     number: row?.number ?? "",
     name: row?.name ?? "Job unavailable",
     status: row?.status_name ?? "Unavailable",
+    closeoutStage: reconciled ? "Reconciled" : closeout ? "Closeout review" : "In progress",
+    collected: review?.cashReview?.jobs.find(j => j.jobId === link.jobId)?.applied ?? null,
+    unapplied: review?.cashReview?.jobs.find(j => j.jobId === link.jobId)?.unapplied ?? null,
     revenue,
     knownCost,
     grossProfit,
@@ -153,14 +163,20 @@ export function campaignProfit(
     campaign.requested,
     invoicePricing(d.invoices).rate,
   );
+  const allocation = d.costReview?.allocations.find(a => a.campaignId === campaignId);
+  const reviewedCost = allocation ? allocationCost(allocation) : null;
+  const mailCost = reviewedCost ? reviewedCost.known : estimatedMailCost;
   return {
     ...totals,
     linked,
     estimatedMailCost,
+    allocation,
+    reviewedCost,
+    mailCost,
     estimatedContribution:
-      totals.grossProfit === null || estimatedMailCost === null
+      totals.grossProfit === null || mailCost === null
         ? null
-        : roundMoney(totals.grossProfit - estimatedMailCost),
+        : roundMoney(totals.grossProfit - mailCost),
   };
 }
 export interface ProfitResponse {

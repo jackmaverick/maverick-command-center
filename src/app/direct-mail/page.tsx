@@ -22,6 +22,8 @@ import JobProfit, {
   CampaignJobProfit,
   useJobProfits,
 } from "@/components/direct-mail/job-profit";
+import MailingCosts, { MailReturns } from "@/components/direct-mail/mailing-costs";
+import { allInProjection } from "@/lib/direct-mail/costs";
 import MailingProof from "@/components/direct-mail/mailing-proof";
 import styles from "./weekly.module.css";
 
@@ -29,6 +31,7 @@ const tabs = [
   "Overview",
   "Next sends",
   "Budget planner",
+  "Mailing costs",
   "Monthly results",
   "List performance",
   "Job profit",
@@ -68,8 +71,6 @@ const monthLabel = (m: string) =>
     year: "numeric",
     timeZone: "UTC",
   });
-const ratio = (n: number | null) =>
-  n === null ? "Unknown" : `${n.toFixed(2)}×`;
 const unitMoney = (n: number | null) =>
   n === null ? "Unknown" : `$${n.toFixed(4)}`;
 function exportUrl(
@@ -344,6 +345,7 @@ function BudgetPlanner({ d }: { d: WeeklyReview }) {
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [sort, setSort] = useState("priority");
   const pricing = invoicePricing(d.invoices, basis);
+  const allInRate = allInProjection(d, basis);
   const parseQuantity = (v: string) =>
     v.trim() === ""
       ? null
@@ -465,6 +467,9 @@ function BudgetPlanner({ d }: { d: WeeklyReview }) {
           </div>
         </div>
       </Panel>
+      <Notice>
+        Total budget including postage: <strong>{exactMoney(projectedCost(parseQuantity(rows), allInRate))}</strong> for the quick-estimate quantity ({unitMoney(allInRate)} per piece). This removes stamps from the invoice average, then adds full postage using the latest observed request month’s statements. It is a planning estimate; setup mix, postage rates and reprints can change the actual bill.
+      </Notice>
       <Panel
         title="Budget the next-send queue"
         detail="Edit quantities to compare scenarios. These what-if values are local to this tab and do not change the approved mailing plan."
@@ -491,6 +496,7 @@ function BudgetPlanner({ d }: { d: WeeklyReview }) {
                 <th>Status</th>
                 <th>Planned pieces</th>
                 <th>Projected Ron cost</th>
+                <th>Projected total with postage</th>
               </tr>
             </thead>
             <tbody>
@@ -531,6 +537,7 @@ function BudgetPlanner({ d }: { d: WeeklyReview }) {
                       ? "Enter quantity"
                       : exactMoney(projectedCost(quantity(a), pricing.rate))}
                   </td>
+                  <td>{exactMoney(projectedCost(quantity(a), allInRate))}</td>
                 </tr>
               ))}
             </tbody>
@@ -653,8 +660,7 @@ function Monthly({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
                   "Invoiced pieces",
                   "Cost / piece²",
                   ...(showPayments ? ["Payments recorded"] : []),
-                  "ROAS",
-                  "Profit ROI",
+
                 ].map((h) => (
                   <th key={h}>{h}</th>
                 ))}
@@ -704,12 +710,7 @@ function Monthly({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
                         : exactMoney(m.paid)}
                     </td>
                   )}
-                  <td className={styles.amberText}>{ratio(m.roas)}</td>
-                  <td>
-                    {m.profitRoi === null
-                      ? "Unknown"
-                      : `${(m.profitRoi * 100).toFixed(1)}%`}
-                  </td>
+
                 </tr>
               ))}
             </tbody>
@@ -725,39 +726,7 @@ function Monthly({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
         </div>
       </Panel>
       <JobProfit d={d} reviewId={reviewId} monthlyOnly />
-      <div className={styles.twoCol}>
-        <Panel
-          title="Lifetime return"
-          detail="Only calculate when revenue and complete costs refer to the same campaign group."
-        >
-          <div className={styles.miniList}>
-            <div>
-              <span>Revenue ROAS</span>
-              <strong>{ratio(d.summary.roas)}</strong>
-            </div>
-            <div>
-              <span>Profit ROI</span>
-              <strong>
-                {d.summary.profitRoi === null
-                  ? "Unknown"
-                  : `${(d.summary.profitRoi * 100).toFixed(1)}%`}
-              </strong>
-            </div>
-            <div>
-              <span>Collected cash</span>
-              <strong>{money(d.summary.collected)}</strong>
-            </div>
-          </div>
-        </Panel>
-        <Panel title="What unlocks reliable ROI">
-          <div className={styles.checkList}>
-            <p>1. All printing, handling, stamps and USPS charges.</p>
-            <p>2. Reviewed attribution to the mailing group.</p>
-            <p>3. Actual customer receipts and final job costs.</p>
-            <p>4. Equal observation windows for each test.</p>
-          </div>
-        </Panel>
-      </div>
+      <MailReturns d={d} reviewId={reviewId} />
     </>
   );
 }
@@ -1410,6 +1379,7 @@ export default function DirectMailPage() {
             </>
           )}
           {active === "Budget planner" && <BudgetPlanner d={d} />}
+          {active === "Mailing costs" && <MailingCosts d={d} reviewId={q.data!.id} />}
           {active === "Monthly results" && (
             <Monthly d={d} reviewId={q.data!.id} />
           )}

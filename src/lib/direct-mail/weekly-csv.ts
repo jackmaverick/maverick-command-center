@@ -1,5 +1,6 @@
 import type { WeeklyReview } from "./weekly";
 import { invoicePricing, projectedCost } from "./pricing";
+import { allocationCost, mailingCosts } from "./costs";
 export function encodeCsv(
   headers: string[],
   rows: (string | number | null)[][],
@@ -20,6 +21,11 @@ export function encodeCsv(
 }
 export function weeklyCsv(d: WeeklyReview, p: URLSearchParams) {
   switch (p.get("view")) {
+    case "costs":
+      return encodeCsv(["List", "Request date", "Invoice", "Vendor cost", "Allocation method", "Additional postage", "Documented subtotal", "Coverage", "Postal pieces", "Gaps", "Method", "Postal evidence"], (d.costReview?.allocations ?? []).map(a => {
+        const c=d.campaigns.find(c=>c.id===a.campaignId)!; const cost=allocationCost(a);
+        return [c.name,c.requestedDate,a.invoiceNumber,a.vendorCost,a.method,cost.postage,cost.known,cost.label,a.postal?.pieces??null,a.gaps.join("; "),a.note,a.postal?.evidence??null];
+      }));
     case "monthly":
       return encodeCsv(
         [
@@ -30,8 +36,10 @@ export function weeklyCsv(d: WeeklyReview, p: URLSearchParams) {
           "Approved invoices by lead month",
           "Ron invoices by service month",
           "Verified vendor payments",
-          "ROAS",
-          "Profit ROI",
+          "Documented mailing costs by request month (partial where flagged)",
+          "Cost coverage",
+          "Customer cash applied by payment month",
+          "Customer cash unapplied by payment month",
           "Invoiced pieces",
           "Average Ron invoice cost per piece",
         ],
@@ -50,8 +58,10 @@ export function weeklyCsv(d: WeeklyReview, p: URLSearchParams) {
             m.invoiced,
             m.vendorCost,
             m.paid,
-            m.roas,
-            m.profitRoi,
+            mailingCosts(d,d.campaigns.filter(c=>c.requestedDate.startsWith(m.month)).map(c=>c.id)).known,
+            mailingCosts(d,d.campaigns.filter(c=>c.requestedDate.startsWith(m.month)).map(c=>c.id)).complete ? "Vendor + postage covered" : "Partial",
+            d.cashReview?.months.find(x=>x.month===m.month)?.applied ?? null,
+            d.cashReview?.months.find(x=>x.month===m.month)?.unapplied ?? null,
             invoicePricing(d.invoices.filter((i) => i.serviceMonth === m.month))
               .pieces,
             invoicePricing(d.invoices.filter((i) => i.serviceMonth === m.month))
