@@ -1,6 +1,7 @@
 /** Explicit local publisher. No HTTP write route, email sending, or CRM writes. */
 import { readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { resolve } from "node:path";
 import { Pool } from "pg";
 import { weeklySchema } from "../src/lib/direct-mail/weekly";
@@ -57,7 +58,7 @@ async function main() {
       );
       if (
         !readback.rows[0] ||
-        JSON.stringify(weeklySchema.parse(readback.rows[0].payload)) !== body
+        !isDeepStrictEqual(weeklySchema.parse(readback.rows[0].payload), payload)
       )
         throw new Error("Published readback mismatch");
       const proof = {

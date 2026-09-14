@@ -49,3 +49,17 @@ associations, not current eligible counts or verified neighborhood-wide coverage
 Keep incomplete evidence explicit, and never treat a high margin with missing
 major costs as a confirmed profitable example. No mail, spend, field assignment or
 customer messages are performed by this tab.
+
+## September 14 rollout
+
+The production tab and both API payloads were verified against the reviewed local
+projection after PR #22 deployed. The existing direct-mail heartbeat now owns
+weekday 8 a.m. Chicago neighborhood reviews and retains its complete Friday
+financial/creative review. Configuration is verified; its first scheduled run is
+still pending. The daily queue LaunchAgent and legacy JobNimbus rule are unchanged.
+
+The snapshot publisher compares validated payloads structurally, because PostgreSQL
+JSONB may reorder object keys. It still requires every value and array order to
+match. Retrying the same payload uses the same immutable ID and cannot add a
+duplicate row. Dated deployment, publication and automation receipts remain in
+the private neighborhood runtime.
