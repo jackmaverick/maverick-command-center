@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { neighborhoodSchema } from "./neighborhoods";
 
 const count = z.number().int().nonnegative();
 const amount = z.number().finite().nonnegative();
@@ -27,6 +28,7 @@ export const actionSchema = z
 export const weeklySchema = z
   .object({
     version: z.literal(1),
+    neighborhoodReview: neighborhoodSchema.optional(),
     asOf: date,
     generatedAt: z.iso.datetime({ offset: true }),
     sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
