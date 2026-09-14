@@ -24,6 +24,7 @@ import JobProfit, {
 } from "@/components/direct-mail/job-profit";
 import MailingCosts, { MailReturns } from "@/components/direct-mail/mailing-costs";
 import { allInProjection } from "@/lib/direct-mail/costs";
+import NeighborhoodOpportunities from "@/components/direct-mail/neighborhood-opportunities";
 import MailingProof from "@/components/direct-mail/mailing-proof";
 import styles from "./weekly.module.css";
 
@@ -36,6 +37,7 @@ const tabs = [
   "List performance",
   "Job profit",
   "Roof opportunities",
+  "Neighborhoods & signs",
   "Audience",
   "Evidence",
   "Mailing proof",
@@ -1394,6 +1396,7 @@ export default function DirectMailPage() {
           )}
         </div>
       ) : null}
+      {active === "Neighborhoods & signs" && <NeighborhoodOpportunities review={d?.neighborhoodReview} />}
       <footer className={styles.footer}>
         Reviewed evidence, not mailing authorization. No messages, payments or
         CRM changes are made from this page.
