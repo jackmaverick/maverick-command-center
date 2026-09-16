@@ -32,6 +32,7 @@ import {
   returnMetrics,
 } from "@/lib/direct-mail/costs";
 import { profitTotals } from "@/lib/direct-mail/profit";
+import { monthlyMailVolume } from "@/lib/direct-mail/volume";
 import NeighborhoodOpportunities from "@/components/direct-mail/neighborhood-opportunities";
 import MailingProof from "@/components/direct-mail/mailing-proof";
 import styles from "./weekly.module.css";
@@ -199,7 +200,8 @@ function ActionCard({
   );
 }
 function Overview({ d, onTab }: { d: WeeklyReview; onTab: (t: Tab) => void }) {
-  const max = Math.max(...d.months.map((m) => m.leads), 1);
+  const volume = monthlyMailVolume(d);
+  const monthlyPieceTarget = 50_000;
   return (
     <>
       <div className={styles.overviewGrid}>
@@ -233,30 +235,56 @@ function Overview({ d, onTab }: { d: WeeklyReview; onTab: (t: Tab) => void }) {
           </div>
         </section>
         <Panel
-          title="Lead momentum"
-          detail="New Direct Mail leads by creation month"
+          title="Lead & mailing momentum"
+          detail="Monthly leads, requested rows and strongest available piece evidence"
         >
-          <div className={styles.bars}>
-            {d.months.map((m) => (
-              <div className={styles.barColumn} key={m.month}>
-                <strong>{m.leads}</strong>
-                <div className={styles.barTrack}>
-                  <div
-                    style={{ height: `${(m.leads / max) * 100}%` }}
-                    className={
-                      m.month === d.asOf.slice(0, 7)
-                        ? styles.currentBar
-                        : styles.bar
-                    }
-                  />
+          <div className={styles.volumeTarget}>
+            <div>
+              <span>Growth planning target</span>
+              <strong>40,000–50,000 pieces / month</strong>
+            </div>
+            <small>$25,000 monthly mail spend · $1M added-revenue scenario</small>
+          </div>
+          <div className={styles.volumeList}>
+            {volume.map((m) => (
+              <div className={styles.volumeRow} key={m.month}>
+                <div className={styles.volumeMonth}>
+                  <strong>{monthLabel(m.month).split(" ")[0]}</strong>
+                  <span>{m.leads} leads</span>
                 </div>
-                <span>{monthLabel(m.month).split(" ")[0]}</span>
+                <div className={styles.volumeProgress}>
+                  <div className={styles.volumeTrack}>
+                    <div
+                      style={{
+                        width: `${Math.min(((m.documentedPieces ?? 0) / monthlyPieceTarget) * 100, 100)}%`,
+                      }}
+                      className={
+                        m.month === d.asOf.slice(0, 7)
+                          ? styles.currentVolume
+                          : styles.volumeFill
+                      }
+                    />
+                  </div>
+                  <span>{m.evidence}</span>
+                </div>
+                <div className={styles.volumeNumbers}>
+                  <strong>
+                    {m.documentedPieces === null
+                      ? "Pending"
+                      : `${num(m.documentedPieces)} pieces`}
+                  </strong>
+                  <span>
+                    {num(m.requested)} requested · {m.packages} batches ·{" "}
+                    {m.averageRequest === null ? "—" : num(m.averageRequest)} avg
+                  </span>
+                </div>
               </div>
             ))}
           </div>
           <div className={styles.chartFoot}>
-            Latest month is partial through {day(d.asOf)}. Includes archived
-            outcomes.
+            Provider pieces use complete confirmed-mail counts when available,
+            then invoice pieces, then postal-statement pieces. They are not USPS
+            delivery counts. Latest month is partial through {day(d.asOf)}.
           </div>
         </Panel>
       </div>
