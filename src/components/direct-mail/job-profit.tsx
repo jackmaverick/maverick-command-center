@@ -21,10 +21,11 @@ const monthName = (s: string) =>
     year: "numeric",
     timeZone: "UTC",
   });
-export function useJobProfits(reviewId: string) {
+export function useJobProfits(reviewId?: string) {
   return useQuery<ProfitResponse>({
     queryKey: ["direct-mail-job-profit", reviewId],
     queryFn: async () => {
+      if (!reviewId) throw new Error("Weekly review unavailable");
       const r = await fetch(
         "/api/direct-mail/profit?id=" + encodeURIComponent(reviewId),
         { cache: "no-store" },
@@ -33,6 +34,7 @@ export function useJobProfits(reviewId: string) {
       if (!r.ok) throw new Error(body.message || "Job profit unavailable");
       return body;
     },
+    enabled: Boolean(reviewId),
     staleTime: 60000,
     retry: 1,
   });

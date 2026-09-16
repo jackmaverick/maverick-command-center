@@ -23,7 +23,13 @@ import JobProfit, {
   useJobProfits,
 } from "@/components/direct-mail/job-profit";
 import MailingCosts, { MailReturns } from "@/components/direct-mail/mailing-costs";
-import { allInProjection } from "@/lib/direct-mail/costs";
+import {
+  allInProjection,
+  grossProfitPerDollar,
+  mailingCosts,
+  returnMetrics,
+} from "@/lib/direct-mail/costs";
+import { profitTotals } from "@/lib/direct-mail/profit";
 import NeighborhoodOpportunities from "@/components/direct-mail/neighborhood-opportunities";
 import MailingProof from "@/components/direct-mail/mailing-proof";
 import styles from "./weekly.module.css";
@@ -1181,6 +1187,21 @@ export default function DirectMailPage() {
     refetchOnWindowFocus: "always",
   });
   const d = q.data?.data;
+  const profit = useJobProfits(q.data?.id);
+  const currentProfit = profit.data ? profitTotals(profit.data.jobs) : null;
+  const currentMailCost = d ? mailingCosts(d) : null;
+  const currentRevenue = currentProfit?.revenue ?? null;
+  const currentGrossProfit = currentProfit?.grossProfit ?? null;
+  const documentedMailCost = currentMailCost?.known ?? null;
+  const currentReturns = returnMetrics(
+    currentRevenue,
+    currentGrossProfit,
+    documentedMailCost,
+  );
+  const currentGrossProfitPerDollar = grossProfitPerDollar(
+    currentGrossProfit,
+    documentedMailCost,
+  );
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -1285,6 +1306,50 @@ export default function DirectMailPage() {
             <small className={styles.amberText}>
               {unitMoney(invoicePricing(d.invoices).rate)} / piece ·
               invoice-based
+            </small>
+          </div>
+          <div>
+            <span>Revenue ROAS</span>
+            <strong>
+              {profit.isPending
+                ? "Loading…"
+                : currentReturns.roas === null
+                  ? "Unavailable"
+                  : `${currentReturns.roas.toFixed(2)}×`}
+            </strong>
+            <small>
+              {currentRevenue === null || documentedMailCost === null
+                ? "Needs current revenue and mailing cost"
+                : `${money(currentRevenue)} invoiced ÷ ${money(documentedMailCost)} documented mailing cost`}
+            </small>
+            <small className={styles.amberText}>
+              {profit.isError
+                ? "Current job-profit read failed"
+                : currentMailCost?.complete
+                  ? "Documented vendor and postage coverage complete"
+                  : `Provisional · ${currentMailCost?.covered ?? 0} of ${currentMailCost?.count ?? d.campaigns.length} lists have complete cost coverage`}
+            </small>
+          </div>
+          <div>
+            <span>Gross profit per $1 of mail spend</span>
+            <strong>
+              {profit.isPending
+                ? "Loading…"
+                : currentGrossProfitPerDollar === null
+                  ? "Unavailable"
+                  : `$${currentGrossProfitPerDollar.toFixed(2)}`}
+            </strong>
+            <small>
+              {currentGrossProfit === null || documentedMailCost === null
+                ? "Needs current gross profit and mailing cost"
+                : `${money(currentGrossProfit)} gross profit ÷ ${money(documentedMailCost)} documented mailing cost`}
+            </small>
+            <small className={styles.amberText}>
+              {profit.isError
+                ? "Current job-profit read failed"
+                : currentProfit
+                  ? `Provisional · ${currentProfit.reconciledJobs} reconciled, ${currentProfit.provisionalJobs} provisional`
+                  : "Loading cost accuracy"}
             </small>
           </div>
         </div>
