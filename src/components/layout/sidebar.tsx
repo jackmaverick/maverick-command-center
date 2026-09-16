@@ -13,6 +13,7 @@ import {
   Zap,
   BarChart3,
   Target,
+  Megaphone,
   CalendarDays,
   Bot,
   MessageCircleQuestion,
@@ -68,6 +69,7 @@ const navGroups = [
     items: [
       { href: "/lead-sources", label: "Lead Sources", icon: Target },
       { href: "/direct-mail", label: "Direct Mail Map", icon: MapPinned },
+      { href: "/meta-ads", label: "Meta Ads", icon: Megaphone },
       { href: "/weekly-review", label: "Weekly Review", icon: CalendarDays },
     ],
   },

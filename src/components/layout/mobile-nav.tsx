@@ -20,6 +20,7 @@ const navItems = [
   { href: "/financial/bob-buyout", label: "Bob Buyout" },
   { href: "/lead-sources", label: "Lead Sources" },
   { href: "/direct-mail", label: "Direct Mail Map" },
+  { href: "/meta-ads", label: "Meta Ads" },
   { href: "/weekly-review", label: "Weekly Review" },
   { href: "/agents", label: "Agents" },
   { href: "/faq-review", label: "FAQ Review" },
