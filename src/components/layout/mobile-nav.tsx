@@ -21,6 +21,7 @@ const navItems = [
   { href: "/due-dates", label: "Invoice Due Dates" },
   { href: "/lead-sources", label: "Lead Sources" },
   { href: "/direct-mail", label: "Direct Mail" },
+  { href: "/meta-ads", label: "Meta Ads" },
   { href: "/weekly-review", label: "Weekly Review" },
   { href: "/loop-health", label: "Loop Health" },
   { href: "/agents", label: "Agents" },

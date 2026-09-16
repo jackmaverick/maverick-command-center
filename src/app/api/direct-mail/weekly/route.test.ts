@@ -36,6 +36,27 @@ describe("GET weekly review", () => {
     expect(r.status).toBe(503);
     expect(JSON.stringify(await r.json())).not.toContain("private");
   });
+  it("returns the newest valid review when a newer publication is invalid", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    query.mockResolvedValue([
+      {
+        id: "b".repeat(64),
+        published_at: new Date("2026-09-16T17:00:00Z"),
+        payload: { ...weeklyFixture(), addresses: ["private"] },
+      },
+      {
+        id: "a".repeat(64),
+        published_at: new Date("2026-09-16T16:00:00Z"),
+        payload: weeklyFixture(),
+      },
+    ]);
+    const response = await GET();
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.id).toBe("a".repeat(64));
+    expect(body.fallback).toBe(true);
+    expect(JSON.stringify(body)).not.toContain("private");
+  });
   it("does not expose connection errors", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     query.mockRejectedValue(new Error("secret connection string"));
