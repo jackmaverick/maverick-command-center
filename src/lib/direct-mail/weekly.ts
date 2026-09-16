@@ -114,6 +114,17 @@ export const weeklySchema = z
         .object({
           id: text,
           name: text,
+          audienceStrategy: z
+            .enum([
+              "job_scheduled_neighborhood",
+              "general_audience",
+              "other",
+              "unclassified",
+            ])
+            .optional(),
+          touchType: z
+            .enum(["first_touch", "resend", "mixed", "unclassified"])
+            .optional(),
           requestedDate: date,
           plannedDate: date.nullable(),
           reviewDate: date,

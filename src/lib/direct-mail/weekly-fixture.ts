@@ -42,6 +42,8 @@ export function weeklyFixture(): WeeklyReview {
       {
         id: "test-campaign",
         name: "Example neighborhood",
+        audienceStrategy: "job_scheduled_neighborhood",
+        touchType: "first_touch",
         requestedDate: "2026-09-01",
         plannedDate: null,
         reviewDate: "2026-09-22",
