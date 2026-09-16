@@ -37,6 +37,12 @@ import {
 } from "@/lib/direct-mail/costs";
 import { profitTotals } from "@/lib/direct-mail/profit";
 import { monthlyMailVolume } from "@/lib/direct-mail/volume";
+import {
+  audienceLabels,
+  campaignClassificationCoverage,
+  campaignStrategyPerformance,
+  touchLabels,
+} from "@/lib/direct-mail/strategy";
 import NeighborhoodOpportunities from "@/components/direct-mail/neighborhood-opportunities";
 import MailingProof from "@/components/direct-mail/mailing-proof";
 import styles from "./weekly.module.css";
@@ -205,6 +211,8 @@ function ActionCard({
 }
 function Overview({ d, onTab }: { d: WeeklyReview; onTab: (t: Tab) => void }) {
   const volume = monthlyMailVolume(d);
+  const strategyRows = campaignStrategyPerformance(d);
+  const strategyCoverage = campaignClassificationCoverage(d);
   const monthlyPieceTarget = 50_000;
   return (
     <>
@@ -292,6 +300,83 @@ function Overview({ d, onTab }: { d: WeeklyReview; onTab: (t: Tab) => void }) {
           </div>
         </Panel>
       </div>
+      <Panel
+        title="Which campaign approach is working?"
+        detail="Reviewed audience strategy and touch, using current linked outcomes"
+        aside={
+          <button
+            onClick={() => onTab("List performance")}
+            className={styles.textButton}
+          >
+            Open list detail <ArrowRight size={15} />
+          </button>
+        }
+      >
+        <div className={styles.tableWrap}>
+          <table>
+            <thead>
+              <tr>
+                <th>Audience strategy</th>
+                <th>Campaign mix</th>
+                <th>Requested</th>
+                <th>Linked leads</th>
+                <th>Leads / 1,000 requested</th>
+                <th>Invoiced revenue</th>
+                <th>Revenue / 1,000 requested</th>
+                <th>Documented mail cost</th>
+                <th>Revenue ROAS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {strategyRows.map((row) => (
+                <tr key={row.audience}>
+                  <td className={styles.listName}>
+                    <strong>{row.label}</strong>
+                    <small>{num(row.averageRequest)} average requested rows</small>
+                  </td>
+                  <td>
+                    {row.campaigns} campaign{row.campaigns === 1 ? "" : "s"}
+                    <small>
+                      {row.touches.first_touch} first · {row.touches.resend} resend
+                      {row.touches.mixed ? ` · ${row.touches.mixed} mixed` : ""}
+                      {row.touches.unclassified
+                        ? ` · ${row.touches.unclassified} unclassified`
+                        : ""}
+                    </small>
+                  </td>
+                  <td>{num(row.requested)}</td>
+                  <td>{num(row.leads)}</td>
+                  <td>
+                    {row.leadsPerThousandRequested === null
+                      ? "—"
+                      : row.leadsPerThousandRequested.toFixed(1)}
+                  </td>
+                  <td>{money(row.invoiced)}</td>
+                  <td>{money(row.revenuePerThousandRequested)}</td>
+                  <td>
+                    {money(row.documentedCost)}
+                    <small>
+                      {row.costComplete
+                        ? "Complete coverage"
+                        : `${row.costCoverage} campaigns complete`}
+                    </small>
+                  </td>
+                  <td>
+                    {row.roas === null ? "Unavailable" : `${row.roas.toFixed(2)}×`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className={styles.footnote}>
+          {strategyCoverage.classified} of {strategyCoverage.total} campaigns have
+          both audience and touch reviewed. Leads and revenue use exact prior-list
+          address linkage. Per-1,000 figures use requested rows because confirmed
+          mailed counts are incomplete; they are comparison signals, not response
+          rates or causal proof.
+        </div>
+      </Panel>
       <Panel
         title="Next in your queue"
         detail="Prioritized from the latest evidence review"
@@ -974,6 +1059,7 @@ function Lists({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
               <tr>
                 {[
                   "List / package",
+                  "Strategy / touch",
                   "Requested",
                   "Rows",
                   "Linked leads",
@@ -999,6 +1085,10 @@ function Lists({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
                             ? "Response signal; watch outcomes"
                             : "No linked outcome yet; assess maturity"}
                       </small>
+                    </td>
+                    <td>
+                      {audienceLabels[c.audienceStrategy ?? "unclassified"]}
+                      <small>{touchLabels[c.touchType ?? "unclassified"]}</small>
                     </td>
                     <td>
                       {day(c.requestedDate)}
@@ -1031,7 +1121,7 @@ function Lists({ d, reviewId }: { d: WeeklyReview; reviewId: string }) {
                     </td>
                   </tr>
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={9}>
                       {profit.data ? (
                         <CampaignJobProfit
                           d={d}

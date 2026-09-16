@@ -93,6 +93,8 @@ export function weeklyCsv(d: WeeklyReview, p: URLSearchParams) {
       return encodeCsv(
         [
           "List",
+          "Audience strategy",
+          "Touch type",
           "Requested date",
           "Planned postal date",
           "Provisional review",
@@ -103,6 +105,8 @@ export function weeklyCsv(d: WeeklyReview, p: URLSearchParams) {
         ],
         rows.map((c) => [
           c.name,
+          c.audienceStrategy ?? "unclassified",
+          c.touchType ?? "unclassified",
           c.requestedDate,
           c.plannedDate,
           c.reviewDate,
