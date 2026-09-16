@@ -27,3 +27,48 @@ export function projectedCost(quantity: number | null, rate: number | null) {
     ? null
     : Math.round(quantity * rate * 100) / 100;
 }
+
+export function campaignMix(input: {
+  target: number | null;
+  largeDrops: number | null;
+  largePieces: number | null;
+  automatedDrops: number | null;
+  automatedPieces: number | null;
+  historicalAverage: number | null;
+  invoiceRate: number | null;
+  allInRate: number | null;
+}) {
+  const counts = [
+    input.target,
+    input.largeDrops,
+    input.largePieces,
+    input.automatedDrops,
+    input.automatedPieces,
+  ];
+  if (
+    counts.some(
+      (value) =>
+        value === null ||
+        !Number.isSafeInteger(value) ||
+        value < 0,
+    )
+  )
+    return null;
+
+  const pieces =
+    input.largeDrops! * input.largePieces! +
+    input.automatedDrops! * input.automatedPieces!;
+  if (!Number.isSafeInteger(pieces)) return null;
+
+  return {
+    pieces,
+    gap: input.target! - pieces,
+    campaigns: input.largeDrops! + input.automatedDrops!,
+    historicalBatches:
+      input.historicalAverage !== null && input.historicalAverage > 0
+        ? Math.ceil(input.target! / input.historicalAverage)
+        : null,
+    invoiceCost: projectedCost(pieces, input.invoiceRate),
+    allInCost: projectedCost(pieces, input.allInRate),
+  };
+}
