@@ -1130,8 +1130,11 @@ function Evidence({
           {new Date(publishedAt).toLocaleString("en-US", {
             timeZone: "America/Chicago",
           })}{" "}
-          Chicago time. Weekly review: Friday 8 a.m. Refresh reloads the latest
-          published review; it does not send mail or rerun source collection.
+          Chicago time. Results publish on weekdays at 8 a.m. and 2 p.m. The
+          page loads the latest publication automatically, checks again every
+          five minutes while open, and also checks when the browser reconnects
+          or regains focus. “Check for updates” is only a manual retry; it does
+          not send mail or rerun source collection.
         </p>
         <p>
           Review ID: <code>{id}</code>
@@ -1157,6 +1160,8 @@ export default function DirectMailPage() {
     id: string;
     publishedAt: string;
     stale: boolean;
+    fallback?: boolean;
+    warning?: string;
     data: WeeklyReview;
   }>({
     queryKey: ["direct-mail-weekly"],
@@ -1167,8 +1172,13 @@ export default function DirectMailPage() {
         throw new Error(body.message || "Unable to load review");
       return body;
     },
-    staleTime: 60000,
-    retry: 1,
+    staleTime: 5 * 60_000,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10_000),
+    refetchInterval: 5 * 60_000,
+    refetchIntervalInBackground: true,
+    refetchOnReconnect: "always",
+    refetchOnWindowFocus: "always",
   });
   const d = q.data?.data;
   return (
@@ -1199,7 +1209,7 @@ export default function DirectMailPage() {
             size={15}
             className={q.isFetching ? styles.spin : undefined}
           />
-          {q.isFetching ? "Refreshing…" : "Refresh results"}
+          {q.isFetching ? "Checking…" : "Check for updates"}
         </button>
       </header>
       <div className={styles.freshness}>
@@ -1211,7 +1221,20 @@ export default function DirectMailPage() {
             ? `Evidence through ${monthLabel(d.asOf.slice(0, 7)).split(" ")[0]} ${Number(d.asOf.slice(8))}, ${d.asOf.slice(0, 4)}`
             : "Loading latest review…"}
         </span>
-        <span>Weekly · Friday, 8 a.m. Chicago</span>
+        <span>Updates weekdays · 8 a.m. &amp; 2 p.m. Chicago</span>
+        {q.data?.publishedAt && (
+          <span>
+            Published{" "}
+            {new Date(q.data.publishedAt).toLocaleString("en-US", {
+              timeZone: "America/Chicago",
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            })}{" "}
+            CT
+          </span>
+        )}
         <Pill tone="muted">Mailing approval required</Pill>
       </div>
       {q.data?.stale && (
@@ -1225,9 +1248,10 @@ export default function DirectMailPage() {
           {q.error.message}{" "}
           {d
             ? "The last loaded review remains visible; it has not refreshed."
-            : "The mailing-proof view remains available below."}
+            : "The page will retry automatically. The independent mailing-proof view is shown below."}
         </Notice>
       )}
+      {q.data?.fallback && <Notice>{q.data.warning}</Notice>}
       {d && (
         <div className={styles.stats}>
           <div>
@@ -1282,6 +1306,11 @@ export default function DirectMailPage() {
         <div className={styles.loading} role="status">
           <RefreshCw size={20} className={styles.spin} />
           Loading the latest reviewed results…
+        </div>
+      )}
+      {!d && q.isError && active !== "Mailing proof" && (
+        <div className={styles.content}>
+          <MailingProof />
         </div>
       )}
       {active === "Mailing proof" ? (

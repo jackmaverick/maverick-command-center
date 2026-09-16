@@ -32,6 +32,10 @@ The operator validates sums, unique IDs, source URLs and allowed fields before a
 
 After publishing, fetch the production API and match its ID, asOf and totals against the local receipt, then inspect the visible page. If the database schema or validation fails, the page shows unavailable, never synthetic data. A newer failed collection must leave the last valid publication intact and be reported by the weekly operator. Do not silently refresh timestamps on old evidence.
 
+The source operator publishes on weekdays at 8 a.m. and 2 p.m. America/Chicago. The page loads the latest publication when opened, checks every five minutes while open, and checks again after reconnect or window focus. The button is a manual retry only. The weekly endpoint examines the five newest publications and may show the newest valid one with a warning if a newer stored payload is invalid. The independent mailing-proof view renders as the failure fallback.
+
+Production builds are accepted only when Vercel reports `VERCEL_GIT_COMMIT_REF=main`. Feature branches remain preview deployments. This prevents a production CLI deployment from one feature branch from replacing unrelated, newer Command Center pages.
+
 ## Validation and recovery
 
 Run direct-mail Vitest suites, targeted ESLint and `npm run build`. In the isolated browser, check all tabs, search/filter results, monthly selector, approval-check disclosure, CSV export and narrow viewport. Confirm the original `/api/direct-mail` remains available.

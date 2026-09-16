@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/assert-production-branch.mjs && next build",
     "start": "next start",
     "lint": "eslint",
     "loop-health:migrate": "node scripts/apply-loop-health-migration.mjs",
