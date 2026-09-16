@@ -20,6 +20,7 @@ import type { WeeklyReview, WeeklyAction } from "@/lib/direct-mail/weekly";
 import {
   campaignMix,
   invoicePricing,
+  piecesForBudget,
   projectedCost,
 } from "@/lib/direct-mail/pricing";
 import JobProfit, {
@@ -213,7 +214,17 @@ function Overview({ d, onTab }: { d: WeeklyReview; onTab: (t: Tab) => void }) {
   const volume = monthlyMailVolume(d);
   const strategyRows = campaignStrategyPerformance(d);
   const strategyCoverage = campaignClassificationCoverage(d);
+  const monthlySpendTarget = 25_000;
   const monthlyPieceTarget = 50_000;
+  const invoiceRate = invoicePricing(d.invoices).rate;
+  const postageInclusiveRate = allInProjection(d);
+  const ronPiecesAtTarget = piecesForBudget(monthlySpendTarget, invoiceRate);
+  const allInPiecesAtTarget = piecesForBudget(
+    monthlySpendTarget,
+    postageInclusiveRate,
+  );
+  const allInLowTarget = projectedCost(40_000, postageInclusiveRate);
+  const allInHighTarget = projectedCost(50_000, postageInclusiveRate);
   return (
     <>
       <div className={styles.overviewGrid}>
@@ -255,7 +266,18 @@ function Overview({ d, onTab }: { d: WeeklyReview; onTab: (t: Tab) => void }) {
               <span>Growth planning target</span>
               <strong>40,000–50,000 pieces / month</strong>
             </div>
-            <small>$25,000 monthly mail spend · $1M added-revenue scenario</small>
+            <small>
+              $25,000 ≈{" "}
+              {ronPiecesAtTarget === null ? "unknown" : num(ronPiecesAtTarget)}
+              {" "}pieces at Ron&apos;s rate ·{" "}
+              {allInPiecesAtTarget === null
+                ? "unknown"
+                : num(allInPiecesAtTarget)}{" "}
+              with the current postage model
+              <br />
+              40,000–50,000 pieces ≈ {money(allInLowTarget)}–
+              {money(allInHighTarget)} all-in · $1M added-revenue scenario
+            </small>
           </div>
           <div className={styles.volumeList}>
             {volume.map((m) => (
