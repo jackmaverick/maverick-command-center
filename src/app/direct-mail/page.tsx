@@ -41,6 +41,7 @@ import { monthlyMailVolume } from "@/lib/direct-mail/volume";
 import {
   audienceLabels,
   campaignClassificationCoverage,
+  campaignOperatingSignal,
   campaignStrategyPerformance,
   touchLabels,
 } from "@/lib/direct-mail/strategy";
@@ -95,6 +96,10 @@ const monthLabel = (m: string) =>
   });
 const unitMoney = (n: number | null) =>
   n === null ? "Unknown" : `$${n.toFixed(4)}`;
+const oneDecimal = (n: number | null) =>
+  n === null ? "Unavailable" : n.toFixed(1);
+const multiple = (n: number | null) =>
+  n === null ? "Unavailable" : `${n.toFixed(2)}×`;
 function exportUrl(
   id: string,
   view: string,
@@ -214,6 +219,7 @@ function Overview({ d, onTab }: { d: WeeklyReview; onTab: (t: Tab) => void }) {
   const volume = monthlyMailVolume(d);
   const strategyRows = campaignStrategyPerformance(d);
   const strategyCoverage = campaignClassificationCoverage(d);
+  const operatingSignal = campaignOperatingSignal(d);
   const monthlySpendTarget = 25_000;
   const monthlyPieceTarget = 50_000;
   const invoiceRate = invoicePricing(d.invoices).rate;
@@ -391,6 +397,24 @@ function Overview({ d, onTab }: { d: WeeklyReview; onTab: (t: Tab) => void }) {
             </tbody>
           </table>
         </div>
+        {operatingSignal && (
+          <div className={styles.strategyRecommendation}>
+            <div>
+              <span>Current directional recommendation</span>
+              <strong>{operatingSignal.recommendation}</strong>
+            </div>
+            <p>
+              Scheduled-neighborhood campaigns currently show{" "}
+              {oneDecimal(operatingSignal.scheduled.leadsPerThousandRequested)}{" "}
+              linked leads per 1,000 requested and{" "}
+              {multiple(operatingSignal.scheduled.roas)} revenue ROAS, versus{" "}
+              {oneDecimal(operatingSignal.general.leadsPerThousandRequested)} and{" "}
+              {multiple(operatingSignal.general.roas)} for general audiences.
+              Their average batches are {num(operatingSignal.scheduled.averageRequest)}
+              {" "}and {num(operatingSignal.general.averageRequest)} requested rows.
+            </p>
+          </div>
+        )}
         <div className={styles.footnote}>
           {strategyCoverage.classified} of {strategyCoverage.total} campaigns have
           both audience and touch reviewed. Leads and revenue use exact prior-list
@@ -514,6 +538,7 @@ function BudgetPlanner({ d }: { d: WeeklyReview }) {
   const historicalAverage = d.summary.packages
     ? Math.round(d.summary.requested / d.summary.packages)
     : null;
+  const strategyCoverage = campaignClassificationCoverage(d);
   const mix = campaignMix({
     target: parseQuantity(monthlyTarget),
     largeDrops: parseQuantity(largeDrops),
@@ -707,10 +732,11 @@ function BudgetPlanner({ d }: { d: WeeklyReview }) {
           </div>
         </div>
         <p className={styles.profitNote}>
-          The current data does not classify historical campaigns as
-          job-scheduled versus general audience, so this compares volume,
-          workload and cost only. It does not claim which strategy produces a
-          better response or return.
+          The Overview compares the {strategyCoverage.classified} of{" "}
+          {strategyCoverage.total} campaigns with reviewed audience and touch
+          classifications. This planner only models volume, workload and cost;
+          changing this scenario does not create mailings or alter the historical
+          performance comparison.
         </p>
       </Panel>
       <Panel
