@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { allocationCost, mailingCosts, returnMetrics, grossProfitPerDollar, allInProjection, type CostAllocation } from "./costs";
+import { allocationCost, mailingCosts, returnMetrics, grossProfitPerDollar, perDollarReturn, cashTotals, allInProjection, type CostAllocation } from "./costs";
 import { weeklyFixture } from "./weekly-fixture";
 import { weeklySchema } from "./weekly";
 const allocation: CostAllocation = { campaignId:"example", invoiceNumber:"1523", vendorCost:212.02, method:"exact", postal:{documentId:"carriage-july",pieces:293,total:102.62,net:73.32,stamps:"in_vendor",evidence:"https://mail.google.com/mail/#all/abc123"},gaps:[],note:"Individual list amount" };
@@ -21,6 +21,23 @@ describe("Mailing costs", () => {
     expect(grossProfitPerDollar(50, 100)).toBe(0.5);
     expect(grossProfitPerDollar(50, 0)).toBeNull();
     expect(grossProfitPerDollar(null, 100)).toBeNull();
+    expect(perDollarReturn(250, 100)).toBe(2.5);
+  });
+  it("keeps applied and unapplied customer cash separate", () => {
+    const d = weeklyFixture();
+    expect(cashTotals(d)).toEqual({ applied: null, unapplied: null });
+    d.cashReview = {
+      verifiedAt: d.generatedAt,
+      jobs: [
+        { jobId: "job-1", applied: 100.01, unapplied: 25 },
+        { jobId: "job-2", applied: 49.99, unapplied: 0 },
+      ],
+      months: [
+        { month: "2026-09", applied: 150, unapplied: 25 },
+      ],
+      note: "Synthetic reviewed cash snapshot.",
+    };
+    expect(cashTotals(d)).toEqual({ applied: 150, unapplied: 25 });
   });
   it("rejects unreconciled allocations and duplicate postal statements", () => {
     const d=weeklyFixture();

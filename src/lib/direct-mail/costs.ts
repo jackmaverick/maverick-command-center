@@ -34,9 +34,24 @@ export function grossProfitPerDollar(
   grossProfit: number | null,
   spend: number | null,
 ) {
-  return spend !== null && spend > 0 && grossProfit !== null
-    ? grossProfit / spend
+  return perDollarReturn(grossProfit, spend);
+}
+export function perDollarReturn(
+  value: number | null,
+  spend: number | null,
+) {
+  return spend !== null && spend > 0 && value !== null
+    ? value / spend
     : null;
+}
+export function cashTotals(d: WeeklyReview) {
+  if (!d.cashReview) return { applied: null, unapplied: null };
+  return {
+    applied: round(d.cashReview.jobs.reduce((sum, job) => sum + job.applied, 0)),
+    unapplied: round(
+      d.cashReview.jobs.reduce((sum, job) => sum + job.unapplied, 0),
+    ),
+  };
 }
 export function allInProjection(d: WeeklyReview, basis = "all") {
   if (!d.costReview) return null;

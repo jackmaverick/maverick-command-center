@@ -26,7 +26,9 @@ import MailingCosts, { MailReturns } from "@/components/direct-mail/mailing-cost
 import {
   allInProjection,
   grossProfitPerDollar,
+  cashTotals,
   mailingCosts,
+  perDollarReturn,
   returnMetrics,
 } from "@/lib/direct-mail/costs";
 import { profitTotals } from "@/lib/direct-mail/profit";
@@ -1202,6 +1204,11 @@ export default function DirectMailPage() {
     currentGrossProfit,
     documentedMailCost,
   );
+  const currentCash = d ? cashTotals(d) : { applied: null, unapplied: null };
+  const currentCashPerDollar = perDollarReturn(
+    currentCash.applied,
+    documentedMailCost,
+  );
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -1350,6 +1357,36 @@ export default function DirectMailPage() {
                 : currentProfit
                   ? `Provisional · ${currentProfit.reconciledJobs} reconciled, ${currentProfit.provisionalJobs} provisional`
                   : "Loading cost accuracy"}
+            </small>
+          </div>
+          <div>
+            <span>Applied customer cash</span>
+            <strong>{money(currentCash.applied)}</strong>
+            <small>
+              {currentCash.unapplied === null
+                ? "Reviewed payment snapshot unavailable"
+                : `${money(currentCash.unapplied)} unapplied · kept separate`}
+            </small>
+            <small className={styles.amberText}>
+              {d.cashReview
+                ? `Reviewed ${new Date(d.cashReview.verifiedAt).toLocaleDateString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric" })} · bank settlement unverified`
+                : "Needs a reviewed customer-cash snapshot"}
+            </small>
+          </div>
+          <div>
+            <span>Applied cash per $1 of mail spend</span>
+            <strong>
+              {currentCashPerDollar === null
+                ? "Unavailable"
+                : `$${currentCashPerDollar.toFixed(2)}`}
+            </strong>
+            <small>
+              {currentCash.applied === null || documentedMailCost === null
+                ? "Needs reviewed applied cash and mailing cost"
+                : `${money(currentCash.applied)} applied ÷ ${money(documentedMailCost)} documented mailing cost`}
+            </small>
+            <small className={styles.amberText}>
+              Provisional · cash timing differs from mailing timing
             </small>
           </div>
         </div>
