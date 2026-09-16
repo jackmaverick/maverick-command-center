@@ -17,7 +17,11 @@ import {
   TrendingUp,
 } from "lucide-react";
 import type { WeeklyReview, WeeklyAction } from "@/lib/direct-mail/weekly";
-import { invoicePricing, projectedCost } from "@/lib/direct-mail/pricing";
+import {
+  campaignMix,
+  invoicePricing,
+  projectedCost,
+} from "@/lib/direct-mail/pricing";
 import JobProfit, {
   CampaignJobProfit,
   useJobProfits,
@@ -380,6 +384,11 @@ function Overview({ d, onTab }: { d: WeeklyReview; onTab: (t: Tab) => void }) {
 function BudgetPlanner({ d }: { d: WeeklyReview }) {
   const [basis, setBasis] = useState("all");
   const [rows, setRows] = useState("1000");
+  const [monthlyTarget, setMonthlyTarget] = useState("45000");
+  const [largeDrops, setLargeDrops] = useState("2");
+  const [largePieces, setLargePieces] = useState("15000");
+  const [automatedDrops, setAutomatedDrops] = useState("20");
+  const [automatedPieces, setAutomatedPieces] = useState("750");
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [sort, setSort] = useState("priority");
   const pricing = invoicePricing(d.invoices, basis);
@@ -395,6 +404,19 @@ function BudgetPlanner({ d }: { d: WeeklyReview }) {
       quantities[a.id] ??
         (a.proposedQuantity === null ? "" : String(a.proposedQuantity)),
     );
+  const historicalAverage = d.summary.packages
+    ? Math.round(d.summary.requested / d.summary.packages)
+    : null;
+  const mix = campaignMix({
+    target: parseQuantity(monthlyTarget),
+    largeDrops: parseQuantity(largeDrops),
+    largePieces: parseQuantity(largePieces),
+    automatedDrops: parseQuantity(automatedDrops),
+    automatedPieces: parseQuantity(automatedPieces),
+    historicalAverage,
+    invoiceRate: pricing.rate,
+    allInRate,
+  });
   const mailings = d.actions.filter((a) => a.lane !== "Resolve evidence");
   const planned = mailings.filter((a) => quantity(a) !== null);
   const plannedTotal =
@@ -480,6 +502,110 @@ function BudgetPlanner({ d }: { d: WeeklyReview }) {
         not included. Small lists may cost more per piece because setup fees are
         spread over fewer homes.
       </Notice>
+      <Panel
+        title="Plan the monthly campaign mix"
+        detail="Compare large audience drops with an automated neighborhood program. This scenario stays in your browser and does not create mailings."
+      >
+        <div className={styles.mixControls}>
+          <label>
+            Monthly piece target
+            <input
+              aria-label="Monthly piece target"
+              type="number"
+              min="0"
+              step="1"
+              value={monthlyTarget}
+              onChange={(e) => setMonthlyTarget(e.target.value)}
+            />
+          </label>
+          <label>
+            Large audience drops
+            <input
+              aria-label="Large audience drops"
+              type="number"
+              min="0"
+              step="1"
+              value={largeDrops}
+              onChange={(e) => setLargeDrops(e.target.value)}
+            />
+          </label>
+          <label>
+            Pieces per large drop
+            <input
+              aria-label="Pieces per large audience drop"
+              type="number"
+              min="0"
+              step="1"
+              value={largePieces}
+              onChange={(e) => setLargePieces(e.target.value)}
+            />
+          </label>
+          <label>
+            Automated neighborhood runs
+            <input
+              aria-label="Automated neighborhood runs"
+              type="number"
+              min="0"
+              step="1"
+              value={automatedDrops}
+              onChange={(e) => setAutomatedDrops(e.target.value)}
+            />
+          </label>
+          <label>
+            Pieces per neighborhood run
+            <input
+              aria-label="Pieces per automated neighborhood run"
+              type="number"
+              min="0"
+              step="1"
+              value={automatedPieces}
+              onChange={(e) => setAutomatedPieces(e.target.value)}
+            />
+          </label>
+        </div>
+        <div className={styles.mixSummary} aria-live="polite">
+          <div>
+            <small>Planned monthly volume</small>
+            <strong>{mix ? num(mix.pieces) : "Enter valid quantities"}</strong>
+            <span>
+              {mix
+                ? mix.gap === 0
+                  ? "Target met"
+                  : mix.gap > 0
+                    ? `${num(mix.gap)} pieces below target`
+                    : `${num(Math.abs(mix.gap))} pieces above target`
+                : "Whole numbers only"}
+            </span>
+          </div>
+          <div>
+            <small>Campaign workload</small>
+            <strong>{mix ? `${mix.campaigns} campaigns` : "—"}</strong>
+            <span>
+              {!mix ||
+              mix.historicalBatches === null ||
+              historicalAverage === null
+                ? "Historical comparison unavailable"
+                : `${mix.historicalBatches} batches at the current ${num(historicalAverage)}-piece average`}
+            </span>
+          </div>
+          <div>
+            <small>Projected Ron invoice</small>
+            <strong>{exactMoney(mix?.invoiceCost ?? null)}</strong>
+            <span>{unitMoney(pricing.rate)} invoice-based per piece</span>
+          </div>
+          <div>
+            <small>Projected total with postage</small>
+            <strong>{exactMoney(mix?.allInCost ?? null)}</strong>
+            <span>{unitMoney(allInRate)} planning rate per piece</span>
+          </div>
+        </div>
+        <p className={styles.profitNote}>
+          The current data does not classify historical campaigns as
+          job-scheduled versus general audience, so this compares volume,
+          workload and cost only. It does not claim which strategy produces a
+          better response or return.
+        </p>
+      </Panel>
       <Panel
         title="Quick estimate"
         detail="Use any planned piece count. No payment or mailing is created."

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { invoicePricing, projectedCost } from "./pricing";
+import { campaignMix, invoicePricing, projectedCost } from "./pricing";
 import { weeklyFixture } from "./weekly-fixture";
 import { weeklySchema } from "./weekly";
 describe("invoice-based mailing budgets", () => {
@@ -43,5 +43,38 @@ describe("invoice-based mailing budgets", () => {
     expect(projectedCost(null, 0.5)).toBeNull();
     expect(projectedCost(1.5, 0.5)).toBeNull();
     expect(projectedCost(0, 0.5)).toBe(0);
+  });
+  it("compares a mixed campaign plan with the historical batch workload", () => {
+    expect(
+      campaignMix({
+        target: 45000,
+        largeDrops: 2,
+        largePieces: 15000,
+        automatedDrops: 20,
+        automatedPieces: 750,
+        historicalAverage: 742,
+        invoiceRate: 0.5453,
+        allInRate: 0.69,
+      }),
+    ).toEqual({
+      pieces: 45000,
+      gap: 0,
+      campaigns: 22,
+      historicalBatches: 61,
+      invoiceCost: 24538.5,
+      allInCost: 31050,
+    });
+    expect(
+      campaignMix({
+        target: 45000,
+        largeDrops: null,
+        largePieces: 15000,
+        automatedDrops: 20,
+        automatedPieces: 750,
+        historicalAverage: 742,
+        invoiceRate: 0.5453,
+        allInRate: 0.69,
+      }),
+    ).toBeNull();
   });
 });
