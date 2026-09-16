@@ -30,6 +30,14 @@ export function returnMetrics(revenue: number | null, grossProfit: number | null
     roi: valid && grossProfit !== null ? (grossProfit - spend) / spend : null,
     contribution: spend !== null && grossProfit !== null ? round(grossProfit - spend) : null };
 }
+export function grossProfitPerDollar(
+  grossProfit: number | null,
+  spend: number | null,
+) {
+  return spend !== null && spend > 0 && grossProfit !== null
+    ? grossProfit / spend
+    : null;
+}
 export function allInProjection(d: WeeklyReview, basis = "all") {
   if (!d.costReview) return null;
   const invoices = basis === "latest" ? [...d.invoices].sort((a,b) => b.invoiceDate.localeCompare(a.invoiceDate)).slice(0,1) : d.invoices;

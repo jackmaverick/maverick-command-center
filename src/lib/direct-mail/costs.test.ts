@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { allocationCost, mailingCosts, returnMetrics, allInProjection, type CostAllocation } from "./costs";
+import { allocationCost, mailingCosts, returnMetrics, grossProfitPerDollar, allInProjection, type CostAllocation } from "./costs";
 import { weeklyFixture } from "./weekly-fixture";
 import { weeklySchema } from "./weekly";
 const allocation: CostAllocation = { campaignId:"example", invoiceNumber:"1523", vendorCost:212.02, method:"exact", postal:{documentId:"carriage-july",pieces:293,total:102.62,net:73.32,stamps:"in_vendor",evidence:"https://mail.google.com/mail/#all/abc123"},gaps:[],note:"Individual list amount" };
@@ -18,6 +18,9 @@ describe("Mailing costs", () => {
     expect(returnMetrics(1000,50,100)).toEqual({roas:10,roi:-0.5,contribution:-50});
     expect(returnMetrics(1000,50,0).roas).toBeNull();
     expect(returnMetrics(1000,50,null).contribution).toBeNull();
+    expect(grossProfitPerDollar(50, 100)).toBe(0.5);
+    expect(grossProfitPerDollar(50, 0)).toBeNull();
+    expect(grossProfitPerDollar(null, 100)).toBeNull();
   });
   it("rejects unreconciled allocations and duplicate postal statements", () => {
     const d=weeklyFixture();
