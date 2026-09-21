@@ -33,12 +33,27 @@ const interval = z
     confidence: text,
   })
   .strict();
+const reviewedAudience = z
+  .object({
+    id: text,
+    anchorJobId: text,
+    neighborhood: text,
+    eligibleCount: count,
+    preparationStage: z.literal("candidate_list_prepared_for_review"),
+    sourceSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    suppressionAuditSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    eligibleCsvSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    sourceSnapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
+    freshness: z.enum(["current_source", "preserved_prior_review"]),
+  })
+  .strict();
 export const neighborhoodSchema = z
   .object({
     version: z.literal(1),
     ronPrepCalendarDays: count,
     asOf: z.iso.datetime({ offset: true }),
     sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
+    reviewedAudiences: z.array(reviewedAudience).max(5000).optional(),
     opportunities: z
       .array(
         z
@@ -142,7 +157,15 @@ export const neighborhoodSchema = z
       z.object({ id: text, action: text, reason: text }).strict(),
     ),
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    const ids = new Set<string>();
+    for (const audience of data.reviewedAudiences ?? []) {
+      if (ids.has(audience.id))
+        ctx.addIssue({ code: "custom", message: "Duplicate reviewed audience identity" });
+      ids.add(audience.id);
+    }
+  });
 export type NeighborhoodReview = z.infer<typeof neighborhoodSchema>;
 export function neighborhoodIsStale(asOf: string, now = Date.now()) {
   const age = now - Date.parse(asOf);

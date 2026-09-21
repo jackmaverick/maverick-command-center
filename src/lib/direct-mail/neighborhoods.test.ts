@@ -77,4 +77,26 @@ describe("neighborhood evidence contract", () => {
       ),
     ).toBe(false);
   });
+  it("retains hash-only reviewed audiences and rejects conflicting identities", () => {
+    const audience = {
+      id: "audience:example",
+      anchorJobId: "job123456789",
+      neighborhood: "Example Hills",
+      eligibleCount: 12,
+      preparationStage: "candidate_list_prepared_for_review" as const,
+      sourceSha256: "a".repeat(64),
+      suppressionAuditSha256: "b".repeat(64),
+      eligibleCsvSha256: "c".repeat(64),
+      sourceSnapshotHash: "d".repeat(64),
+      freshness: "preserved_prior_review" as const,
+    };
+    const parsed = neighborhoodSchema.parse({ ...fixture(), reviewedAudiences: [audience] });
+    expect(parsed.reviewedAudiences).toEqual([audience]);
+    expect(() => neighborhoodSchema.parse({
+      ...fixture(), reviewedAudiences: [audience, { ...audience, freshness: "current_source" }],
+    })).toThrow("Duplicate reviewed audience identity");
+    expect(() => neighborhoodSchema.parse({
+      ...fixture(), reviewedAudiences: [{ ...audience, sourcePath: "/private/list.csv" }],
+    })).toThrow();
+  });
 });
