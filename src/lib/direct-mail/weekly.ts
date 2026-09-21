@@ -55,6 +55,11 @@ export const weeklySchema = z
       months: z.array(z.object({ month, applied: amount, unapplied: amount }).strict()),
       note: text,
     }).strict().optional(),
+    invoiceReview: z.object({
+      verifiedAt: z.iso.datetime({ offset: true }),
+      jobs: z.array(z.object({ jobId: text, invoiced: amount }).strict()).max(10000),
+      note: text,
+    }).strict().optional(),
     jobCostHolds: z.array(z.object({ jobId: text, reason: text }).strict()).max(1000).optional(),
     jobLinks: z
       .array(
@@ -232,6 +237,13 @@ export const weeklySchema = z
       if (new Set(cash.months.map(m => m.month)).size !== cash.months.length) fail("Duplicate cash month");
       for (const field of ["applied", "unapplied"] as const)
         if (Math.abs(sum(cash.jobs.map(j => j[field])) - sum(cash.months.map(m => m[field]))) > 0.005) fail("Cash months do not reconcile to jobs");
+    }
+    if (data.invoiceReview) {
+      const invoice = data.invoiceReview;
+      if (invoice.jobs.length !== jobIds.size || new Set(invoice.jobs.map(j => j.jobId)).size !== jobIds.size || invoice.jobs.some(j => !jobIds.has(j.jobId)))
+        fail("Invoice review must cover every reviewed job once");
+      if (Math.abs(sum(invoice.jobs.map(j => j.invoiced)) - data.summary.invoiced) > 0.005)
+        fail("Invoice review does not reconcile to invoiced revenue");
     }
     for (const h of data.jobCostHolds ?? []) if (!jobIds.has(h.jobId)) fail("Unknown job cost hold");
     for (const [label, total, actual] of [

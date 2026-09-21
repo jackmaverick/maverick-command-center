@@ -19,6 +19,33 @@ describe("aggregate weekly review contract", () => {
     d.invoices.push({ ...d.invoices[0] });
     expect(() => weeklySchema.parse(d)).toThrow();
   });
+  it("accepts invoice revenue separately from cash and rejects conflicting invoice evidence", () => {
+    const d = weeklyFixture();
+    d.jobLinks = [
+      { jobId: "testjob123456", leadMonth: "2026-09", campaignId: "test-campaign", linkage: "single_prior_list_address_match" },
+      { jobId: "otherjob123456", leadMonth: "2026-09", campaignId: null, linkage: "no_exact_prior_list_match" },
+    ];
+    d.invoiceReview = {
+      verifiedAt: d.generatedAt,
+      jobs: [
+        { jobId: "testjob123456", invoiced: 1000 },
+        { jobId: "otherjob123456", invoiced: 0 },
+      ],
+      note: "Synthetic billed-revenue fixture; not payment evidence.",
+    };
+    d.cashReview = {
+      verifiedAt: d.generatedAt,
+      jobs: [
+        { jobId: "testjob123456", applied: 0, unapplied: 0 },
+        { jobId: "otherjob123456", applied: 0, unapplied: 0 },
+      ],
+      months: [],
+      note: "Synthetic cash snapshot",
+    };
+    expect(weeklySchema.parse(d).invoiceReview?.jobs[0].invoiced).toBe(1000);
+    d.invoiceReview!.jobs[0].invoiced = 999;
+    expect(() => weeklySchema.parse(d)).toThrow("Invoice review does not reconcile");
+  });
   it("rejects private fields and unexpected source links", () => {
     const d = weeklyFixture();
     expect(() =>
