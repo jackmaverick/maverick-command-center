@@ -28,6 +28,18 @@ export function projectedCost(quantity: number | null, rate: number | null) {
     : Math.round(quantity * rate * 100) / 100;
 }
 
+/** Approximate physical pieces a planning budget supports at one per-piece rate. */
+export function piecesForBudget(budget: number | null, rate: number | null) {
+  return budget === null ||
+    rate === null ||
+    !Number.isFinite(budget) ||
+    budget < 0 ||
+    !Number.isFinite(rate) ||
+    rate <= 0
+    ? null
+    : Math.round(budget / rate);
+}
+
 export function campaignMix(input: {
   target: number | null;
   largeDrops: number | null;
