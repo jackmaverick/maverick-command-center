@@ -1,37 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET } from "./route";
-
 const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }));
 vi.mock("@/lib/db", () => ({ query: queryMock }));
-
-describe("lead source reporting evidence", () => {
-  beforeEach(() => queryMock.mockReset());
-
-  it("identifies unavailable spend sources instead of presenting complete cost coverage", async () => {
-    queryMock.mockImplementation(async (sql: string) => {
-      if (/FROM (marketing_campaigns|lsa_leads|app_recurring_expenses|app_one_time_expenses)/.test(sql)) {
-        throw new Error("source unavailable");
-      }
-      return [];
-    });
-    const response = await GET(new NextRequest("https://example.test/api/lead-sources?period=last_month"));
-    const data = await response.json();
-    expect(response.status).toBe(200);
-    expect(data.reportingNotes.unavailableCostSources.sort()).toEqual([
-      "app_one_time_expenses", "app_recurring_expenses", "lsa_leads", "marketing_campaigns",
-    ]);
-    expect(data.reportingNotes.spendCoverage).toBe("partial_unverified");
-    expect(data.acquisition.blendedCac).toBeNull();
+describe("actual reporting API",()=>{
+ beforeEach(()=>{ queryMock.mockReset(); });
+ it("exposes failed sources without inventing zero costs",async()=>{
+  queryMock.mockImplementation(async(sql:string)=>{
+   if(sql.includes("WITH eligible"))return [];
+   throw new Error("unavailable");
   });
-
-  it("does not claim that a successful empty query proves full spend coverage", async () => {
-    queryMock.mockResolvedValue([]);
-    const response = await GET(new NextRequest("https://example.test/api/lead-sources?period=last_month"));
-    const data = await response.json();
-    expect(data.reportingNotes.unavailableCostSources).toEqual([]);
-    expect(data.reportingNotes.spendCoverage).toBe("partial_unverified");
-    expect(data.reportingNotes.acquisitionBasis).toContain("not_customer_cac");
-    expect(data.reportingNotes.revenueBasis).toContain("not_collected_cash");
-  });
+  const response=await GET(new NextRequest("https://example.test/api/lead-sources?period=ytd"));
+  const r=await response.json();expect(response.status).toBe(200);
+  expect(r.unavailableSources).toHaveLength(6);expect(r.totals.recordedDeliverySubtotal).toBeNull();
+  expect(r.totals.customerCac).toBeNull();expect(r.budget.recurringMonthly).toBeNull();
+ });
+ it("fails closed when the core CRM query fails",async()=>{
+  queryMock.mockRejectedValue(new Error("unavailable"));
+  const response=await GET(new NextRequest("https://example.test/api/lead-sources?period=ytd"));
+  expect(response.status).toBe(503);
+ });
+ it("rejects invalid periods before querying",async()=>{
+  expect((await GET(new NextRequest("https://example.test/api/lead-sources?period=bad"))).status).toBe(400);
+  expect(queryMock).not.toHaveBeenCalled();
+ });
+ it("uses only nonoverlapping Meta rows and retains nullable costs in SQL",async()=>{
+  queryMock.mockResolvedValue([]);
+  await GET(new NextRequest("https://example.test/api/lead-sources?period=ytd"));
+  const queries=queryMock.mock.calls.map(c=>c[0] as string);
+  expect(queries.find(s=>s.includes("FROM meta_ads_daily_insights"))).toContain("breakdown='{}'::jsonb");
+  expect(queries.some(s=>s.includes("qbo_purchases"))).toBe(false);
+  expect(queries.find(s=>s.includes("FROM marketing_campaigns"))).not.toContain("COALESCE");
+  expect(queries.find(s=>s.includes("WITH eligible"))).toContain("deleted_at IS NULL");
+ });
 });

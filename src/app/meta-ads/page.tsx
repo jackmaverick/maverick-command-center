@@ -10,7 +10,7 @@ import { formatCurrency, formatPercent } from "@/lib/dates";
 interface MetaAdsData {
   period: { key: string; label: string; start: string; end: string };
   meta: {
-    accountId: string; spend: number; impressions: number; clicks: number; linkClicks: number;
+    accountId: string; spend: number | null; impressions: number; clicks: number; linkClicks: number;
     landingPageViews: number; websiteLeads: number; costPerLead: number | null; ctr: number | null;
     campaigns: { id: string | null; name: string; spend: number; websiteLeads: number; costPerLead: number | null; impressions: number; linkClicks: number }[];
   };
@@ -21,14 +21,10 @@ interface MetaAdsData {
     materialOnlyGrossProfit: number | null;
   };
   attribution: {
-    sourceName: string; unmatchedMetaLeads: number; crmMatchRate: number | null;
+    sourceName: string; unmatchedMetaLeads: number | null; crmMatchRate: number | null;
     revenueRoas: number | null; costPerMaterialOnlyProfit: number | null;
   };
   sync: { completed_at: string | null; status: string; window_start: string; window_end: string } | null;
-}
-
-function rate(numerator: number, denominator: number): string {
-  return denominator > 0 ? formatPercent((numerator / denominator) * 100) : "—";
 }
 
 function metric(value: number | null, suffix = ""): string {
@@ -67,7 +63,7 @@ export default function MetaAdsPage() {
   });
 
   const stages = data ? [
-    { label: "CRM-attributed leads", value: data.funnel.crmLeads, denominator: data.meta.websiteLeads, detail: `of ${data.meta.websiteLeads} canonical Meta website leads` },
+    { label: "CRM source-labelled jobs", value: data.funnel.crmLeads, denominator: data.meta.websiteLeads, detail: "Source label only; no record-level platform matching" },
     { label: "Appointments set", value: data.funnel.appointmentsSet, denominator: data.funnel.crmLeads, detail: "JobNimbus status-history evidence" },
     { label: "Appointments ran", value: data.funnel.appointmentsRan, denominator: data.funnel.appointmentsSet, detail: "JobNimbus status-history evidence" },
     { label: "Estimates sent", value: data.funnel.estimatesSent, denominator: data.funnel.appointmentsRan, detail: "Estimate record status / signature evidence" },
@@ -93,10 +89,11 @@ export default function MetaAdsPage() {
         </div>
       )}
       {data && <>
+        <p className="mb-6 rounded-lg border border-amber-500/40 p-4 text-sm text-amber-200">Partial source reporting. Missing dates are not zero spend. Complete Central days only; today excluded. See Lead Sources &amp; Actual Costs for separate agency payments, setup costs and evidence.</p>
         <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-5">
-          <Card label="Meta website leads" value={data.meta.websiteLeads.toLocaleString()} detail={`Canonical lead event · ${formatCurrency(data.meta.costPerLead ?? 0)} CPL`} icon={Target} />
-          <Card label="Meta spend" value={formatCurrency(data.meta.spend)} detail={`${data.meta.linkClicks.toLocaleString()} link clicks · ${data.meta.ctr === null ? "—" : formatPercent(data.meta.ctr)} CTR`} icon={CircleDollarSign} />
-          <Card label="CRM-attributed leads" value={data.funnel.crmLeads.toLocaleString()} detail={`${data.attribution.crmMatchRate === null ? "—" : formatPercent(data.attribution.crmMatchRate)} matched to Meta`} icon={Database} />
+          <Card label="Meta website leads" value={data.meta.websiteLeads.toLocaleString()} detail={`Observed platform actions · ${data.meta.costPerLead===null?"Unverified":formatCurrency(data.meta.costPerLead)} media CPL`} icon={Target} />
+          <Card label="Meta spend" value={data.meta.spend===null?"Unverified":formatCurrency(data.meta.spend)} detail={`${data.meta.linkClicks.toLocaleString()} link clicks · ${data.meta.ctr === null ? "—" : formatPercent(data.meta.ctr)} CTR`} icon={CircleDollarSign} />
+          <Card label="CRM source-labelled jobs" value={data.funnel.crmLeads.toLocaleString()} detail="Not a verified platform match rate" icon={Database} />
           <Card label="Invoice-based ROAS" value={metric(data.attribution.revenueRoas, "×")} detail={data.funnel.invoiceJobs ? `${formatCurrency(data.funnel.invoicedRevenue)} from ${data.funnel.invoiceJobs} invoiced job(s)` : "No eligible invoices in cohort"} icon={CircleDollarSign} />
           <Card label="Cost per profit" value={data.attribution.costPerMaterialOnlyProfit === null ? "Unavailable" : formatCurrency(data.attribution.costPerMaterialOnlyProfit)} detail={data.funnel.profitCoverageComplete ? "Material-only contribution; excludes labor/commission" : `Material cost coverage: ${data.funnel.materialCoveredInvoiceJobs}/${data.funnel.invoiceJobs} invoice jobs`} icon={Funnel} />
         </div>
@@ -104,13 +101,13 @@ export default function MetaAdsPage() {
         <section className="mb-8 rounded-lg border border-[#30363d] bg-[#161b22]">
           <div className="border-b border-[#30363d] px-5 py-4">
             <h2 className="font-semibold text-[#e6edf3]">Roof Ignite conversion funnel</h2>
-            <p className="mt-1 text-sm text-[#8b949e]">Each CRM stage is counted from the same source-qualified lead cohort. A dash means its prior stage has no verified records.</p>
+            <p className="mt-1 text-sm text-[#8b949e]">Counts are source-labelled job evidence as observed now. Qualification, history completeness and held-appointment outcomes are unverified; counts are not a sequential conversion funnel.</p>
           </div>
           <div className="grid divide-y divide-[#30363d] md:grid-cols-3 md:divide-x md:divide-y-0">
             {stages.map((stage) => <div key={stage.label} className="p-5">
               <p className="text-sm text-[#8b949e]">{stage.label}</p>
               <p className="mt-1 text-3xl font-bold text-[#e6edf3]">{stage.value}</p>
-              <p className="mt-2 text-sm text-[#58a6ff]">{rate(stage.value, stage.denominator)} conversion</p>
+              <p className="mt-2 text-sm text-[#58a6ff]">Conversion rate unverified</p>
               <p className="mt-1 text-xs text-[#8b949e]">{stage.detail}</p>
             </div>)}
           </div>
@@ -120,11 +117,11 @@ export default function MetaAdsPage() {
           <div className="rounded-lg border border-amber-500/35 bg-amber-500/5 p-5">
             <div className="flex items-center gap-2 text-amber-200"><AlertTriangle className="h-5 w-5" /><h2 className="font-semibold">Attribution reconciliation</h2></div>
             <p className="mt-3 text-sm text-[#d0d7de]">Meta reports <strong>{data.meta.websiteLeads}</strong> canonical website-lead events; JobNimbus has <strong>{data.funnel.crmLeads}</strong> jobs sourced as “{data.attribution.sourceName}”.</p>
-            <p className="mt-2 text-sm text-[#8b949e]">{data.attribution.unmatchedMetaLeads} Meta lead event(s) are not yet source-matched in the CRM. The dashboard will not treat those as appointments, sales, or revenue.</p>
+            <p className="mt-2 text-sm text-[#8b949e]">Platform actions and CRM job totals are different units. Their difference is not a count of unmatched leads. Record-level reconciliation and comparable cost coverage are needed before ROAS or customer CAC.</p>
           </div>
           <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-5">
             <div className="flex items-center gap-2 text-[#e6edf3]"><CheckCircle2 className="h-5 w-5 text-green-400" /><h2 className="font-semibold">Data freshness</h2></div>
-            {data.sync ? <p className="mt-3 text-sm text-[#8b949e]">Latest successful ledger run: <span className="text-[#e6edf3]">{data.sync.completed_at ? new Date(data.sync.completed_at).toLocaleString() : "in progress"}</span><br />Coverage: {data.sync.window_start} to {data.sync.window_end}</p> : <p className="mt-3 text-sm text-[#8b949e]">No successful ledger run is recorded yet.</p>}
+            {data.sync ? <p className="mt-3 text-sm text-[#8b949e]">Latest ledger run ({data.sync.status}): <span className="text-[#e6edf3]">{data.sync.completed_at ? new Date(data.sync.completed_at).toLocaleString() : "in progress"}</span><br />Coverage: {data.sync.window_start} to {data.sync.window_end}</p> : <p className="mt-3 text-sm text-[#8b949e]">No successful ledger run is recorded yet.</p>}
             <p className="mt-3 text-xs text-[#8b949e]">Meta uses only the canonical <code>lead</code> event; it does not add overlapping onsite-web-lead actions.</p>
           </div>
         </section>
