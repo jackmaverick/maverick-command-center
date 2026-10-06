@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { campaignMix, invoicePricing, projectedCost } from "./pricing";
+import {
+  campaignMix,
+  invoicePricing,
+  piecesForBudget,
+  projectedCost,
+} from "./pricing";
 import { weeklyFixture } from "./weekly-fixture";
 import { weeklySchema } from "./weekly";
 describe("invoice-based mailing budgets", () => {
@@ -43,6 +48,14 @@ describe("invoice-based mailing budgets", () => {
     expect(projectedCost(null, 0.5)).toBeNull();
     expect(projectedCost(1.5, 0.5)).toBeNull();
     expect(projectedCost(0, 0.5)).toBe(0);
+  });
+  it("shows the volume supported by a monthly budget on each cost basis", () => {
+    expect(piecesForBudget(25_000, 0.5453304025913929)).toBe(45_844);
+    expect(piecesForBudget(25_000, 0.856465883299178)).toBe(29_190);
+    expect(piecesForBudget(0, 0.5)).toBe(0);
+    expect(piecesForBudget(25_000, 0)).toBeNull();
+    expect(piecesForBudget(-1, 0.5)).toBeNull();
+    expect(piecesForBudget(25_000, null)).toBeNull();
   });
   it("compares a mixed campaign plan with the historical batch workload", () => {
     expect(

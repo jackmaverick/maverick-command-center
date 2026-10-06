@@ -288,6 +288,39 @@
   text-align: right;
   line-height: 1.5;
 }
+
+.strategyRecommendation {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(320px, 1.2fr);
+  gap: 24px;
+  margin: 16px 20px 0;
+  padding: 16px 18px;
+  border: 1px solid #315548;
+  border-radius: 8px;
+  background: #14231f;
+}
+
+.strategyRecommendation span {
+  display: block;
+  margin-bottom: 5px;
+  color: #8aa99b;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.strategyRecommendation strong {
+  color: #c7f0d8;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.strategyRecommendation p {
+  margin: 0;
+  color: #aab9b2;
+  font-size: 12px;
+  line-height: 1.65;
+}
 .volumeList {
   border-top: 1px solid var(--line);
 }
@@ -876,6 +909,11 @@
   }
   .volumeTarget small {
     text-align: left;
+  }
+  .strategyRecommendation {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-inline: 16px;
   }
   .volumeRow {
     grid-template-columns: 55px minmax(0, 1fr);

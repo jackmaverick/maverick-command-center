@@ -77,3 +77,32 @@ export function campaignClassificationCoverage(d: WeeklyReview) {
   ).length;
   return { classified, total: d.campaigns.length };
 }
+
+export function campaignOperatingSignal(d: WeeklyReview) {
+  const rows = campaignStrategyPerformance(d);
+  const scheduled = rows.find(
+    (row) => row.audience === "job_scheduled_neighborhood",
+  );
+  const general = rows.find((row) => row.audience === "general_audience");
+  if (!scheduled || !general) return null;
+
+  const scheduledLeadsAhead =
+    scheduled.leadsPerThousandRequested !== null &&
+    general.leadsPerThousandRequested !== null &&
+    scheduled.leadsPerThousandRequested >= general.leadsPerThousandRequested;
+  const scheduledRoasAhead =
+    scheduled.roas !== null &&
+    general.roas !== null &&
+    scheduled.roas >= general.roas;
+
+  return {
+    scheduled,
+    general,
+    recommendation:
+      scheduledLeadsAhead && scheduledRoasAhead
+        ? "Automate scheduled-neighborhood runs; use general drops for scale."
+        : "Keep both lanes in the monthly plan while the performance signal develops.",
+    scheduledLeadsAhead,
+    scheduledRoasAhead,
+  };
+}
