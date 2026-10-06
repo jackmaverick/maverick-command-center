@@ -1,8 +1,9 @@
 import {
   startOfWeek,
   endOfWeek,
+  addWeeks,
+  addMonths,
   startOfMonth,
-  endOfMonth,
   startOfQuarter,
   startOfYear,
   subWeeks,
@@ -47,7 +48,7 @@ function currentAwareMonthRange(monthDate: Date): DateRange {
   const start = startOfMonth(monthDate);
   return {
     start,
-    end: isSameMonth(monthDate, now) ? now : endOfMonth(monthDate),
+    end: isSameMonth(monthDate, now) ? now : addMonths(start, 1),
     label: format(monthDate, "MMMM yyyy"),
   };
 }
@@ -57,7 +58,7 @@ function currentAwareWeekRange(weekDate: Date): DateRange {
   const start = startOfWeek(weekDate, { weekStartsOn: 1 });
   return {
     start,
-    end: isSameWeek(weekDate, now, { weekStartsOn: 1 }) ? now : endOfWeek(weekDate, { weekStartsOn: 1 }),
+    end: isSameWeek(weekDate, now, { weekStartsOn: 1 }) ? now : addWeeks(start, 1),
     label: `${format(start, "MMM d")} - ${format(endOfWeek(weekDate, { weekStartsOn: 1 }), "MMM d, yyyy")}`,
   };
 }
@@ -106,7 +107,7 @@ export function getDateRange(period: PeriodKey | string): DateRange {
       const lastWeek = subWeeks(now, 1);
       return {
         start: startOfWeek(lastWeek, { weekStartsOn: 1 }),
-        end: endOfWeek(lastWeek, { weekStartsOn: 1 }),
+        end: addWeeks(startOfWeek(lastWeek, { weekStartsOn: 1 }), 1),
         label: "Last Week",
       };
     }
@@ -120,7 +121,7 @@ export function getDateRange(period: PeriodKey | string): DateRange {
       const lastMonth = subMonths(now, 1);
       return {
         start: startOfMonth(lastMonth),
-        end: endOfMonth(lastMonth),
+        end: addMonths(startOfMonth(lastMonth), 1),
         label: "Last Month",
       };
     }

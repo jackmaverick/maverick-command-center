@@ -168,6 +168,8 @@ export async function GET(request: NextRequest) {
     const startUnix = toUnixSeconds(range.start);
     const endUnix = toUnixSeconds(range.end);
 
+    const unavailableCostSources: string[] = [];
+
     // ── Run all queries in parallel ──────────────────────────────────────
 
     const [
@@ -238,7 +240,7 @@ export async function GET(request: NextRequest) {
            AND send_date < $2::date
          GROUP BY channel`,
         [range.start.toISOString().slice(0, 10), range.end.toISOString().slice(0, 10)]
-      ).catch(() => []),
+      ).catch(() => { unavailableCostSources.push("marketing_campaigns"); return []; }),
 
       query<CampaignCostRow>(
         `SELECT
@@ -248,7 +250,7 @@ export async function GET(request: NextRequest) {
          WHERE COALESCE(event_at, received_at, created_at) >= $1::timestamptz
            AND COALESCE(event_at, received_at, created_at) < $2::timestamptz`,
         [range.start.toISOString(), range.end.toISOString()]
-      ).catch(() => []),
+      ).catch(() => { unavailableCostSources.push("lsa_leads"); return []; }),
 
       query<MarketingExpenseRow>(
         `SELECT name, amount::text, frequency, start_date::text, end_date::text
@@ -257,7 +259,7 @@ export async function GET(request: NextRequest) {
            AND start_date < $2::date
            AND (end_date IS NULL OR end_date >= $1::date)`,
         [range.start.toISOString().slice(0, 10), range.end.toISOString().slice(0, 10)]
-      ).catch(() => []),
+      ).catch(() => { unavailableCostSources.push("app_recurring_expenses"); return []; }),
 
       query<{ amount: string }>(
         `SELECT COALESCE(SUM(amount), 0)::text AS amount
@@ -266,7 +268,7 @@ export async function GET(request: NextRequest) {
            AND expected_date >= $1::date
            AND expected_date < $2::date`,
         [range.start.toISOString().slice(0, 10), range.end.toISOString().slice(0, 10)]
-      ).catch(() => [{ amount: "0" }]),
+      ).catch(() => { unavailableCostSources.push("app_one_time_expenses"); return [{ amount: "0" }]; }),
     ]);
 
     // ── Build revenue lookup ─────────────────────────────────────────────
@@ -407,6 +409,13 @@ export async function GET(request: NextRequest) {
         end: range.end.toISOString(),
       },
       sources,
+      reportingNotes: {
+        leadBasis: "active_unarchived_job_records_created_in_period",
+        acquisitionBasis: "recorded_cost_plus_allocated_planning_budget_per_won_job_not_customer_cac",
+        revenueBasis: "invoice_date_in_period_not_collected_cash_or_creation_cohort_revenue",
+        spendCoverage: "partial_unverified",
+        unavailableCostSources,
+      },
       acquisition: {
         totalCost: totalAcquisitionCost,
         recurringMarketingCost: round2(recurringMarketingCost),
@@ -522,7 +531,7 @@ function generateInsights(sources: SourcePerformance[]): string[] {
       overallAvgTicket > 0
     ) {
       insights.push(
-        `${topTicket.source} has the highest avg ticket at $${topTicket.avgTicket.toLocaleString("en-US", { maximumFractionDigits: 0 })} (${round1((topTicket.avgTicket / overallAvgTicket - 1) * 100)}% above average)`
+        `${topTicket.source} has the highest invoice-per-won-job ratio at $${topTicket.avgTicket.toLocaleString("en-US", { maximumFractionDigits: 0 })} (${round1((topTicket.avgTicket / overallAvgTicket - 1) * 100)}% above average)`
       );
     }
   }
@@ -533,7 +542,7 @@ function generateInsights(sources: SourcePerformance[]): string[] {
   if (cacSources.length > 0) {
     const bestCac = cacSources[0];
     insights.push(
-      `${bestCac.source} has the lowest measured CAC at $${bestCac.cac!.toLocaleString("en-US", { maximumFractionDigits: 0 })} per won job`
+      `${bestCac.source} has the lowest estimated cost per won job at $${bestCac.cac!.toLocaleString("en-US", { maximumFractionDigits: 0 })} per won job`
     );
   }
 

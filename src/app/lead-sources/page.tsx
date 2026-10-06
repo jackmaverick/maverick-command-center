@@ -64,6 +64,7 @@ interface LeadSourcesData {
     byVolume: TopSourceEntry[];
     byCloseRate: TopSourceEntry[];
   };
+  reportingNotes?: { unavailableCostSources: string[] };
   insights: string[];
 }
 
@@ -148,7 +149,7 @@ function costBasisLabel(source: LeadSourceEntry): string {
       return "Allocated";
     case "none":
     default:
-      return "No cost";
+      return "Not recorded";
   }
 }
 
@@ -246,10 +247,23 @@ export default function LeadSourcesPage() {
           </h1>
           <p className="text-[#8b949e]">
             Analyze lead source performance — volume, close rates, revenue, and
-            cost-per-acquisition by channel.
+            estimated cost per job by channel.
           </p>
         </div>
         <PeriodSelector value={period} onChange={setPeriod} />
+      </div>
+
+      <div className="mb-6 rounded-lg border border-[#d29922] p-4 text-sm text-[#e6edf3]">
+        Reporting estimates: leads count active, unarchived job records, not unique people.
+        Costs include allocated planning budget; missing spend is not zero spend.
+        Channel coverage is unverified. Customer CAC, all-channel CPL, and campaign ROAS are not verified here.
+        Invoice revenue uses invoice dates, while wins use jobs created in the selected period;
+        invoice-to-win ratios are not average contract values or cash collected.
+        {!!data?.reportingNotes?.unavailableCostSources.length && (
+          <p className="mt-2 text-[#d29922]">
+            Spend data unavailable: {data.reportingNotes.unavailableCostSources.join(", ")}. Cost estimates are incomplete.
+          </p>
+        )}
       </div>
 
       {/* KPI Cards */}
@@ -265,7 +279,7 @@ export default function LeadSourcesPage() {
           </div>
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
             <div className="mb-1">
-              <InfoTooltip label="Total Leads" explanation="Total jobs created across all lead sources in this period. A lead = a job created in JobNimbus." />
+              <InfoTooltip label="New Job Records" explanation="Total jobs created across all lead sources in this period. A lead = a job created in JobNimbus." />
             </div>
             <p className="text-xl font-bold text-[#e6edf3]">{totalLeads}</p>
           </div>
@@ -301,13 +315,13 @@ export default function LeadSourcesPage() {
           </div>
           <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4">
             <div className="mb-1">
-              <InfoTooltip label="Blended CAC" explanation="Acquisition cost divided by won jobs for paid channels in this period. Exact campaign costs are used when present; otherwise the marketing budget bucket is allocated by lead share." />
+              <InfoTooltip label="Estimated Cost / Won Job" explanation="Recorded cost plus allocated planning budget divided by currently won job records created in this period. This is not unique new-customer CAC. Channel spend coverage is unverified." />
             </div>
             <p className="text-xl font-bold text-[#d29922]">
               {formatNullableCurrency(data?.acquisition?.blendedCac ?? null)}
             </p>
             <p className="text-xs text-[#8b949e] mt-0.5">
-              {formatCurrency(data?.acquisition?.totalCost ?? 0)} tracked cost
+              {formatCurrency(data?.acquisition?.totalCost ?? 0)} recorded + allocated budget
             </p>
           </div>
         </div>
@@ -317,21 +331,21 @@ export default function LeadSourcesPage() {
         <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5 mb-6">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div>
-              <p className="text-xs text-[#8b949e]">Paid Leads</p>
+              <p className="text-xs text-[#8b949e]">Cost-allocated Jobs</p>
               <p className="mt-1 font-mono text-lg text-[#e6edf3]">{data.acquisition.paidLeads}</p>
             </div>
             <div>
-              <p className="text-xs text-[#8b949e]">Paid Wins</p>
+              <p className="text-xs text-[#8b949e]">Won Jobs</p>
               <p className="mt-1 font-mono text-lg text-[#3fb950]">{data.acquisition.paidWonJobs}</p>
             </div>
             <div>
-              <p className="text-xs text-[#8b949e]">Cost / Lead</p>
+              <p className="text-xs text-[#8b949e]">Estimated Cost / Job</p>
               <p className="mt-1 font-mono text-lg text-[#e6edf3]">
                 {formatNullableCurrency(data.acquisition.costPerLead)}
               </p>
             </div>
             <div>
-              <p className="text-xs text-[#8b949e]">ROAS</p>
+              <p className="text-xs text-[#8b949e]">Invoice / Cost Ratio</p>
               <p className="mt-1 font-mono text-lg text-[#e6edf3]">
                 {formatNullableNumber(data.acquisition.roas, "x")}
               </p>
@@ -458,16 +472,16 @@ export default function LeadSourcesPage() {
                     {(
                       [
                         { key: "source" as SortKey, label: "Source", align: "left" },
-                        { key: "totalLeads" as SortKey, label: "Leads", align: "right" },
+                        { key: "totalLeads" as SortKey, label: "Job Records", align: "right" },
                         { key: "wonJobs" as SortKey, label: "Won", align: "right" },
                         { key: "lostJobs" as SortKey, label: "Lost", align: "right" },
                         { key: "closeRate" as SortKey, label: "Close Rate", align: "right" },
-                        { key: "revenue" as SortKey, label: "Revenue", align: "right" },
-                        { key: "avgTicket" as SortKey, label: "Avg Ticket", align: "right" },
+                        { key: "revenue" as SortKey, label: "Invoiced", align: "right" },
+                        { key: "avgTicket" as SortKey, label: "Invoice / Won Job", align: "right" },
                         { key: "acquisitionCost" as SortKey, label: "Cost", align: "right" },
-                        { key: "costPerLead" as SortKey, label: "Cost / Lead", align: "right" },
-                        { key: "cac" as SortKey, label: "CAC", align: "right" },
-                        { key: "roas" as SortKey, label: "ROAS", align: "right" },
+                        { key: "costPerLead" as SortKey, label: "Est. Cost / Job", align: "right" },
+                        { key: "cac" as SortKey, label: "Est. Cost / Won Job", align: "right" },
+                        { key: "roas" as SortKey, label: "Invoice / Cost", align: "right" },
                       ] as const
                     ).map((col) => (
                       <th
@@ -512,7 +526,7 @@ export default function LeadSourcesPage() {
                       </td>
                       <td className="py-3 text-right">
                         <div className="font-mono text-[#e6edf3]">
-                          {formatCurrency(source.acquisitionCost)}
+                          {source.costBasis === "none" ? "Not recorded" : formatCurrency(source.acquisitionCost)}
                         </div>
                         <div className="text-[10px] uppercase tracking-wide text-[#8b949e]">
                           {costBasisLabel(source)}
