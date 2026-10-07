@@ -64,6 +64,33 @@ describe("dashboard authentication", () => {
     ).toBe("1");
   });
 
+  it("requires same-origin mutation requests for browser sessions", async () => {
+    const token = await createSessionToken();
+    const cookie = `${SESSION_COOKIE_NAME}=${token}`;
+
+    expect(
+      (
+        await proxy(
+          request("/api/qbo/sync", {
+            method: "POST",
+            headers: { cookie, origin: "https://attacker.example" },
+          }),
+        )
+      ).status,
+    ).toBe(403);
+
+    expect(
+      (
+        await proxy(
+          request("/api/qbo/sync", {
+            method: "POST",
+            headers: { cookie, origin: "https://dashboard.example" },
+          }),
+        )
+      ).headers.get("x-middleware-next"),
+    ).toBe("1");
+  });
+
   it("allows designated machine routes with CRON_SECRET only", async () => {
     const authorized = await proxy(
       request("/api/qbo/cron", {
@@ -71,6 +98,14 @@ describe("dashboard authentication", () => {
       }),
     );
     expect(authorized.headers.get("x-middleware-next")).toBe("1");
+
+    const machinePost = await proxy(
+      request("/api/sync", {
+        method: "POST",
+        headers: { authorization: "Bearer cron-test-secret" },
+      }),
+    );
+    expect(machinePost.headers.get("x-middleware-next")).toBe("1");
 
     const publisher = await proxy(
       request("/api/loop-health?localOnly=1", {

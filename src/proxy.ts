@@ -20,6 +20,8 @@ const CRON_PATHS = new Set([
   "/api/loop-health",
 ]);
 
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
 function unauthorized(request: NextRequest): NextResponse {
   if (request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -53,7 +55,16 @@ export async function proxy(request: NextRequest) {
   }
 
   const session = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-  if (await verifySessionToken(session)) return NextResponse.next();
+  if (await verifySessionToken(session)) {
+    if (
+      path.startsWith("/api/") &&
+      !SAFE_METHODS.has(request.method) &&
+      request.headers.get("origin") !== request.nextUrl.origin
+    ) {
+      return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
+    }
+    return NextResponse.next();
+  }
 
   return unauthorized(request);
 }
