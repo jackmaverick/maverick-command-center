@@ -1,6 +1,8 @@
 import {
   addDays,
   addMonths,
+  format,
+  isValid,
   parseISO,
   startOfDay,
   startOfMonth,
@@ -123,10 +125,16 @@ export function isMetricsPeriod(value: string): value is MetricsPeriod {
     return true;
   }
   if (value.startsWith("month:")) {
-    return /^\d{4}-\d{2}$/.test(value.slice(6));
+    const month = value.slice(6);
+    if (!/^\d{4}-\d{2}$/.test(month)) return false;
+    const parsed = parseISO(`${month}-01`);
+    return isValid(parsed) && format(parsed, "yyyy-MM") === month;
   }
   if (value.startsWith("week:")) {
-    return /^\d{4}-\d{2}-\d{2}$/.test(value.slice(5));
+    const day = value.slice(5);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+    const parsed = parseISO(day);
+    return isValid(parsed) && format(parsed, "yyyy-MM-dd") === day;
   }
   return false;
 }

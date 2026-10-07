@@ -4,6 +4,7 @@ import {
   bookedLeadSql,
   cleanLeadWhere,
   getMetricsDateRange,
+  isMetricsPeriod,
 } from "./front-funnel-metrics";
 
 describe("front-funnel metric rules", () => {
@@ -50,5 +51,12 @@ describe("front-funnel metric rules", () => {
 
     expect(range.start.toISOString()).toBe("2026-03-09T05:00:00.000Z");
     expect(range.end.toISOString()).toBe("2026-03-16T05:00:00.000Z");
+  });
+
+  it("rejects impossible custom period dates", () => {
+    expect(isMetricsPeriod("month:2026-13")).toBe(false);
+    expect(isMetricsPeriod("week:2026-02-31")).toBe(false);
+    expect(isMetricsPeriod("month:2026-02")).toBe(true);
+    expect(isMetricsPeriod("week:2026-02-28")).toBe(true);
   });
 });

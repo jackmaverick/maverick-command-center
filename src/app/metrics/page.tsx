@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 interface Rate {
   count: number;
   sampleSize: number;
-  percent: number;
+  percent: number | null;
 }
 
 interface SourceMetric {
@@ -27,7 +27,7 @@ interface SourceMetric {
   neverTouchedPercent: number;
   contactedCount: number;
   contactSampleSize: number;
-  contactRate: number;
+  contactRate: number | null;
   bookedCount: number;
   bookingSampleSize: number;
   bookedPercent: number;
@@ -63,7 +63,7 @@ interface MetricsData {
   };
   persistence: {
     neverReachedN: number;
-    averageAttempts: number;
+    averageAttempts: number | null;
     buckets: Array<Rate & { label: string }>;
   };
   contact: {
@@ -78,7 +78,7 @@ interface MetricsData {
     retailRepairs: {
       appointments: number;
       estimateSentCount: number;
-      estimateSentPercent: number;
+      estimateSentPercent: number | null;
       sampleSize: number;
       medianDaysToEstimateSent: number | null;
       timingSampleSize: number;
@@ -92,7 +92,7 @@ interface MetricsData {
     builtNeverSent: {
       builtCount: number;
       neverSentCount: number;
-      neverSentPercent: number;
+      neverSentPercent: number | null;
       sampleSize: number;
     };
   };
@@ -101,10 +101,10 @@ interface MetricsData {
     answerConnect: {
       total: number;
       businessHoursCount: number;
-      businessHoursPercent: number;
+      businessHoursPercent: number | null;
       businessHoursSampleSize: number;
       afterHoursCount: number;
-      afterHoursPercent: number;
+      afterHoursPercent: number | null;
       afterHoursSampleSize: number;
     };
   };
@@ -131,6 +131,14 @@ function formatDuration(minutes: number | null): string {
     return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
   }
   return `${(minutes / 1440).toFixed(1)} days`;
+}
+
+function formatRate(value: number | null): string {
+  return value === null ? "N/A" : `${value.toFixed(1)}%`;
+}
+
+function formatDecimal(value: number | null): string {
+  return value === null ? "N/A" : value.toFixed(1);
 }
 
 function MetricCard({
@@ -266,14 +274,14 @@ export default function MetricsPage() {
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
               <MetricCard
                 label="Average attempts"
-                value={data.persistence.averageAttempts.toFixed(1)}
+                value={formatDecimal(data.persistence.averageAttempts)}
                 sampleSize={data.persistence.neverReachedN}
               />
               {data.persistence.buckets.map((bucket) => (
                 <MetricCard
                   key={bucket.label}
                   label={`${bucket.label} attempts`}
-                  value={`${bucket.percent.toFixed(1)}%`}
+                  value={formatRate(bucket.percent)}
                   sampleSize={bucket.sampleSize}
                   detail={`${bucket.count} never-reached leads`}
                 />
@@ -288,13 +296,13 @@ export default function MetricsPage() {
             <div className="grid gap-4 sm:grid-cols-3">
               <MetricCard
                 label="Contact within 7 days"
-                value={`${data.contact.within7Days.percent.toFixed(1)}%`}
+                value={formatRate(data.contact.within7Days.percent)}
                 sampleSize={data.contact.within7Days.sampleSize}
                 detail={`${data.contact.within7Days.count} contacted`}
               />
               <MetricCard
                 label="Contact within 30 days"
-                value={`${data.contact.within30Days.percent.toFixed(1)}%`}
+                value={formatRate(data.contact.within30Days.percent)}
                 sampleSize={data.contact.within30Days.sampleSize}
                 detail={`${data.contact.within30Days.count} contacted`}
               />
@@ -336,19 +344,19 @@ export default function MetricsPage() {
                         </span>
                       </td>
                       <td className="py-3 text-right text-[#e6edf3]">
-                        {source.neverTouchedPercent.toFixed(1)}%
+                        {formatRate(source.neverTouchedPercent)}
                         <span className="block text-[10px] text-[#8b949e]">
                           {source.neverTouchedCount} · N = {source.totalLeads}
                         </span>
                       </td>
                       <td className="py-3 text-right text-[#e6edf3]">
-                        {source.contactRate.toFixed(1)}%
+                        {formatRate(source.contactRate)}
                         <span className="block text-[10px] text-[#8b949e]">
                           {source.contactedCount} · N = {source.contactSampleSize}
                         </span>
                       </td>
                       <td className="py-3 text-right text-[#e6edf3]">
-                        {source.bookedPercent.toFixed(1)}%
+                        {formatRate(source.bookedPercent)}
                         <span className="block text-[10px] text-[#8b949e]">
                           {source.bookedCount} · N = {source.bookingSampleSize}
                         </span>
@@ -385,7 +393,7 @@ export default function MetricsPage() {
                     <tr key={line.line} className="border-b border-[#21262d]">
                       <td className="py-3 font-medium text-[#e6edf3]">{line.line}</td>
                       <td className="py-3 text-right text-[#e6edf3]">
-                        {line.missedPercent.toFixed(1)}%
+                        {formatRate(line.missedPercent)}
                         <span className="block text-[10px] text-[#8b949e]">
                           {line.missedCount} · N = {line.missedSampleSize}
                         </span>
@@ -397,7 +405,7 @@ export default function MetricsPage() {
                         </span>
                       </td>
                       <td className="py-3 text-right text-[#e6edf3]">
-                        {line.neverCalledBackPercent.toFixed(1)}%
+                        {formatRate(line.neverCalledBackPercent)}
                         <span className="block text-[10px] text-[#8b949e]">
                           {line.neverCalledBackCount} · N = {line.neverCalledBackSampleSize}
                         </span>
@@ -416,7 +424,9 @@ export default function MetricsPage() {
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <MetricCard
                 label="Retail/Repairs appointments with estimate sent"
-                value={`${data.appointmentToEstimate.retailRepairs.estimateSentPercent.toFixed(1)}%`}
+                value={formatRate(
+                  data.appointmentToEstimate.retailRepairs.estimateSentPercent
+                )}
                 sampleSize={data.appointmentToEstimate.retailRepairs.sampleSize}
                 detail={`${data.appointmentToEstimate.retailRepairs.estimateSentCount} sent`}
               />
@@ -431,7 +441,9 @@ export default function MetricsPage() {
               />
               <MetricCard
                 label="Built estimates never sent"
-                value={`${data.appointmentToEstimate.builtNeverSent.neverSentPercent.toFixed(1)}%`}
+                value={formatRate(
+                  data.appointmentToEstimate.builtNeverSent.neverSentPercent
+                )}
                 sampleSize={data.appointmentToEstimate.builtNeverSent.sampleSize}
                 detail={`${data.appointmentToEstimate.builtNeverSent.neverSentCount} never sent`}
               />
@@ -451,19 +463,21 @@ export default function MetricsPage() {
             <div className="grid gap-4 sm:grid-cols-3">
               <MetricCard
                 label="Clean leads with no rep"
-                value={`${data.coverage.unassigned.percent.toFixed(1)}%`}
+                value={formatRate(data.coverage.unassigned.percent)}
                 sampleSize={data.coverage.unassigned.sampleSize}
                 detail={`${data.coverage.unassigned.count} unassigned`}
               />
               <MetricCard
                 label="AnswerConnect during business hours"
-                value={`${data.coverage.answerConnect.businessHoursPercent.toFixed(1)}%`}
+                value={formatRate(
+                  data.coverage.answerConnect.businessHoursPercent
+                )}
                 sampleSize={data.coverage.answerConnect.businessHoursSampleSize}
                 detail={`${data.coverage.answerConnect.businessHoursCount} calls`}
               />
               <MetricCard
                 label="AnswerConnect after hours"
-                value={`${data.coverage.answerConnect.afterHoursPercent.toFixed(1)}%`}
+                value={formatRate(data.coverage.answerConnect.afterHoursPercent)}
                 sampleSize={data.coverage.answerConnect.afterHoursSampleSize}
                 detail={`${data.coverage.answerConnect.afterHoursCount} calls`}
               />

@@ -191,26 +191,26 @@ lead_metrics AS (
 persistence AS (
   SELECT jsonb_build_object(
     'neverReachedN', COUNT(*)::int,
-    'averageAttempts', COALESCE(ROUND(AVG(attempts_before_contact)::numeric, 1), 0),
+    'averageAttempts', ROUND(AVG(attempts_before_contact)::numeric, 1),
     'buckets', jsonb_build_array(
       jsonb_build_object(
         'label', '0', 'count', COUNT(*) FILTER (WHERE attempts_before_contact = 0)::int,
-        'percent', COALESCE(ROUND(100.0 * COUNT(*) FILTER (WHERE attempts_before_contact = 0) / NULLIF(COUNT(*), 0), 1), 0),
+        'percent', ROUND(100.0 * COUNT(*) FILTER (WHERE attempts_before_contact = 0) / NULLIF(COUNT(*), 0), 1),
         'sampleSize', COUNT(*)::int
       ),
       jsonb_build_object(
         'label', '1', 'count', COUNT(*) FILTER (WHERE attempts_before_contact = 1)::int,
-        'percent', COALESCE(ROUND(100.0 * COUNT(*) FILTER (WHERE attempts_before_contact = 1) / NULLIF(COUNT(*), 0), 1), 0),
+        'percent', ROUND(100.0 * COUNT(*) FILTER (WHERE attempts_before_contact = 1) / NULLIF(COUNT(*), 0), 1),
         'sampleSize', COUNT(*)::int
       ),
       jsonb_build_object(
         'label', '2', 'count', COUNT(*) FILTER (WHERE attempts_before_contact = 2)::int,
-        'percent', COALESCE(ROUND(100.0 * COUNT(*) FILTER (WHERE attempts_before_contact = 2) / NULLIF(COUNT(*), 0), 1), 0),
+        'percent', ROUND(100.0 * COUNT(*) FILTER (WHERE attempts_before_contact = 2) / NULLIF(COUNT(*), 0), 1),
         'sampleSize', COUNT(*)::int
       ),
       jsonb_build_object(
         'label', '3+', 'count', COUNT(*) FILTER (WHERE attempts_before_contact >= 3)::int,
-        'percent', COALESCE(ROUND(100.0 * COUNT(*) FILTER (WHERE attempts_before_contact >= 3) / NULLIF(COUNT(*), 0), 1), 0),
+        'percent', ROUND(100.0 * COUNT(*) FILTER (WHERE attempts_before_contact >= 3) / NULLIF(COUNT(*), 0), 1),
         'sampleSize', COUNT(*)::int
       )
     )
@@ -223,18 +223,18 @@ contact_summary AS (
     'within7Days', jsonb_build_object(
       'count', COUNT(*) FILTER (WHERE eligible_7d AND contacted_7d)::int,
       'sampleSize', COUNT(*) FILTER (WHERE eligible_7d)::int,
-      'percent', COALESCE(ROUND(
+      'percent', ROUND(
         100.0 * COUNT(*) FILTER (WHERE eligible_7d AND contacted_7d)
         / NULLIF(COUNT(*) FILTER (WHERE eligible_7d), 0), 1
-      ), 0)
+      )
     ),
     'within30Days', jsonb_build_object(
       'count', COUNT(*) FILTER (WHERE eligible_30d AND contacted_30d)::int,
       'sampleSize', COUNT(*) FILTER (WHERE eligible_30d)::int,
-      'percent', COALESCE(ROUND(
+      'percent', ROUND(
         100.0 * COUNT(*) FILTER (WHERE eligible_30d AND contacted_30d)
         / NULLIF(COUNT(*) FILTER (WHERE eligible_30d), 0), 1
-      ), 0)
+      )
     ),
     'medianFirstConversationMinutes', ROUND((
       percentile_cont(0.5) WITHIN GROUP (
@@ -256,7 +256,7 @@ source_metrics AS (
       'neverTouchedPercent', ROUND(100.0 * never_touched_n / NULLIF(total_leads, 0), 1),
       'contactedCount', contacted_n,
       'contactSampleSize', contact_eligible_n,
-      'contactRate', COALESCE(ROUND(100.0 * contacted_n / NULLIF(contact_eligible_n, 0), 1), 0),
+      'contactRate', ROUND(100.0 * contacted_n / NULLIF(contact_eligible_n, 0), 1),
       'bookedCount', booked_n,
       'bookingSampleSize', total_leads,
       'bookedPercent', ROUND(100.0 * booked_n / NULLIF(total_leads, 0), 1)
@@ -426,12 +426,12 @@ appointment_metrics AS (
           WHERE estimate_sent_at IS NOT NULL
             AND estimate_sent_at >= appointment_at
         )::int,
-        'estimateSentPercent', COALESCE(ROUND(
+        'estimateSentPercent', ROUND(
           100.0 * COUNT(*) FILTER (
             WHERE estimate_sent_at IS NOT NULL
               AND estimate_sent_at >= appointment_at
           ) / NULLIF(COUNT(*), 0), 1
-        ), 0),
+        ),
         'sampleSize', COUNT(*)::int,
         'medianDaysToEstimateSent', ROUND((
           percentile_cont(0.5) WITHIN GROUP (
@@ -465,10 +465,10 @@ appointment_metrics AS (
       SELECT jsonb_build_object(
         'builtCount', COUNT(*) FILTER (WHERE built)::int,
         'neverSentCount', COUNT(*) FILTER (WHERE built AND NOT sent)::int,
-        'neverSentPercent', COALESCE(ROUND(
+        'neverSentPercent', ROUND(
           100.0 * COUNT(*) FILTER (WHERE built AND NOT sent)
           / NULLIF(COUNT(*) FILTER (WHERE built), 0), 1
-        ), 0),
+        ),
         'sampleSize', COUNT(*) FILTER (WHERE built)::int
       )
       FROM estimate_jobs
@@ -494,20 +494,20 @@ coverage_metrics AS (
         WHERE NULLIF(trim(sales_rep_jnid), '') IS NULL
       )::int,
       'sampleSize', COUNT(*)::int,
-      'percent', COALESCE(ROUND(
+      'percent', ROUND(
         100.0 * COUNT(*) FILTER (
           WHERE NULLIF(trim(sales_rep_jnid), '') IS NULL
         ) / NULLIF(COUNT(*), 0), 1
-      ), 0)
+      )
     ),
     'answerConnect', (
       SELECT jsonb_build_object(
         'total', total,
         'businessHoursCount', business_hours,
-        'businessHoursPercent', COALESCE(ROUND(100.0 * business_hours / NULLIF(total, 0), 1), 0),
+        'businessHoursPercent', ROUND(100.0 * business_hours / NULLIF(total, 0), 1),
         'businessHoursSampleSize', total,
         'afterHoursCount', total - business_hours,
-        'afterHoursPercent', COALESCE(ROUND(100.0 * (total - business_hours) / NULLIF(total, 0), 1), 0),
+        'afterHoursPercent', ROUND(100.0 * (total - business_hours) / NULLIF(total, 0), 1),
         'afterHoursSampleSize', total
       )
       FROM answerconnect_metrics
