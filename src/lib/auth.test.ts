@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
-import { proxy } from "../../proxy";
+import { proxy } from "../proxy";
 import {
   createSessionToken,
   SESSION_COOKIE_NAME,
