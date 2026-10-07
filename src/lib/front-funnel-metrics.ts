@@ -135,9 +135,9 @@ export function getMetricsDateRange(
   now = new Date()
 ): MetricsDateRange {
   const localNow = toZonedTime(now, METRICS_TIME_ZONE);
-  let startLocal: Date;
+  let startLocal = localNow;
   let end = now;
-  let label: string;
+  let label = "Last 6 Months";
 
   if (period.startsWith("month:")) {
     startLocal = startOfMonth(parseISO(`${period.slice(6)}-01`));
