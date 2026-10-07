@@ -13,7 +13,10 @@ import {
   appointmentSetStrictAtSql,
   getMetricsDateRange,
   insuranceSoldAtSql,
+  isAppointmentSetBroad,
+  isAppointmentSetStrict,
   isCountableLead,
+  isInsuranceSold,
   isMetricsPeriod,
   type MetricsPeriod,
 } from "@/lib/front-funnel-metrics";
@@ -39,6 +42,9 @@ WITH clean_jobs AS (
     j.jnid,
     j.id,
     j.primary_contact_jnid,
+    j.workflow_id,
+    j.status_name,
+    j.jn_date_status_change,
     j.record_type_name,
     j.source_name,
     j.sales_rep_jnid,
@@ -72,10 +78,9 @@ cohort_base AS (
 cohort AS (
   SELECT
     cohort_base.*,
-    cohort_base.appointment_set_broad_at IS NOT NULL AS appointment_set_broad,
-    cohort_base.appointment_set_strict_at IS NOT NULL AS appointment_set_strict,
-    cohort_base.record_type_name = 'Insurance'
-      AND cohort_base.insurance_sold_at IS NOT NULL AS insurance_sold
+    ${isAppointmentSetBroad("cohort_base")} AS appointment_set_broad,
+    ${isAppointmentSetStrict("cohort_base")} AS appointment_set_strict,
+    ${isInsuranceSold("cohort_base")} AS insurance_sold
   FROM cohort_base
 ),
 call_communications AS (

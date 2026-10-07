@@ -29,6 +29,11 @@ describe("front-funnel metric rules", () => {
     );
     expect(appointmentSetBroadAtSql("lead")).toContain("workflow_stages");
     expect(appointmentSetBroadAtSql("lead")).toContain("tasks appointment_task");
+    expect(appointmentSetBroadAtSql("lead")).toContain("Inspection Request");
+    expect(appointmentSetBroadAtSql("lead")).toContain("Adjuster Meeting");
+    expect(appointmentSetBroadAtSql("lead")).toContain(
+      "to_timestamp(appointment_task.jn_date_created)"
+    );
     expect(isAppointmentSetBroad("lead")).toContain("IS NOT NULL");
     expect(isAppointmentSetStrict("lead")).toContain("IS NOT NULL");
   });

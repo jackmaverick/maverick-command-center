@@ -41,6 +41,15 @@ const APPOINTMENT_SCHEDULED_STATUSES = [
   "Adjuster Appt Scheduled",
 ] as const;
 
+const APPOINTMENT_TASK_TYPES = [
+  "Inspection Request",
+  "Repair Inspection Request",
+  "Insurance - Inspection Request",
+  "Storm Inspection",
+  "Adjuster Meeting",
+  "Insurance - Sales Sit Down",
+] as const;
+
 function sqlList(values: readonly string[]): string {
   return values.map((value) => `'${value.replaceAll("'", "''")}'`).join(", ");
 }
@@ -56,11 +65,12 @@ export function appointmentSetStrictAtSql(alias = "j"): string {
 }
 
 export function isAppointmentSetStrict(alias = "j"): string {
-  return `${appointmentSetStrictAtSql(alias)} IS NOT NULL`;
+  return `${alias}.appointment_set_strict_at IS NOT NULL`;
 }
 
 export function appointmentSetBroadAtSql(alias = "j"): string {
   const stages = sqlList(APPOINTMENT_SCHEDULED_STATUSES);
+  const appointmentTaskTypes = sqlList(APPOINTMENT_TASK_TYPES);
   return `(
     SELECT MIN(broad_evidence.observed_at)
     FROM (
@@ -93,19 +103,23 @@ export function appointmentSetBroadAtSql(alias = "j"): string {
       UNION ALL
 
       SELECT COALESCE(
-        appointment_task.start_date,
-        to_timestamp(appointment_task.jn_date_created)
+        to_timestamp(appointment_task.jn_date_created),
+        appointment_task.created_at,
+        appointment_task.start_date
       )
       FROM tasks appointment_task
       WHERE appointment_task.job_jnid = ${alias}.jnid
         AND appointment_task.deleted_at IS NULL
-        AND appointment_task.task_type ILIKE '%appointment%'
+        AND (
+          appointment_task.task_type ILIKE '%appointment%'
+          OR appointment_task.task_type IN (${appointmentTaskTypes})
+        )
     ) broad_evidence
   )`;
 }
 
 export function isAppointmentSetBroad(alias = "j"): string {
-  return `${appointmentSetBroadAtSql(alias)} IS NOT NULL`;
+  return `${alias}.appointment_set_broad_at IS NOT NULL`;
 }
 
 export function insuranceSoldAtSql(alias = "j"): string {
@@ -151,7 +165,7 @@ export function insuranceSoldAtSql(alias = "j"): string {
 
 export function isInsuranceSold(alias = "j"): string {
   return `${alias}.record_type_name = 'Insurance'
-    AND ${insuranceSoldAtSql(alias)} IS NOT NULL`;
+    AND ${alias}.insurance_sold_at IS NOT NULL`;
 }
 
 export const AUTO_OPENER_DEFINITION =
