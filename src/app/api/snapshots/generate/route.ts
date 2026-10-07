@@ -5,6 +5,7 @@ import { SEGMENT_SQL } from "@/lib/segment";
 import { ORDERED_STATUSES, LOSS_STATUSES } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
 import type { WeeklySnapshot, SnapshotMetrics } from "@/types";
+import { isSessionOrBearerAuthorized } from "@/lib/auth";
 import {
   startOfWeek,
   endOfWeek,
@@ -22,7 +23,7 @@ import {
 //   ?type=weekly|monthly  (default: "weekly")
 //
 // Auth:
-//   x-cron-secret header must match CRON_SECRET env var (if set).
+//   A dashboard session or Bearer token must match CRON_SECRET.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const VALID_TYPES = ["weekly", "monthly"] as const;
@@ -70,20 +71,10 @@ function getPeriodBounds(type: SnapshotType): { start: Date; end: Date } {
 
 // ── POST handler ────────────────────────────────────────────────────────────
 
-function isAuthorized(request: NextRequest): boolean {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return true;
-
-  return (
-    request.headers.get("x-cron-secret") === cronSecret ||
-    request.headers.get("authorization") === `Bearer ${cronSecret}`
-  );
-}
-
 async function handleGenerate(request: NextRequest) {
   try {
     // Auth check
-    if (!isAuthorized(request)) {
+    if (!(await isSessionOrBearerAuthorized(request, "CRON_SECRET"))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

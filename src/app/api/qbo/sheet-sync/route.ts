@@ -6,6 +6,7 @@ import {
   appendRows,
   updateRange,
 } from "@/lib/google-sheets";
+import { isSessionOrBearerAuthorized } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -22,21 +23,12 @@ export const maxDuration = 30;
 //   CASHFLOW_CASH_CELL    optional live cell, e.g. "AVAILABLE TO SPEND!B5"
 //   GOOGLE_SERVICE_ACCOUNT_EMAIL / _PRIVATE_KEY  service-account auth
 //
-// Auth: x-cron-secret header or Bearer must match CRON_SECRET (if set).
+// Auth: a dashboard session or Bearer token must match CRON_SECRET.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DEFAULT_SHEET_ID = "1iQyts1T__2meVDZu5vudiC4ceKnOb3d16BiewWSiCp4";
 const DEFAULT_HISTORY_TAB = "Daily Bank Balance";
 const HISTORY_HEADER = ["Date", "Account", "Balance", "Synced At (QBO)"];
-
-function isAuthorized(req: NextRequest): boolean {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return true;
-  return (
-    req.headers.get("x-cron-secret") === cronSecret ||
-    req.headers.get("authorization") === `Bearer ${cronSecret}`
-  );
-}
 
 /** Today's date as YYYY-MM-DD in Central Time (the business's timezone). */
 function todayCentral(): string {
@@ -55,7 +47,7 @@ interface BankAccount {
 }
 
 async function handleSync(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isSessionOrBearerAuthorized(req, "CRON_SECRET"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
