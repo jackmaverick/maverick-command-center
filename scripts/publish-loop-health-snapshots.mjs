@@ -21,14 +21,22 @@ const sourceUrl =
   "http://localhost:3000/api/loop-health?localOnly=1";
 
 const databaseUrl = process.env.DATABASE_URL;
+const cronSecret = process.env.CRON_SECRET;
 
 if (!databaseUrl) {
   console.error("DATABASE_URL is required to publish loop health snapshots.");
   process.exit(1);
 }
 
+if (!cronSecret) {
+  console.error("CRON_SECRET is required to read loop health snapshots.");
+  process.exit(1);
+}
+
 async function fetchLoopHealth() {
-  const response = await fetch(sourceUrl);
+  const response = await fetch(sourceUrl, {
+    headers: { authorization: `Bearer ${cronSecret}` },
+  });
   if (!response.ok && response.status !== 207) {
     throw new Error(`Loop health source returned HTTP ${response.status}: ${await response.text()}`);
   }
