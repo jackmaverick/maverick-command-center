@@ -24,25 +24,29 @@ export function cleanLeadWhere(alias = "j"): string {
 export const BOOKED_DEFINITION =
   "Booked = reached an appointment-scheduled stage in JobNimbus history";
 
-const BOOKED_STAGE_NAMES = [
+export const BOOKED_STAGE_NAMES = [
   "Appointment Scheduled",
   "Appt Scheduled",
   "Storm Inspection Scheduled",
   "Adjuster Appt Scheduled",
 ] as const;
 
+export function bookedAtSql(alias = "j"): string {
+  const stages = BOOKED_STAGE_NAMES.map((stage) => `'${stage}'`).join(", ");
+  return `(
+    SELECT MIN(booked_history.changed_at)
+    FROM job_stage_history booked_history
+    WHERE booked_history.job_jnid = ${alias}.jnid
+      AND booked_history.to_stage_name IN (${stages})
+  )`;
+}
+
 /**
  * Keep the unsettled booking rule behind one named function. When Jack settles
  * the definition, this is the only SQL predicate that needs to change.
  */
 export function bookedLeadSql(alias = "j"): string {
-  const stages = BOOKED_STAGE_NAMES.map((stage) => `'${stage}'`).join(", ");
-  return `EXISTS (
-    SELECT 1
-    FROM job_stage_history booked_history
-    WHERE booked_history.job_jnid = ${alias}.jnid
-      AND booked_history.to_stage_name IN (${stages})
-  )`;
+  return `${bookedAtSql(alias)} IS NOT NULL`;
 }
 
 export const AUTO_OPENER_DEFINITION =

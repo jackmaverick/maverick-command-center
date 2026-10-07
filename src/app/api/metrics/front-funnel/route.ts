@@ -6,7 +6,7 @@ import {
   CLEAN_LEAD_DEFINITION,
   METRICS_TIME_ZONE,
   automaticOpenerSql,
-  bookedLeadSql,
+  bookedAtSql,
   cleanLeadWhere,
   getMetricsDateRange,
   isMetricsPeriod,
@@ -52,18 +52,22 @@ WITH clean_jobs AS (
   LEFT JOIN contacts c ON c.jnid = j.primary_contact_jnid
   WHERE ${cleanLeadWhere("j")}
 ),
-cohort AS (
+cohort_base AS (
   SELECT
     j.*,
     to_timestamp(j.jn_date_created) AS lead_created_at,
     COALESCE(NULLIF(trim(j.source_name), ''), 'Unknown') AS source,
-    ${bookedLeadSql("j")} AS booked
+    ${bookedAtSql("j")} AS booked_at
   FROM clean_jobs j
   WHERE to_timestamp(j.jn_date_created) >= $1::timestamptz
     AND to_timestamp(j.jn_date_created) < $2::timestamptz
 ),
+cohort AS (
+  SELECT cohort_base.*, cohort_base.booked_at IS NOT NULL AS booked
+  FROM cohort_base
+),
 call_communications AS (
-  SELECT DISTINCT ON (c.openphone_call_id, j.jnid)
+  SELECT
     'call:' || c.openphone_call_id AS event_id,
     j.jnid AS job_jnid,
     c.started_at AS event_at,
@@ -80,22 +84,34 @@ call_communications AS (
       )
     ) AS is_first_touch
   FROM calls c
-  JOIN cohort j ON (
-    c.job_jnid = j.jnid
-    OR c.contact_jnid = j.primary_contact_jnid
-    OR right(
-      regexp_replace(
-        CASE WHEN c.direction = 'inbound' THEN c.from_number ELSE c.to_number END,
-        '\\D', '', 'g'
-      ),
-      10
-    ) = ANY(j.phones)
-  )
-  WHERE c.started_at >= j.lead_created_at
-    AND c.started_at <= LEAST($3::timestamptz, j.lead_created_at + interval '30 days')
+  JOIN LATERAL (
+    SELECT matched_lead.*
+    FROM cohort matched_lead
+    WHERE c.started_at >= matched_lead.lead_created_at
+      AND c.started_at <= LEAST(
+        $3::timestamptz,
+        matched_lead.lead_created_at + interval '30 days'
+      )
+      AND (
+        c.job_jnid = matched_lead.jnid
+        OR c.contact_jnid = matched_lead.primary_contact_jnid
+        OR right(
+          regexp_replace(
+            CASE WHEN c.direction = 'inbound' THEN c.from_number ELSE c.to_number END,
+            '\\D', '', 'g'
+          ),
+          10
+        ) = ANY(matched_lead.phones)
+      )
+    ORDER BY
+      (c.job_jnid = matched_lead.jnid) DESC,
+      (c.contact_jnid = matched_lead.primary_contact_jnid) DESC,
+      matched_lead.lead_created_at DESC
+    LIMIT 1
+  ) j ON true
 ),
 sms_communications AS (
-  SELECT DISTINCT ON (s.openphone_message_id, j.jnid)
+  SELECT
     'sms:' || s.openphone_message_id AS event_id,
     j.jnid AS job_jnid,
     s.sent_at AS event_at,
@@ -106,22 +122,34 @@ sms_communications AS (
       OR (s.direction = 'outgoing' AND NOT ${automaticOpenerSql("s")})
     ) AS is_first_touch
   FROM sms_messages s
-  JOIN cohort j ON (
-    s.job_jnid = j.jnid
-    OR s.contact_jnid = j.primary_contact_jnid
-    OR right(
-      regexp_replace(
-        CASE
-          WHEN s.direction = 'incoming' THEN s.from_number
-          ELSE s.to_numbers::text
-        END,
-        '\\D', '', 'g'
-      ),
-      10
-    ) = ANY(j.phones)
-  )
-  WHERE s.sent_at >= j.lead_created_at
-    AND s.sent_at <= LEAST($3::timestamptz, j.lead_created_at + interval '30 days')
+  JOIN LATERAL (
+    SELECT matched_lead.*
+    FROM cohort matched_lead
+    WHERE s.sent_at >= matched_lead.lead_created_at
+      AND s.sent_at <= LEAST(
+        $3::timestamptz,
+        matched_lead.lead_created_at + interval '30 days'
+      )
+      AND (
+        s.job_jnid = matched_lead.jnid
+        OR s.contact_jnid = matched_lead.primary_contact_jnid
+        OR right(
+          regexp_replace(
+            CASE
+              WHEN s.direction = 'incoming' THEN s.from_number
+              ELSE s.to_numbers::text
+            END,
+            '\\D', '', 'g'
+          ),
+          10
+        ) = ANY(matched_lead.phones)
+      )
+    ORDER BY
+      (s.job_jnid = matched_lead.jnid) DESC,
+      (s.contact_jnid = matched_lead.primary_contact_jnid) DESC,
+      matched_lead.lead_created_at DESC
+    LIMIT 1
+  ) j ON true
 ),
 communications AS (
   SELECT * FROM call_communications
@@ -354,19 +382,14 @@ appointment_events AS (
   SELECT
     j.jnid,
     j.record_type_name,
-    MIN(h.changed_at) FILTER (
-      WHERE h.to_stage_name IN (
-        'Appointment Scheduled', 'Appt Scheduled',
-        'Storm Inspection Scheduled', 'Adjuster Appt Scheduled'
-      )
-    ) AS appointment_at,
+    j.booked_at AS appointment_at,
     MIN(h.changed_at) FILTER (
       WHERE h.to_stage_name = 'Estimate Sent'
     ) AS estimate_sent_at
   FROM cohort j
   LEFT JOIN job_stage_history h ON h.job_jnid = j.jnid
   WHERE j.record_type_name IN ('Retail', 'Repairs', 'Insurance')
-  GROUP BY j.jnid, j.record_type_name
+  GROUP BY j.jnid, j.record_type_name, j.booked_at
 ),
 estimate_jobs AS (
   SELECT
@@ -460,22 +483,20 @@ answerconnect_metrics AS (
         AND (call_timestamp AT TIME ZONE '${METRICS_TIME_ZONE}')::time >= time '08:00'
         AND (call_timestamp AT TIME ZONE '${METRICS_TIME_ZONE}')::time < time '17:00'
     )::int AS business_hours
-  FROM answerconnect_calls
-  WHERE call_timestamp >= $1::timestamptz
-    AND call_timestamp < $2::timestamptz
+  FROM answerconnect_calls answerconnect
+  JOIN cohort answerconnect_lead
+    ON answerconnect_lead.jnid = answerconnect.jobnimbus_job_id
 ),
 coverage_metrics AS (
   SELECT jsonb_build_object(
     'unassigned', jsonb_build_object(
       'count', COUNT(*) FILTER (
         WHERE NULLIF(trim(sales_rep_jnid), '') IS NULL
-          AND NULLIF(trim(sales_rep_name), '') IS NULL
       )::int,
       'sampleSize', COUNT(*)::int,
       'percent', COALESCE(ROUND(
         100.0 * COUNT(*) FILTER (
           WHERE NULLIF(trim(sales_rep_jnid), '') IS NULL
-            AND NULLIF(trim(sales_rep_name), '') IS NULL
         ) / NULLIF(COUNT(*), 0), 1
       ), 0)
     ),
@@ -549,7 +570,10 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("[Front Funnel Metrics API] Error:", error);
+    console.error(
+      "[Front Funnel Metrics API] Query failed",
+      error instanceof Error ? error.name : "UnknownError"
+    );
     return NextResponse.json(
       { error: "Failed to fetch front-funnel metrics" },
       { status: 500 }
