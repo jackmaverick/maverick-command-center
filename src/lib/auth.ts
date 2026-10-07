@@ -1,5 +1,6 @@
 export const SESSION_COOKIE_NAME = "maverick_session";
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 12;
+export const MIN_PASSWORD_LENGTH = 20;
 
 const encoder = new TextEncoder();
 
@@ -39,12 +40,16 @@ function constantTimeEqual(left: string, right: string): boolean {
 }
 
 export function isAuthConfigured(): boolean {
-  return Boolean(getSessionSecret() && process.env.DASHBOARD_PASSWORD);
+  return Boolean(
+    getSessionSecret() &&
+      process.env.DASHBOARD_PASSWORD &&
+      process.env.DASHBOARD_PASSWORD.length >= MIN_PASSWORD_LENGTH,
+  );
 }
 
 export async function createSessionToken(now = Date.now()): Promise<string> {
   const secret = getSessionSecret();
-  if (!secret || !process.env.DASHBOARD_PASSWORD) {
+  if (!secret || !isAuthConfigured()) {
     throw new Error("Dashboard authentication is not configured");
   }
 
@@ -74,7 +79,7 @@ export async function verifySessionToken(
 
 export async function verifyPassword(candidate: string): Promise<boolean> {
   const password = process.env.DASHBOARD_PASSWORD;
-  if (!password || !getSessionSecret()) return false;
+  if (!password || !isAuthConfigured()) return false;
 
   const expected = await sign(password, password);
   const actual = await sign(candidate, password);

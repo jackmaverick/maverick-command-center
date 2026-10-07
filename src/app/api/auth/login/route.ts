@@ -7,9 +7,28 @@ import {
   verifyPassword,
 } from "@/lib/auth";
 
+const MAX_FAILURES = 5;
+const FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const failures = new Map<string, { count: number; resetAt: number }>();
+
 function isSameOrigin(request: NextRequest): boolean {
   const origin = request.headers.get("origin");
   return Boolean(origin && origin === request.nextUrl.origin);
+}
+
+function clientKey(request: NextRequest): string {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown"
+  );
+}
+
+function activeFailure(key: string, now: number) {
+  const failure = failures.get(key);
+  if (failure && failure.resetAt > now) return failure;
+  failures.delete(key);
+  return null;
 }
 
 export async function POST(request: NextRequest) {
@@ -24,6 +43,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
   }
 
+  const now = Date.now();
+  const key = clientKey(request);
+  const priorFailure = activeFailure(key, now);
+  if (priorFailure && priorFailure.count >= MAX_FAILURES) {
+    return NextResponse.json(
+      { error: "Too many attempts" },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(
+            Math.max(1, Math.ceil((priorFailure.resetAt - now) / 1000)),
+          ),
+        },
+      },
+    );
+  }
+
   let password = "";
   try {
     const body = (await request.json()) as { password?: unknown };
@@ -33,9 +69,17 @@ export async function POST(request: NextRequest) {
   }
 
   if (!(await verifyPassword(password))) {
+    const count = (priorFailure?.count ?? 0) + 1;
+    failures.set(key, { count, resetAt: now + FAILURE_WINDOW_MS });
+    if (failures.size > 10_000) {
+      for (const [storedKey, failure] of failures) {
+        if (failure.resetAt <= now) failures.delete(storedKey);
+      }
+    }
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
+  failures.delete(key);
   const response = NextResponse.json({ success: true });
   response.cookies.set(SESSION_COOKIE_NAME, await createSessionToken(), {
     httpOnly: true,

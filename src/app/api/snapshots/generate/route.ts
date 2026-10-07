@@ -5,7 +5,7 @@ import { SEGMENT_SQL } from "@/lib/segment";
 import { ORDERED_STATUSES, LOSS_STATUSES } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
 import type { WeeklySnapshot, SnapshotMetrics } from "@/types";
-import { isSessionOrBearerAuthorized } from "@/lib/auth";
+import { hasBearerToken, isSessionOrBearerAuthorized } from "@/lib/auth";
 import {
   startOfWeek,
   endOfWeek,
@@ -645,6 +645,9 @@ async function handleGenerate(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  if (!hasBearerToken(request, "CRON_SECRET")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   return handleGenerate(request);
 }
 

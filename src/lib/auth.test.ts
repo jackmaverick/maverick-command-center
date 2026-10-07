@@ -17,7 +17,7 @@ function request(
 }
 
 beforeEach(() => {
-  process.env.DASHBOARD_PASSWORD = "test-password";
+  process.env.DASHBOARD_PASSWORD = "test-password-at-least-20";
   process.env.SESSION_SECRET = "a".repeat(32);
   process.env.CRON_SECRET = "cron-test-secret";
 });
@@ -31,6 +31,12 @@ describe("dashboard authentication", () => {
     delete process.env.DASHBOARD_PASSWORD;
     delete process.env.SESSION_SECRET;
 
+    expect((await proxy(request("/"))).status).toBe(307);
+    expect((await proxy(request("/api/dashboard"))).status).toBe(401);
+  });
+
+  it("fails closed when the dashboard password is too short", async () => {
+    process.env.DASHBOARD_PASSWORD = "short-password";
     expect((await proxy(request("/"))).status).toBe(307);
     expect((await proxy(request("/api/dashboard"))).status).toBe(401);
   });
