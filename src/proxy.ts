@@ -17,6 +17,7 @@ const CRON_PATHS = new Set([
   "/api/qbo/sheet-sync",
   "/api/snapshots/generate",
   "/api/sync",
+  "/api/loop-health",
 ]);
 
 function unauthorized(request: NextRequest): NextResponse {

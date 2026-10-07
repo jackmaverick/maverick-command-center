@@ -66,6 +66,13 @@ describe("dashboard authentication", () => {
     );
     expect(authorized.headers.get("x-middleware-next")).toBe("1");
 
+    const publisher = await proxy(
+      request("/api/loop-health?localOnly=1", {
+        headers: { authorization: "Bearer cron-test-secret" },
+      }),
+    );
+    expect(publisher.headers.get("x-middleware-next")).toBe("1");
+
     expect((await proxy(request("/api/qbo/cron"))).status).toBe(401);
     expect(
       (
