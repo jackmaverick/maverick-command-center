@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { queryOne } from "@/lib/db";
 import {
+  APPOINTMENT_SET_BROAD_DEFINITION,
+  APPOINTMENT_SET_STRICT_DEFINITION,
   AUTO_OPENER_DEFINITION,
-  BOOKED_DEFINITION,
   CLEAN_LEAD_DEFINITION,
+  INSURANCE_SOLD_DEFINITION,
+  METRIC_RULES_APPROVED_AT,
   METRICS_TIME_ZONE,
   automaticOpenerSql,
-  bookedAtSql,
-  cleanLeadWhere,
+  appointmentSetBroadAtSql,
+  appointmentSetStrictAtSql,
   getMetricsDateRange,
+  insuranceSoldAtSql,
+  isCountableLead,
   isMetricsPeriod,
   type MetricsPeriod,
 } from "@/lib/front-funnel-metrics";
@@ -50,20 +55,27 @@ WITH clean_jobs AS (
     ], '') AS phones
   FROM metrics.v_jobs_clean j
   LEFT JOIN contacts c ON c.jnid = j.primary_contact_jnid
-  WHERE ${cleanLeadWhere("j")}
+  WHERE ${isCountableLead("j")}
 ),
 cohort_base AS (
   SELECT
     j.*,
     to_timestamp(j.jn_date_created) AS lead_created_at,
     COALESCE(NULLIF(trim(j.source_name), ''), 'Unknown') AS source,
-    ${bookedAtSql("j")} AS booked_at
+    ${appointmentSetBroadAtSql("j")} AS appointment_set_broad_at,
+    ${appointmentSetStrictAtSql("j")} AS appointment_set_strict_at,
+    ${insuranceSoldAtSql("j")} AS insurance_sold_at
   FROM clean_jobs j
   WHERE to_timestamp(j.jn_date_created) >= $1::timestamptz
     AND to_timestamp(j.jn_date_created) < $2::timestamptz
 ),
 cohort AS (
-  SELECT cohort_base.*, cohort_base.booked_at IS NOT NULL AS booked
+  SELECT
+    cohort_base.*,
+    cohort_base.appointment_set_broad_at IS NOT NULL AS appointment_set_broad,
+    cohort_base.appointment_set_strict_at IS NOT NULL AS appointment_set_strict,
+    cohort_base.record_type_name = 'Insurance'
+      AND cohort_base.insurance_sold_at IS NOT NULL AS insurance_sold
   FROM cohort_base
 ),
 call_communications AS (
@@ -257,9 +269,16 @@ source_metrics AS (
       'contactedCount', contacted_n,
       'contactSampleSize', contact_eligible_n,
       'contactRate', ROUND(100.0 * contacted_n / NULLIF(contact_eligible_n, 0), 1),
-      'bookedCount', booked_n,
-      'bookingSampleSize', total_leads,
-      'bookedPercent', ROUND(100.0 * booked_n / NULLIF(total_leads, 0), 1)
+      'appointmentSetBroadCount', appointment_set_broad_n,
+      'appointmentSetBroadSampleSize', total_leads,
+      'appointmentSetBroadPercent', ROUND(
+        100.0 * appointment_set_broad_n / NULLIF(total_leads, 0), 1
+      ),
+      'appointmentSetStrictCount', appointment_set_strict_n,
+      'appointmentSetStrictSampleSize', total_leads,
+      'appointmentSetStrictPercent', ROUND(
+        100.0 * appointment_set_strict_n / NULLIF(total_leads, 0), 1
+      )
     )
     ORDER BY total_leads DESC, source
   ) AS data
@@ -276,7 +295,12 @@ source_metrics AS (
       COUNT(*) FILTER (WHERE first_touch_at IS NULL)::int AS never_touched_n,
       COUNT(*) FILTER (WHERE eligible_30d)::int AS contact_eligible_n,
       COUNT(*) FILTER (WHERE eligible_30d AND contacted_30d)::int AS contacted_n,
-      COUNT(*) FILTER (WHERE booked)::int AS booked_n
+      COUNT(*) FILTER (
+        WHERE appointment_set_broad
+      )::int AS appointment_set_broad_n,
+      COUNT(*) FILTER (
+        WHERE appointment_set_strict
+      )::int AS appointment_set_strict_n
     FROM lead_metrics
     GROUP BY source
   ) by_source
@@ -382,14 +406,21 @@ appointment_events AS (
   SELECT
     j.jnid,
     j.record_type_name,
-    j.booked_at AS appointment_at,
+    j.appointment_set_broad_at,
+    j.appointment_set_strict_at,
+    j.insurance_sold_at,
     MIN(h.changed_at) FILTER (
       WHERE h.to_stage_name = 'Estimate Sent'
     ) AS estimate_sent_at
   FROM cohort j
   LEFT JOIN job_stage_history h ON h.job_jnid = j.jnid
   WHERE j.record_type_name IN ('Retail', 'Repairs', 'Insurance')
-  GROUP BY j.jnid, j.record_type_name, j.booked_at
+  GROUP BY
+    j.jnid,
+    j.record_type_name,
+    j.appointment_set_broad_at,
+    j.appointment_set_strict_at,
+    j.insurance_sold_at
 ),
 estimate_jobs AS (
   SELECT
@@ -421,45 +452,124 @@ appointment_metrics AS (
   SELECT jsonb_build_object(
     'retailRepairs', (
       SELECT jsonb_build_object(
-        'appointments', COUNT(*)::int,
-        'estimateSentCount', COUNT(*) FILTER (
-          WHERE estimate_sent_at IS NOT NULL
-            AND estimate_sent_at >= appointment_at
-        )::int,
-        'estimateSentPercent', ROUND(
-          100.0 * COUNT(*) FILTER (
+        'broad', jsonb_build_object(
+          'appointments', COUNT(*) FILTER (
+            WHERE appointment_set_broad_at IS NOT NULL
+          )::int,
+          'estimateSentCount', COUNT(*) FILTER (
             WHERE estimate_sent_at IS NOT NULL
-              AND estimate_sent_at >= appointment_at
-          ) / NULLIF(COUNT(*), 0), 1
+              AND appointment_set_broad_at IS NOT NULL
+              AND estimate_sent_at >= appointment_set_broad_at
+          )::int,
+          'estimateSentPercent', ROUND(
+            100.0 * COUNT(*) FILTER (
+              WHERE estimate_sent_at IS NOT NULL
+                AND appointment_set_broad_at IS NOT NULL
+                AND estimate_sent_at >= appointment_set_broad_at
+            ) / NULLIF(
+              COUNT(*) FILTER (
+                WHERE appointment_set_broad_at IS NOT NULL
+              ),
+              0
+            ),
+            1
+          ),
+          'sampleSize', COUNT(*) FILTER (
+            WHERE appointment_set_broad_at IS NOT NULL
+          )::int,
+          'medianDaysToEstimateSent', ROUND((
+            percentile_cont(0.5) WITHIN GROUP (
+              ORDER BY EXTRACT(EPOCH FROM (
+                estimate_sent_at - appointment_set_broad_at
+              )) / 86400.0
+            ) FILTER (
+              WHERE estimate_sent_at IS NOT NULL
+                AND appointment_set_broad_at IS NOT NULL
+                AND estimate_sent_at >= appointment_set_broad_at
+            )
+          )::numeric, 1),
+          'timingSampleSize', COUNT(*) FILTER (
+            WHERE estimate_sent_at IS NOT NULL
+              AND appointment_set_broad_at IS NOT NULL
+              AND estimate_sent_at >= appointment_set_broad_at
+          )::int
         ),
-        'sampleSize', COUNT(*)::int,
-        'medianDaysToEstimateSent', ROUND((
-          percentile_cont(0.5) WITHIN GROUP (
-            ORDER BY EXTRACT(EPOCH FROM (estimate_sent_at - appointment_at)) / 86400.0
-          ) FILTER (
+        'strict', jsonb_build_object(
+          'appointments', COUNT(*) FILTER (
+            WHERE appointment_set_strict_at IS NOT NULL
+          )::int,
+          'estimateSentCount', COUNT(*) FILTER (
             WHERE estimate_sent_at IS NOT NULL
-              AND estimate_sent_at >= appointment_at
-          )
-        )::numeric, 1),
-        'timingSampleSize', COUNT(*) FILTER (
-          WHERE estimate_sent_at IS NOT NULL
-            AND estimate_sent_at >= appointment_at
-        )::int
+              AND appointment_set_strict_at IS NOT NULL
+              AND estimate_sent_at >= appointment_set_strict_at
+          )::int,
+          'estimateSentPercent', ROUND(
+            100.0 * COUNT(*) FILTER (
+              WHERE estimate_sent_at IS NOT NULL
+                AND appointment_set_strict_at IS NOT NULL
+                AND estimate_sent_at >= appointment_set_strict_at
+            ) / NULLIF(
+              COUNT(*) FILTER (
+                WHERE appointment_set_strict_at IS NOT NULL
+              ),
+              0
+            ),
+            1
+          ),
+          'sampleSize', COUNT(*) FILTER (
+            WHERE appointment_set_strict_at IS NOT NULL
+          )::int,
+          'medianDaysToEstimateSent', ROUND((
+            percentile_cont(0.5) WITHIN GROUP (
+              ORDER BY EXTRACT(EPOCH FROM (
+                estimate_sent_at - appointment_set_strict_at
+              )) / 86400.0
+            ) FILTER (
+              WHERE estimate_sent_at IS NOT NULL
+                AND appointment_set_strict_at IS NOT NULL
+                AND estimate_sent_at >= appointment_set_strict_at
+            )
+          )::numeric, 1),
+          'timingSampleSize', COUNT(*) FILTER (
+            WHERE estimate_sent_at IS NOT NULL
+              AND appointment_set_strict_at IS NOT NULL
+              AND estimate_sent_at >= appointment_set_strict_at
+          )::int
+        )
       )
       FROM appointment_events
       WHERE record_type_name IN ('Retail', 'Repairs')
-        AND appointment_at IS NOT NULL
     ),
     'insurance', (
       SELECT jsonb_build_object(
-        'appointments', COUNT(*)::int,
+        'appointmentSetBroadCount', COUNT(*) FILTER (
+          WHERE appointment_set_broad_at IS NOT NULL
+        )::int,
+        'appointmentSetStrictCount', COUNT(*) FILTER (
+          WHERE appointment_set_strict_at IS NOT NULL
+        )::int,
         'estimateSentPercent', NULL,
-        'sampleSize', COUNT(*)::int,
-        'note', 'N/A — Insurance does not use the Estimate Sent stage'
+        'insuranceSoldCount', COUNT(*) FILTER (
+          WHERE insurance_sold_at IS NOT NULL
+        )::int,
+        'insuranceSoldPercent', ROUND(
+          100.0 * COUNT(*) FILTER (
+            WHERE insurance_sold_at IS NOT NULL
+          ) / NULLIF(
+            COUNT(*) FILTER (
+              WHERE appointment_set_broad_at IS NOT NULL
+            ),
+            0
+          ),
+          1
+        ),
+        'insuranceSoldSampleSize', COUNT(*) FILTER (
+          WHERE appointment_set_broad_at IS NOT NULL
+        )::int,
+        'note', 'Estimate Sent: N/A for Insurance'
       )
       FROM appointment_events
       WHERE record_type_name = 'Insurance'
-        AND appointment_at IS NOT NULL
     ),
     'builtNeverSent', (
       SELECT jsonb_build_object(
@@ -552,10 +662,13 @@ export async function GET(request: NextRequest) {
         timeZone: METRICS_TIME_ZONE,
       },
       definitions: {
+        approvedAt: METRIC_RULES_APPROVED_AT,
         cleanLead: CLEAN_LEAD_DEFINITION,
         automaticOpeners: AUTO_OPENER_DEFINITION,
         conversation: `Real conversation = incoming text or completed call lasting at least ${REAL_CONVERSATION_SECONDS} seconds`,
-        booked: BOOKED_DEFINITION,
+        appointmentSetBroad: APPOINTMENT_SET_BROAD_DEFINITION,
+        appointmentSetStrict: APPOINTMENT_SET_STRICT_DEFINITION,
+        insuranceSold: INSURANCE_SOLD_DEFINITION,
         businessHours: BUSINESS_HOURS_DEFINITION,
       },
       persistence: row.persistence,

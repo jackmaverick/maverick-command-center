@@ -1,19 +1,46 @@
 import { describe, expect, it } from "vitest";
 import {
+  appointmentSetBroadAtSql,
+  appointmentSetStrictAtSql,
   automaticOpenerSql,
-  bookedLeadSql,
-  cleanLeadWhere,
   getMetricsDateRange,
+  insuranceSoldAtSql,
+  isAppointmentSetBroad,
+  isAppointmentSetStrict,
+  isCountableLead,
+  isInsuranceSold,
   isMetricsPeriod,
 } from "./front-funnel-metrics";
 
 describe("front-funnel metric rules", () => {
-  it("centralizes the clean lead and booking predicates", () => {
-    expect(cleanLeadWhere("lead")).toBe("lead.excluded_sales = false");
-    expect(bookedLeadSql("lead")).toContain(
-      "booked_history.job_jnid = lead.jnid"
+  it("centralizes the countable lead predicate", () => {
+    expect(isCountableLead("lead")).toContain("lead.excluded_sales = false");
+    expect(isCountableLead("lead")).toContain(
+      "lead.storm_alert_prospect = false"
     );
-    expect(bookedLeadSql("lead")).toContain("Appointment Scheduled");
+  });
+
+  it("centralizes broad and strict appointment-set definitions", () => {
+    expect(appointmentSetStrictAtSql("lead")).toContain(
+      "strict_history.job_jnid = lead.jnid"
+    );
+    expect(appointmentSetStrictAtSql("lead")).toContain(
+      "Appointment Scheduled"
+    );
+    expect(appointmentSetBroadAtSql("lead")).toContain("workflow_stages");
+    expect(appointmentSetBroadAtSql("lead")).toContain("tasks appointment_task");
+    expect(isAppointmentSetBroad("lead")).toContain("IS NOT NULL");
+    expect(isAppointmentSetStrict("lead")).toContain("IS NOT NULL");
+  });
+
+  it("starts insurance sold at Deductible Collected, not approval", () => {
+    const soldSql = insuranceSoldAtSql("lead");
+    expect(soldSql).toContain("Deductible Collected");
+    expect(soldSql).not.toContain("Fully Approved");
+    expect(soldSql).not.toContain("Deductible Invoice Sent");
+    expect(isInsuranceSold("lead")).toContain(
+      "lead.record_type_name = 'Insurance'"
+    );
   });
 
   it("centralizes both automatic opener sources", () => {

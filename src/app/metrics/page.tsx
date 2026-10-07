@@ -28,9 +28,12 @@ interface SourceMetric {
   contactedCount: number;
   contactSampleSize: number;
   contactRate: number | null;
-  bookedCount: number;
-  bookingSampleSize: number;
-  bookedPercent: number;
+  appointmentSetBroadCount: number;
+  appointmentSetBroadSampleSize: number;
+  appointmentSetBroadPercent: number;
+  appointmentSetStrictCount: number;
+  appointmentSetStrictSampleSize: number;
+  appointmentSetStrictPercent: number;
 }
 
 interface MissedCallMetric {
@@ -55,10 +58,13 @@ interface MetricsData {
     timeZone: string;
   };
   definitions: {
+    approvedAt: string;
     cleanLead: string;
     automaticOpeners: string;
     conversation: string;
-    booked: string;
+    appointmentSetBroad: string;
+    appointmentSetStrict: string;
+    insuranceSold: string;
     businessHours: string;
   };
   persistence: {
@@ -76,17 +82,30 @@ interface MetricsData {
   missedCalls: MissedCallMetric[];
   appointmentToEstimate: {
     retailRepairs: {
-      appointments: number;
-      estimateSentCount: number;
-      estimateSentPercent: number | null;
-      sampleSize: number;
-      medianDaysToEstimateSent: number | null;
-      timingSampleSize: number;
+      broad: {
+        appointments: number;
+        estimateSentCount: number;
+        estimateSentPercent: number | null;
+        sampleSize: number;
+        medianDaysToEstimateSent: number | null;
+        timingSampleSize: number;
+      };
+      strict: {
+        appointments: number;
+        estimateSentCount: number;
+        estimateSentPercent: number | null;
+        sampleSize: number;
+        medianDaysToEstimateSent: number | null;
+        timingSampleSize: number;
+      };
     };
     insurance: {
-      appointments: number;
+      appointmentSetBroadCount: number;
+      appointmentSetStrictCount: number;
       estimateSentPercent: null;
-      sampleSize: number;
+      insuranceSoldCount: number;
+      insuranceSoldPercent: number | null;
+      insuranceSoldSampleSize: number;
       note: string;
     };
     builtNeverSent: {
@@ -245,6 +264,7 @@ export default function MetricsPage() {
         <div className="mb-6 flex gap-3 rounded-lg border border-[#30363d] bg-[#161b22] p-4">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#58a6ff]" />
           <div className="text-xs leading-relaxed text-[#8b949e]">
+            <p>Metric definitions approved by Jack on Oct 7, 2026 at 8:08 AM CT.</p>
             <p>{data.definitions.cleanLead}.</p>
             <p>
               {data.definitions.conversation}. {data.definitions.automaticOpeners}.
@@ -316,10 +336,10 @@ export default function MetricsPage() {
 
           <Section
             title="3. Speed, contact, and booking by source"
-            description={`${data.definitions.booked}. This provisional definition is shared and can be swapped in one place.`}
+            description={`${data.definitions.appointmentSetBroad}. ${data.definitions.appointmentSetStrict}.`}
           >
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-sm">
+              <table className="w-full min-w-[1100px] text-sm">
                 <thead>
                   <tr className="border-b border-[#30363d] text-left text-xs text-[#8b949e]">
                     <th className="pb-3 font-medium">Source</th>
@@ -327,7 +347,12 @@ export default function MetricsPage() {
                     <th className="pb-3 text-right font-medium">Median first touch</th>
                     <th className="pb-3 text-right font-medium">Never touched</th>
                     <th className="pb-3 text-right font-medium">Contact ≤30d</th>
-                    <th className="pb-3 text-right font-medium">Booked (provisional)</th>
+                    <th className="pb-3 text-right font-medium">
+                      Appointment set (broad)
+                    </th>
+                    <th className="pb-3 text-right font-medium">
+                      Booked through Scheduled status (strict)
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -356,9 +381,17 @@ export default function MetricsPage() {
                         </span>
                       </td>
                       <td className="py-3 text-right text-[#e6edf3]">
-                        {formatRate(source.bookedPercent)}
+                        {formatRate(source.appointmentSetBroadPercent)}
                         <span className="block text-[10px] text-[#8b949e]">
-                          {source.bookedCount} · N = {source.bookingSampleSize}
+                          {source.appointmentSetBroadCount} · N ={" "}
+                          {source.appointmentSetBroadSampleSize}
+                        </span>
+                      </td>
+                      <td className="py-3 text-right text-[#e6edf3]">
+                        {formatRate(source.appointmentSetStrictPercent)}
+                        <span className="block text-[10px] text-[#8b949e]">
+                          {source.appointmentSetStrictCount} · N ={" "}
+                          {source.appointmentSetStrictSampleSize}
                         </span>
                       </td>
                     </tr>
@@ -419,25 +452,48 @@ export default function MetricsPage() {
 
           <Section
             title="5. Appointment to estimate sent"
-            description="Appointment-scheduled and Estimate Sent stage history for the selected clean-lead cohort."
+            description={`${data.definitions.appointmentSetBroad}. ${data.definitions.appointmentSetStrict}.`}
           >
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <MetricCard
-                label="Retail/Repairs appointments with estimate sent"
+                label="Appointment set (broad) → Estimate Sent"
                 value={formatRate(
-                  data.appointmentToEstimate.retailRepairs.estimateSentPercent
+                  data.appointmentToEstimate.retailRepairs.broad.estimateSentPercent
                 )}
-                sampleSize={data.appointmentToEstimate.retailRepairs.sampleSize}
-                detail={`${data.appointmentToEstimate.retailRepairs.estimateSentCount} sent`}
+                sampleSize={data.appointmentToEstimate.retailRepairs.broad.sampleSize}
+                detail={`${data.appointmentToEstimate.retailRepairs.broad.estimateSentCount} sent`}
               />
               <MetricCard
-                label="Median appointment → estimate sent"
+                label="Booked through Scheduled status (strict) → Estimate Sent"
+                value={formatRate(
+                  data.appointmentToEstimate.retailRepairs.strict.estimateSentPercent
+                )}
+                sampleSize={data.appointmentToEstimate.retailRepairs.strict.sampleSize}
+                detail={`${data.appointmentToEstimate.retailRepairs.strict.estimateSentCount} sent`}
+              />
+              <MetricCard
+                label="Appointment set (broad): median to Estimate Sent"
                 value={
-                  data.appointmentToEstimate.retailRepairs.medianDaysToEstimateSent === null
+                  data.appointmentToEstimate.retailRepairs.broad
+                    .medianDaysToEstimateSent === null
                     ? "N/A"
-                    : `${data.appointmentToEstimate.retailRepairs.medianDaysToEstimateSent.toFixed(1)} days`
+                    : `${data.appointmentToEstimate.retailRepairs.broad.medianDaysToEstimateSent.toFixed(1)} days`
                 }
-                sampleSize={data.appointmentToEstimate.retailRepairs.timingSampleSize}
+                sampleSize={
+                  data.appointmentToEstimate.retailRepairs.broad.timingSampleSize
+                }
+              />
+              <MetricCard
+                label="Booked through Scheduled status (strict): median to Estimate Sent"
+                value={
+                  data.appointmentToEstimate.retailRepairs.strict
+                    .medianDaysToEstimateSent === null
+                    ? "N/A"
+                    : `${data.appointmentToEstimate.retailRepairs.strict.medianDaysToEstimateSent.toFixed(1)} days`
+                }
+                sampleSize={
+                  data.appointmentToEstimate.retailRepairs.strict.timingSampleSize
+                }
               />
               <MetricCard
                 label="Built estimates never sent"
@@ -450,8 +506,20 @@ export default function MetricsPage() {
               <MetricCard
                 label="Insurance estimate sent"
                 value="N/A"
-                sampleSize={data.appointmentToEstimate.insurance.sampleSize}
-                detail={data.appointmentToEstimate.insurance.note}
+                sampleSize={
+                  data.appointmentToEstimate.insurance.appointmentSetBroadCount
+                }
+                detail={`${data.appointmentToEstimate.insurance.note}. Appointment set (broad): ${data.appointmentToEstimate.insurance.appointmentSetBroadCount}; Booked through Scheduled status (strict): ${data.appointmentToEstimate.insurance.appointmentSetStrictCount}.`}
+              />
+              <MetricCard
+                label="Insurance sold"
+                value={formatRate(
+                  data.appointmentToEstimate.insurance.insuranceSoldPercent
+                )}
+                sampleSize={
+                  data.appointmentToEstimate.insurance.insuranceSoldSampleSize
+                }
+                detail={`${data.appointmentToEstimate.insurance.insuranceSoldCount} sold. ${data.definitions.insuranceSold}.`}
               />
             </div>
           </Section>

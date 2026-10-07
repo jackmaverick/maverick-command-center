@@ -15,40 +15,143 @@ import {
 import { fromZonedTime, toZonedTime } from "date-fns-tz";
 
 export const METRICS_TIME_ZONE = "America/Chicago";
+export const METRIC_RULES_APPROVED_AT = "2026-10-07T08:08:00-05:00";
 
 export const CLEAN_LEAD_DEFINITION =
-  "Clean leads from metrics.v_jobs_clean where excluded_sales = false";
+  "Countable lead = metrics.v_jobs_clean where excluded_sales = false and storm_alert_prospect = false";
 
-export function cleanLeadWhere(alias = "j"): string {
-  return `${alias}.excluded_sales = false`;
+export function isCountableLead(alias = "j"): string {
+  return `${alias}.excluded_sales = false
+    AND ${alias}.storm_alert_prospect = false`;
 }
 
-export const BOOKED_DEFINITION =
-  "Booked = reached an appointment-scheduled stage in JobNimbus history";
+export const APPOINTMENT_SET_BROAD_DEFINITION =
+  "Appointment set (broad) = reached a Scheduled status or any later workflow status, or has an appointment task";
 
-export const BOOKED_STAGE_NAMES = [
+export const APPOINTMENT_SET_STRICT_DEFINITION =
+  "Booked through Scheduled status (strict) = status trail includes Appointment Scheduled, Appt Scheduled, Storm Inspection Scheduled, or Adjuster Appt Scheduled";
+
+export const INSURANCE_SOLD_DEFINITION =
+  "Insurance sold = reached Deductible Collected or a later sold/production/AR/completed workflow status; Fully Approved and Deductible Invoice Sent are not sold";
+
+const APPOINTMENT_SCHEDULED_STATUSES = [
   "Appointment Scheduled",
   "Appt Scheduled",
   "Storm Inspection Scheduled",
   "Adjuster Appt Scheduled",
 ] as const;
 
-export function bookedAtSql(alias = "j"): string {
-  const stages = BOOKED_STAGE_NAMES.map((stage) => `'${stage}'`).join(", ");
+function sqlList(values: readonly string[]): string {
+  return values.map((value) => `'${value.replaceAll("'", "''")}'`).join(", ");
+}
+
+export function appointmentSetStrictAtSql(alias = "j"): string {
+  const stages = sqlList(APPOINTMENT_SCHEDULED_STATUSES);
   return `(
-    SELECT MIN(booked_history.changed_at)
-    FROM job_stage_history booked_history
-    WHERE booked_history.job_jnid = ${alias}.jnid
-      AND booked_history.to_stage_name IN (${stages})
+    SELECT MIN(strict_history.changed_at)
+    FROM job_stage_history strict_history
+    WHERE strict_history.job_jnid = ${alias}.jnid
+      AND strict_history.to_stage_name IN (${stages})
   )`;
 }
 
-/**
- * Keep the unsettled booking rule behind one named function. When Jack settles
- * the definition, this is the only SQL predicate that needs to change.
- */
-export function bookedLeadSql(alias = "j"): string {
-  return `${bookedAtSql(alias)} IS NOT NULL`;
+export function isAppointmentSetStrict(alias = "j"): string {
+  return `${appointmentSetStrictAtSql(alias)} IS NOT NULL`;
+}
+
+export function appointmentSetBroadAtSql(alias = "j"): string {
+  const stages = sqlList(APPOINTMENT_SCHEDULED_STATUSES);
+  return `(
+    SELECT MIN(broad_evidence.observed_at)
+    FROM (
+      SELECT broad_history.changed_at AS observed_at
+      FROM job_stage_history broad_history
+      JOIN workflow_stages reached_stage
+        ON reached_stage.workflow_id = ${alias}.workflow_id
+       AND reached_stage.name = broad_history.to_stage_name
+      WHERE broad_history.job_jnid = ${alias}.jnid
+        AND reached_stage.stage_order >= (
+          SELECT MIN(scheduled_stage.stage_order)
+          FROM workflow_stages scheduled_stage
+          WHERE scheduled_stage.workflow_id = ${alias}.workflow_id
+            AND scheduled_stage.name IN (${stages})
+        )
+
+      UNION ALL
+
+      SELECT to_timestamp(${alias}.jn_date_status_change)
+      FROM workflow_stages current_stage
+      WHERE current_stage.workflow_id = ${alias}.workflow_id
+        AND current_stage.name = ${alias}.status_name
+        AND current_stage.stage_order >= (
+          SELECT MIN(scheduled_stage.stage_order)
+          FROM workflow_stages scheduled_stage
+          WHERE scheduled_stage.workflow_id = ${alias}.workflow_id
+            AND scheduled_stage.name IN (${stages})
+        )
+
+      UNION ALL
+
+      SELECT COALESCE(
+        appointment_task.start_date,
+        to_timestamp(appointment_task.jn_date_created)
+      )
+      FROM tasks appointment_task
+      WHERE appointment_task.job_jnid = ${alias}.jnid
+        AND appointment_task.deleted_at IS NULL
+        AND appointment_task.task_type ILIKE '%appointment%'
+    ) broad_evidence
+  )`;
+}
+
+export function isAppointmentSetBroad(alias = "j"): string {
+  return `${appointmentSetBroadAtSql(alias)} IS NOT NULL`;
+}
+
+export function insuranceSoldAtSql(alias = "j"): string {
+  return `(
+    SELECT MIN(sold_evidence.observed_at)
+    FROM (
+      SELECT insurance_history.changed_at AS observed_at
+      FROM job_stage_history insurance_history
+      JOIN workflow_stages reached_stage
+        ON reached_stage.workflow_id = ${alias}.workflow_id
+       AND reached_stage.name = insurance_history.to_stage_name
+      WHERE insurance_history.job_jnid = ${alias}.jnid
+        AND reached_stage.stage_order >= (
+          SELECT deductible_stage.stage_order
+          FROM workflow_stages deductible_stage
+          WHERE deductible_stage.workflow_id = ${alias}.workflow_id
+            AND deductible_stage.name = 'Deductible Collected'
+          LIMIT 1
+        )
+        AND reached_stage.jn_stage IN (
+          'Sold', 'In Production', 'Accounts Receivable', 'Completed'
+        )
+
+      UNION ALL
+
+      SELECT to_timestamp(${alias}.jn_date_status_change)
+      FROM workflow_stages current_stage
+      WHERE current_stage.workflow_id = ${alias}.workflow_id
+        AND current_stage.name = ${alias}.status_name
+        AND current_stage.stage_order >= (
+          SELECT deductible_stage.stage_order
+          FROM workflow_stages deductible_stage
+          WHERE deductible_stage.workflow_id = ${alias}.workflow_id
+            AND deductible_stage.name = 'Deductible Collected'
+          LIMIT 1
+        )
+        AND current_stage.jn_stage IN (
+          'Sold', 'In Production', 'Accounts Receivable', 'Completed'
+        )
+    ) sold_evidence
+  )`;
+}
+
+export function isInsuranceSold(alias = "j"): string {
+  return `${alias}.record_type_name = 'Insurance'
+    AND ${insuranceSoldAtSql(alias)} IS NOT NULL`;
 }
 
 export const AUTO_OPENER_DEFINITION =
