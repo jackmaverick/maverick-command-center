@@ -9,7 +9,10 @@ import {
 
 const originalEnv = { ...process.env };
 
-function request(path: string, init?: RequestInit) {
+function request(
+  path: string,
+  init?: ConstructorParameters<typeof NextRequest>[1],
+) {
   return new NextRequest(`https://dashboard.example${path}`, init);
 }
 
