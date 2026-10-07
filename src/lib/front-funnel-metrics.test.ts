@@ -32,6 +32,16 @@ describe("front-funnel metric rules", () => {
     expect(range.end.toISOString()).toBe("2026-04-01T05:00:00.000Z");
   });
 
+  it("starts the six-month window on a Chicago day boundary", () => {
+    const range = getMetricsDateRange(
+      "six_months",
+      new Date("2026-10-07T17:42:00.000Z")
+    );
+
+    expect(range.start.toISOString()).toBe("2026-04-07T05:00:00.000Z");
+    expect(range.end.toISOString()).toBe("2026-10-07T17:42:00.000Z");
+  });
+
   it("starts Chicago weeks on Monday across daylight saving time", () => {
     const range = getMetricsDateRange(
       "week:2026-03-09",

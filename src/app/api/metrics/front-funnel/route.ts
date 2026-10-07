@@ -264,9 +264,12 @@ missed_calls_matched AS (
   JOIN LATERAL (
     SELECT clean_jobs.jnid
     FROM clean_jobs
-    WHERE c.job_jnid = clean_jobs.jnid
-       OR c.contact_jnid = clean_jobs.primary_contact_jnid
-       OR right(regexp_replace(c.from_number, '\\D', '', 'g'), 10) = ANY(clean_jobs.phones)
+    WHERE c.started_at >= to_timestamp(clean_jobs.jn_date_created)
+      AND (
+        c.job_jnid = clean_jobs.jnid
+        OR c.contact_jnid = clean_jobs.primary_contact_jnid
+        OR right(regexp_replace(c.from_number, '\\D', '', 'g'), 10) = ANY(clean_jobs.phones)
+      )
     ORDER BY
       (c.job_jnid = clean_jobs.jnid) DESC,
       (c.contact_jnid = clean_jobs.primary_contact_jnid) DESC
@@ -322,9 +325,12 @@ missed_call_metrics AS (
         JOIN LATERAL (
           SELECT 1
           FROM clean_jobs
-          WHERE inbound.job_jnid = clean_jobs.jnid
-             OR inbound.contact_jnid = clean_jobs.primary_contact_jnid
-             OR right(regexp_replace(inbound.from_number, '\\D', '', 'g'), 10) = ANY(clean_jobs.phones)
+          WHERE inbound.started_at >= to_timestamp(clean_jobs.jn_date_created)
+            AND (
+              inbound.job_jnid = clean_jobs.jnid
+              OR inbound.contact_jnid = clean_jobs.primary_contact_jnid
+              OR right(regexp_replace(inbound.from_number, '\\D', '', 'g'), 10) = ANY(clean_jobs.phones)
+            )
           LIMIT 1
         ) clean_match ON true
         WHERE inbound.direction = 'inbound'

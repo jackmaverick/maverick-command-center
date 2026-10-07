@@ -2,6 +2,7 @@ import {
   addDays,
   addMonths,
   parseISO,
+  startOfDay,
   startOfMonth,
   startOfQuarter,
   startOfWeek,
@@ -161,7 +162,7 @@ export function getMetricsDateRange(
   } else {
     switch (period) {
       case "six_months":
-        startLocal = subMonths(localNow, 6);
+        startLocal = startOfDay(subMonths(localNow, 6));
         label = "Last 6 Months";
         break;
       case "week":
