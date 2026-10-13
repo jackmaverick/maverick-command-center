@@ -5,7 +5,7 @@ import { segmentWhereClause } from "@/lib/segment";
 import { LOSS_STATUSES, TRADE_CF_YES_VALUES } from "@/lib/constants";
 import type { Segment, TradeFilter } from "@/lib/constants";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 const VALID_SEGMENTS: Segment[] = [
   "real_estate", "retail", "insurance", "repairs", "warranty",

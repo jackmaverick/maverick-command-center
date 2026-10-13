@@ -29,7 +29,7 @@ import {
   type MetricsPeriod,
 } from "@/lib/front-funnel-metrics";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 const REAL_CONVERSATION_SECONDS = 30;
 const BUSINESS_HOURS_DEFINITION =

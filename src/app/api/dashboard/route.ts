@@ -4,7 +4,7 @@ import { type PeriodKey, getDateRange, getPreviousDateRange, isValidPeriodKey, t
 import { SEGMENT_SQL } from "@/lib/segment";
 import { STATUS_TO_STAGE, STAGES, CHART_COLORS } from "@/lib/constants";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 // Valid period keys for input validation
 
