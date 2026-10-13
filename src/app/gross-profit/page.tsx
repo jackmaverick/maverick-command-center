@@ -50,6 +50,30 @@ type SortField =
   | "grossProfit"
   | "marginPercent";
 
+function SortHeader({
+  field,
+  children,
+  className = "",
+  onSort,
+}: {
+  field: SortField;
+  children: React.ReactNode;
+  className?: string;
+  onSort: (field: SortField) => void;
+}) {
+  return (
+    <TableHead
+      className={`text-[#8b949e] cursor-pointer hover:text-[#e6edf3] select-none ${className}`}
+      onClick={() => onSort(field)}
+    >
+      <span className="flex items-center gap-1">
+        {children}
+        <ArrowUpDown className="h-3 w-3" />
+      </span>
+    </TableHead>
+  );
+}
+
 function marginColor(pct: number): string {
   if (pct >= 40) return "text-[#3fb950]";
   if (pct >= 25) return "text-[#d29922]";
@@ -108,12 +132,13 @@ export default function GrossProfitPage() {
     enabled: !!expandedJob,
   });
 
+  const jobs = data?.jobs;
   const sortedJobs = useMemo(() => {
-    if (!data?.jobs) return [];
+    if (!jobs) return [];
     const filtered =
       jobType === "all"
-        ? data.jobs
-        : data.jobs.filter((j) => j.jobTypes.includes(jobType));
+        ? jobs
+        : jobs.filter((j) => j.jobTypes.includes(jobType));
     return [...filtered].sort((a, b) => {
       const aVal = a[sortField];
       const bVal = b[sortField];
@@ -132,7 +157,7 @@ export default function GrossProfitPage() {
         ? (aVal as number) - (bVal as number)
         : (bVal as number) - (aVal as number);
     });
-  }, [data?.jobs, sortField, sortAsc, jobType]);
+  }, [jobs, sortField, sortAsc, jobType]);
 
   const toggleSort = useCallback(
     (field: SortField) => {
@@ -187,26 +212,6 @@ export default function GrossProfitPage() {
     queryClient.invalidateQueries({ queryKey: ["gross-profit"] });
     queryClient.invalidateQueries({ queryKey: ["retail-costs"] });
   };
-
-  const SortHeader = ({
-    field,
-    children,
-    className = "",
-  }: {
-    field: SortField;
-    children: React.ReactNode;
-    className?: string;
-  }) => (
-    <TableHead
-      className={`text-[#8b949e] cursor-pointer hover:text-[#e6edf3] select-none ${className}`}
-      onClick={() => toggleSort(field)}
-    >
-      <span className="flex items-center gap-1">
-        {children}
-        <ArrowUpDown className="h-3 w-3" />
-      </span>
-    </TableHead>
-  );
 
   const summary = jobType === "all" ? data?.summary : filteredSummary;
 
@@ -341,29 +346,29 @@ export default function GrossProfitPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-[#30363d] hover:bg-transparent">
-                    <SortHeader field="dateCompleted">Closed</SortHeader>
-                    <SortHeader field="jobName">Job</SortHeader>
+                    <SortHeader field="dateCompleted" onSort={toggleSort}>Closed</SortHeader>
+                    <SortHeader field="jobName" onSort={toggleSort}>Job</SortHeader>
                     <TableHead className="text-[#8b949e]">Job Type</TableHead>
                     <TableHead className="text-[#8b949e]">Record Type</TableHead>
-                    <SortHeader field="revenue" className="text-right">
+                    <SortHeader field="revenue" className="text-right" onSort={toggleSort}>
                       Revenue
                     </SortHeader>
-                    <SortHeader field="supplierCost" className="text-right">
+                    <SortHeader field="supplierCost" className="text-right" onSort={toggleSort}>
                       Supplier
                     </SortHeader>
-                    <SortHeader field="laborCost" className="text-right">
+                    <SortHeader field="laborCost" className="text-right" onSort={toggleSort}>
                       Labor
                     </SortHeader>
-                    <SortHeader field="retailCost" className="text-right">
+                    <SortHeader field="retailCost" className="text-right" onSort={toggleSort}>
                       Retail
                     </SortHeader>
-                    <SortHeader field="totalCost" className="text-right">
+                    <SortHeader field="totalCost" className="text-right" onSort={toggleSort}>
                       Total Cost
                     </SortHeader>
-                    <SortHeader field="grossProfit" className="text-right">
+                    <SortHeader field="grossProfit" className="text-right" onSort={toggleSort}>
                       Profit
                     </SortHeader>
-                    <SortHeader field="marginPercent" className="text-right">
+                    <SortHeader field="marginPercent" className="text-right" onSort={toggleSort}>
                       Margin
                     </SortHeader>
                     <TableHead className="w-8" />
