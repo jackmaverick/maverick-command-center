@@ -28,6 +28,7 @@ import {
   CalendarClock,
   TrendingUpDown,
   Gauge,
+  GraduationCap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -83,6 +84,7 @@ const navGroups = [
   {
     label: "SYSTEM",
     items: [
+      { href: "/dojo", label: "Automation Dojo", icon: GraduationCap },
       { href: "/loop-health", label: "Loop Health", icon: Activity },
       { href: "/agents", label: "Agents", icon: Bot },
       { href: "/faq-review", label: "FAQ Review", icon: MessageCircleQuestion },

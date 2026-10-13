@@ -24,6 +24,7 @@ const navItems = [
   { href: "/direct-mail", label: "Direct Mail" },
   { href: "/meta-ads", label: "Meta Ads" },
   { href: "/weekly-review", label: "Weekly Review" },
+  { href: "/dojo", label: "Automation Dojo" },
   { href: "/loop-health", label: "Loop Health" },
   { href: "/agents", label: "Agents" },
   { href: "/faq-review", label: "FAQ Review" },
