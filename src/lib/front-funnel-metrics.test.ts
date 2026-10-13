@@ -1,51 +1,45 @@
 import { describe, expect, it } from "vitest";
 import {
-  appointmentSetBroadAtSql,
-  appointmentSetStrictAtSql,
+  SALES_FUNNEL_JOBS_VIEW,
+  STATUS_FUNNEL_STAGE_TABLE,
   automaticOpenerSql,
+  funnelCreatedDateWhere,
+  getMetricsCreatedDateBounds,
   getMetricsDateRange,
-  insuranceSoldAtSql,
   isAppointmentSetBroad,
   isAppointmentSetStrict,
   isCountableLead,
   isInsuranceSold,
   isMetricsPeriod,
+  salesFunnelJobsSql,
+  statusFunnelStageSql,
 } from "./front-funnel-metrics";
 
 describe("front-funnel metric rules", () => {
-  it("centralizes the countable lead predicate", () => {
-    expect(isCountableLead("lead")).toContain("lead.excluded_sales = false");
-    expect(isCountableLead("lead")).toContain(
-      "lead.storm_alert_prospect = false"
+  it("centralizes migration-10 object and cohort names", () => {
+    expect(salesFunnelJobsSql("lead")).toBe(
+      `${SALES_FUNNEL_JOBS_VIEW} lead`
+    );
+    expect(statusFunnelStageSql("stage")).toBe(
+      `${STATUS_FUNNEL_STAGE_TABLE} stage`
+    );
+    expect(isCountableLead("lead")).toBe("lead.job_id IS NOT NULL");
+    expect(funnelCreatedDateWhere("lead", "$1", "$2")).toContain(
+      "lead.created_ct >= $1::date"
     );
   });
 
-  it("centralizes broad and strict appointment-set definitions", () => {
-    expect(appointmentSetStrictAtSql("lead")).toContain(
-      "strict_history.job_jnid = lead.jnid"
+  it("uses view flags for broad and strict appointment definitions", () => {
+    expect(isAppointmentSetBroad("lead")).toBe(
+      "lead.appt_set_broad = true"
     );
-    expect(appointmentSetStrictAtSql("lead")).toContain(
-      "Appointment Scheduled"
+    expect(isAppointmentSetStrict("lead")).toBe(
+      "lead.appt_set_strict = true"
     );
-    expect(appointmentSetBroadAtSql("lead")).toContain("workflow_stages");
-    expect(appointmentSetBroadAtSql("lead")).toContain("tasks appointment_task");
-    expect(appointmentSetBroadAtSql("lead")).toContain("Inspection Request");
-    expect(appointmentSetBroadAtSql("lead")).toContain("Adjuster Meeting");
-    expect(appointmentSetBroadAtSql("lead")).toContain(
-      "to_timestamp(appointment_task.jn_date_created)"
-    );
-    expect(isAppointmentSetBroad("lead")).toContain("IS NOT NULL");
-    expect(isAppointmentSetStrict("lead")).toContain("IS NOT NULL");
   });
 
-  it("starts insurance sold at Deductible Collected, not approval", () => {
-    const soldSql = insuranceSoldAtSql("lead");
-    expect(soldSql).toContain("Deductible Collected");
-    expect(soldSql).not.toContain("Fully Approved");
-    expect(soldSql).not.toContain("Deductible Invoice Sent");
-    expect(isInsuranceSold("lead")).toContain(
-      "lead.record_type_name = 'Insurance'"
-    );
+  it("uses the migration-10 insurance sold flag", () => {
+    expect(isInsuranceSold("lead")).toBe("lead.insurance_sold = true");
   });
 
   it("centralizes both automatic opener sources", () => {
@@ -73,6 +67,16 @@ describe("front-funnel metric rules", () => {
 
     expect(range.start.toISOString()).toBe("2026-04-07T05:00:00.000Z");
     expect(range.end.toISOString()).toBe("2026-10-07T17:42:00.000Z");
+  });
+
+  it("reproduces the approved reference cohort date bounds", () => {
+    const range = getMetricsDateRange("reference");
+    expect(range.start.toISOString()).toBe("2026-04-06T05:00:00.000Z");
+    expect(range.end.toISOString()).toBe("2026-10-07T05:00:00.000Z");
+    expect(getMetricsCreatedDateBounds(range)).toEqual({
+      startDate: "2026-04-06",
+      endDateExclusive: "2026-10-07",
+    });
   });
 
   it("starts Chicago weeks on Monday across daylight saving time", () => {

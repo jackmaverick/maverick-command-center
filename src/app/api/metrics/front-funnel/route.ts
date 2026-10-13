@@ -8,26 +8,34 @@ import {
   INSURANCE_SOLD_DEFINITION,
   METRIC_RULES_APPROVED_AT,
   METRICS_TIME_ZONE,
+  ESTIMATE_SENT_STATUS,
   automaticOpenerSql,
-  appointmentSetBroadAtSql,
-  appointmentSetStrictAtSql,
+  countsAsAppointmentBroad,
+  funnelCreatedDateWhere,
+  getMetricsCreatedDateBounds,
   getMetricsDateRange,
-  insuranceSoldAtSql,
   isAppointmentSetBroad,
   isAppointmentSetStrict,
   isCountableLead,
   isInsuranceSold,
   isMetricsPeriod,
+  isSold,
+  isStrictScheduledStage,
+  isUnassignedLead,
+  salesFunnelJobsSql,
+  statusFunnelStageSql,
   type MetricsPeriod,
 } from "@/lib/front-funnel-metrics";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 const REAL_CONVERSATION_SECONDS = 30;
 const BUSINESS_HOURS_DEFINITION =
   "Business hours = Monday–Friday, 8:00 AM–5:00 PM America/Chicago";
 
 interface MetricsRow {
+  funnel: Record<string, unknown>;
   persistence: Record<string, unknown>;
   contact: Record<string, unknown>;
   sources: Record<string, unknown>[];
@@ -37,51 +45,40 @@ interface MetricsRow {
 }
 
 const SQL = `
-WITH clean_jobs AS (
+WITH funnel_jobs AS (
+  SELECT funnel_job.*
+  FROM ${salesFunnelJobsSql("funnel_job")}
+  WHERE ${isCountableLead("funnel_job")}
+    AND ${funnelCreatedDateWhere("funnel_job", "$4", "$5")}
+),
+clean_jobs AS (
   SELECT
-    j.jnid,
-    j.id,
-    j.primary_contact_jnid,
-    j.workflow_id,
-    j.status_name,
-    j.jn_date_status_change,
-    j.record_type_name,
-    j.source_name,
-    j.sales_rep_jnid,
-    j.sales_rep_name,
-    j.jn_date_created,
+    funnel_job.*,
+    funnel_job.created_at AS lead_created_at,
+    source_job.primary_contact_jnid,
+    source_job.jn_date_created,
     ARRAY_REMOVE(ARRAY[
-      right(regexp_replace(COALESCE(j.primary_contact_number, ''), '\\D', '', 'g'), 10),
-      right(regexp_replace(COALESCE(j.parent_mobile_phone, ''), '\\D', '', 'g'), 10),
-      right(regexp_replace(COALESCE(j.parent_home_phone, ''), '\\D', '', 'g'), 10),
-      right(regexp_replace(COALESCE(j.parent_work_phone, ''), '\\D', '', 'g'), 10),
+      right(regexp_replace(COALESCE(source_job.primary_contact_number, ''), '\\D', '', 'g'), 10),
+      right(regexp_replace(COALESCE(source_job.parent_mobile_phone, ''), '\\D', '', 'g'), 10),
+      right(regexp_replace(COALESCE(source_job.parent_home_phone, ''), '\\D', '', 'g'), 10),
+      right(regexp_replace(COALESCE(source_job.parent_work_phone, ''), '\\D', '', 'g'), 10),
       right(regexp_replace(COALESCE(c.mobile_phone, ''), '\\D', '', 'g'), 10),
       right(regexp_replace(COALESCE(c.home_phone, ''), '\\D', '', 'g'), 10),
       right(regexp_replace(COALESCE(c.work_phone, ''), '\\D', '', 'g'), 10)
     ], '') AS phones
-  FROM metrics.v_jobs_clean j
-  LEFT JOIN contacts c ON c.jnid = j.primary_contact_jnid
-  WHERE ${isCountableLead("j")}
-),
-cohort_base AS (
-  SELECT
-    j.*,
-    to_timestamp(j.jn_date_created) AS lead_created_at,
-    COALESCE(NULLIF(trim(j.source_name), ''), 'Unknown') AS source,
-    ${appointmentSetBroadAtSql("j")} AS appointment_set_broad_at,
-    ${appointmentSetStrictAtSql("j")} AS appointment_set_strict_at,
-    ${insuranceSoldAtSql("j")} AS insurance_sold_at
-  FROM clean_jobs j
-  WHERE to_timestamp(j.jn_date_created) >= $1::timestamptz
-    AND to_timestamp(j.jn_date_created) < $2::timestamptz
+  FROM funnel_jobs funnel_job
+  JOIN metrics.v_jobs_clean source_job ON source_job.jnid = funnel_job.jnid
+  LEFT JOIN contacts c ON c.jnid = source_job.primary_contact_jnid
 ),
 cohort AS (
   SELECT
-    cohort_base.*,
-    ${isAppointmentSetBroad("cohort_base")} AS appointment_set_broad,
-    ${isAppointmentSetStrict("cohort_base")} AS appointment_set_strict,
-    ${isInsuranceSold("cohort_base")} AS insurance_sold
-  FROM cohort_base
+    clean_jobs.*,
+    COALESCE(NULLIF(trim(clean_jobs.source_name), ''), 'Unknown') AS source,
+    ${isAppointmentSetBroad("clean_jobs")} AS appointment_set_broad,
+    ${isAppointmentSetStrict("clean_jobs")} AS appointment_set_strict,
+    ${isSold("clean_jobs")} AS sold_flag,
+    ${isInsuranceSold("clean_jobs")} AS insurance_sold_flag
+  FROM clean_jobs
 ),
 call_communications AS (
   SELECT
@@ -204,6 +201,53 @@ lead_metrics AS (
     s.first_conversation_at <= j.lead_created_at + interval '30 days' AS contacted_30d
   FROM cohort j
   LEFT JOIN communication_summary s ON s.job_jnid = j.jnid
+),
+funnel_summary AS (
+  SELECT jsonb_build_object(
+    'leads', COUNT(*)::int,
+    'appointmentSetBroad', jsonb_build_object(
+      'count', COUNT(*) FILTER (WHERE appointment_set_broad)::int,
+      'sampleSize', COUNT(*)::int,
+      'percent', ROUND(
+        100.0 * COUNT(*) FILTER (WHERE appointment_set_broad)
+        / NULLIF(COUNT(*), 0),
+        1
+      )
+    ),
+    'appointmentSetStrict', jsonb_build_object(
+      'count', COUNT(*) FILTER (WHERE appointment_set_strict)::int,
+      'sampleSize', COUNT(*)::int,
+      'percent', ROUND(
+        100.0 * COUNT(*) FILTER (WHERE appointment_set_strict)
+        / NULLIF(COUNT(*), 0),
+        1
+      )
+    ),
+    'appointmentToSold', jsonb_build_object(
+      'count', COUNT(*) FILTER (
+        WHERE appointment_set_broad AND sold_flag
+      )::int,
+      'sampleSize', COUNT(*) FILTER (
+        WHERE appointment_set_broad
+      )::int,
+      'percent', ROUND(
+        100.0 * COUNT(*) FILTER (
+          WHERE appointment_set_broad AND sold_flag
+        ) / NULLIF(
+          COUNT(*) FILTER (WHERE appointment_set_broad),
+          0
+        ),
+        1
+      )
+    ),
+    'insuranceSold', jsonb_build_object(
+      'count', COUNT(*) FILTER (WHERE insurance_sold_flag)::int,
+      'sampleSize', COUNT(*) FILTER (
+        WHERE record_type_name = 'Insurance'
+      )::int
+    )
+  ) AS data
+  FROM lead_metrics
 ),
 persistence AS (
   SELECT jsonb_build_object(
@@ -411,21 +455,29 @@ appointment_events AS (
   SELECT
     j.jnid,
     j.record_type_name,
-    j.appointment_set_broad_at,
-    j.appointment_set_strict_at,
-    j.insurance_sold_at,
+    j.appointment_set_broad,
+    j.appointment_set_strict,
+    j.insurance_sold_flag,
     MIN(h.changed_at) FILTER (
-      WHERE h.to_stage_name = 'Estimate Sent'
+      WHERE ${countsAsAppointmentBroad("funnel_stage")}
+    ) AS appointment_set_broad_at,
+    MIN(h.changed_at) FILTER (
+      WHERE ${isStrictScheduledStage("funnel_stage")}
+    ) AS appointment_set_strict_at,
+    MIN(h.changed_at) FILTER (
+      WHERE h.to_stage_name = '${ESTIMATE_SENT_STATUS}'
     ) AS estimate_sent_at
   FROM cohort j
   LEFT JOIN job_stage_history h ON h.job_jnid = j.jnid
+  LEFT JOIN ${statusFunnelStageSql("funnel_stage")}
+    ON funnel_stage.status_name = h.to_stage_name
   WHERE j.record_type_name IN ('Retail', 'Repairs', 'Insurance')
   GROUP BY
     j.jnid,
     j.record_type_name,
-    j.appointment_set_broad_at,
-    j.appointment_set_strict_at,
-    j.insurance_sold_at
+    j.appointment_set_broad,
+    j.appointment_set_strict,
+    j.insurance_sold_flag
 ),
 estimate_jobs AS (
   SELECT
@@ -446,7 +498,7 @@ estimate_jobs AS (
     ) OR EXISTS (
       SELECT 1 FROM job_stage_history sent_history
       WHERE sent_history.job_jnid = j.jnid
-        AND sent_history.to_stage_name = 'Estimate Sent'
+        AND sent_history.to_stage_name = '${ESTIMATE_SENT_STATUS}'
     ) AS sent
   FROM cohort j
   JOIN estimates e ON e.job_jnid = j.jnid
@@ -459,28 +511,26 @@ appointment_metrics AS (
       SELECT jsonb_build_object(
         'broad', jsonb_build_object(
           'appointments', COUNT(*) FILTER (
-            WHERE appointment_set_broad_at IS NOT NULL
+            WHERE appointment_set_broad
           )::int,
           'estimateSentCount', COUNT(*) FILTER (
-            WHERE estimate_sent_at IS NOT NULL
-              AND appointment_set_broad_at IS NOT NULL
-              AND estimate_sent_at >= appointment_set_broad_at
+            WHERE appointment_set_broad
+              AND estimate_sent_at IS NOT NULL
           )::int,
           'estimateSentPercent', ROUND(
             100.0 * COUNT(*) FILTER (
-              WHERE estimate_sent_at IS NOT NULL
-                AND appointment_set_broad_at IS NOT NULL
-                AND estimate_sent_at >= appointment_set_broad_at
+              WHERE appointment_set_broad
+                AND estimate_sent_at IS NOT NULL
             ) / NULLIF(
               COUNT(*) FILTER (
-                WHERE appointment_set_broad_at IS NOT NULL
+                WHERE appointment_set_broad
               ),
               0
             ),
             1
           ),
           'sampleSize', COUNT(*) FILTER (
-            WHERE appointment_set_broad_at IS NOT NULL
+            WHERE appointment_set_broad
           )::int,
           'medianDaysToEstimateSent', ROUND((
             percentile_cont(0.5) WITHIN GROUP (
@@ -501,28 +551,26 @@ appointment_metrics AS (
         ),
         'strict', jsonb_build_object(
           'appointments', COUNT(*) FILTER (
-            WHERE appointment_set_strict_at IS NOT NULL
+            WHERE appointment_set_strict
           )::int,
           'estimateSentCount', COUNT(*) FILTER (
-            WHERE estimate_sent_at IS NOT NULL
-              AND appointment_set_strict_at IS NOT NULL
-              AND estimate_sent_at >= appointment_set_strict_at
+            WHERE appointment_set_strict
+              AND estimate_sent_at IS NOT NULL
           )::int,
           'estimateSentPercent', ROUND(
             100.0 * COUNT(*) FILTER (
-              WHERE estimate_sent_at IS NOT NULL
-                AND appointment_set_strict_at IS NOT NULL
-                AND estimate_sent_at >= appointment_set_strict_at
+              WHERE appointment_set_strict
+                AND estimate_sent_at IS NOT NULL
             ) / NULLIF(
               COUNT(*) FILTER (
-                WHERE appointment_set_strict_at IS NOT NULL
+                WHERE appointment_set_strict
               ),
               0
             ),
             1
           ),
           'sampleSize', COUNT(*) FILTER (
-            WHERE appointment_set_strict_at IS NOT NULL
+            WHERE appointment_set_strict
           )::int,
           'medianDaysToEstimateSent', ROUND((
             percentile_cont(0.5) WITHIN GROUP (
@@ -548,28 +596,28 @@ appointment_metrics AS (
     'insurance', (
       SELECT jsonb_build_object(
         'appointmentSetBroadCount', COUNT(*) FILTER (
-          WHERE appointment_set_broad_at IS NOT NULL
+          WHERE appointment_set_broad
         )::int,
         'appointmentSetStrictCount', COUNT(*) FILTER (
-          WHERE appointment_set_strict_at IS NOT NULL
+          WHERE appointment_set_strict
         )::int,
         'estimateSentPercent', NULL,
         'insuranceSoldCount', COUNT(*) FILTER (
-          WHERE insurance_sold_at IS NOT NULL
+          WHERE insurance_sold_flag
         )::int,
         'insuranceSoldPercent', ROUND(
           100.0 * COUNT(*) FILTER (
-            WHERE insurance_sold_at IS NOT NULL
+            WHERE insurance_sold_flag
           ) / NULLIF(
             COUNT(*) FILTER (
-              WHERE appointment_set_broad_at IS NOT NULL
+              WHERE appointment_set_broad
             ),
             0
           ),
           1
         ),
         'insuranceSoldSampleSize', COUNT(*) FILTER (
-          WHERE appointment_set_broad_at IS NOT NULL
+          WHERE appointment_set_broad
         )::int,
         'note', 'Estimate Sent: N/A for Insurance'
       )
@@ -606,12 +654,12 @@ coverage_metrics AS (
   SELECT jsonb_build_object(
     'unassigned', jsonb_build_object(
       'count', COUNT(*) FILTER (
-        WHERE NULLIF(trim(sales_rep_jnid), '') IS NULL
+        WHERE ${isUnassignedLead("cohort")}
       )::int,
       'sampleSize', COUNT(*)::int,
       'percent', ROUND(
         100.0 * COUNT(*) FILTER (
-          WHERE NULLIF(trim(sales_rep_jnid), '') IS NULL
+          WHERE ${isUnassignedLead("cohort")}
         ) / NULLIF(COUNT(*), 0), 1
       )
     ),
@@ -631,6 +679,7 @@ coverage_metrics AS (
   FROM cohort
 )
 SELECT
+  (SELECT data FROM funnel_summary) AS funnel,
   (SELECT data FROM persistence) AS persistence,
   (SELECT data FROM contact_summary) AS contact,
   COALESCE((SELECT data FROM source_metrics), '[]'::jsonb) AS sources,
@@ -641,17 +690,20 @@ SELECT
 
 export async function GET(request: NextRequest) {
   try {
-    const requestedPeriod = new URL(request.url).searchParams.get("period") ?? "six_months";
+    const requestedPeriod = new URL(request.url).searchParams.get("period") ?? "reference";
     const period: MetricsPeriod = isMetricsPeriod(requestedPeriod)
       ? requestedPeriod
-      : "six_months";
+      : "reference";
     const now = new Date();
     const range = getMetricsDateRange(period, now);
+    const createdDateBounds = getMetricsCreatedDateBounds(range);
 
     const row = await queryOne<MetricsRow>(SQL, [
       range.start.toISOString(),
       range.end.toISOString(),
       now.toISOString(),
+      createdDateBounds.startDate,
+      createdDateBounds.endDateExclusive,
     ]);
 
     if (!row) {
@@ -676,6 +728,7 @@ export async function GET(request: NextRequest) {
         insuranceSold: INSURANCE_SOLD_DEFINITION,
         businessHours: BUSINESS_HOURS_DEFINITION,
       },
+      funnel: row.funnel,
       persistence: row.persistence,
       contact: row.contact,
       sources: row.sources,
@@ -685,6 +738,10 @@ export async function GET(request: NextRequest) {
       caveats: {
         missedCalls:
           "Minimums only. The Supabase Quo copy undercounts missed calls: Quo showed 49 on Main for Sep 29–Oct 6, while Supabase contained 16.",
+      },
+    }, {
+      headers: {
+        "Cache-Control": "private, no-store, max-age=0",
       },
     });
   } catch (error) {

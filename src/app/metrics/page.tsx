@@ -67,6 +67,16 @@ interface MetricsData {
     insuranceSold: string;
     businessHours: string;
   };
+  funnel: {
+    leads: number;
+    appointmentSetBroad: Rate;
+    appointmentSetStrict: Rate;
+    appointmentToSold: Rate;
+    insuranceSold: {
+      count: number;
+      sampleSize: number;
+    };
+  };
   persistence: {
     neverReachedN: number;
     averageAttempts: number | null;
@@ -131,6 +141,7 @@ interface MetricsData {
 }
 
 const PERIODS = [
+  { value: "reference", label: "Apr 6 – Oct 6, 2026" },
   { value: "six_months", label: "Last 6 Months" },
   { value: "month", label: "This Month" },
   { value: "last_month", label: "Last Month" },
@@ -220,16 +231,19 @@ function LoadingState() {
 }
 
 export default function MetricsPage() {
-  const [period, setPeriod] = useState("six_months");
+  const [period, setPeriod] = useState("reference");
   const { data, isLoading, isError } = useQuery<MetricsData>({
     queryKey: ["front-funnel-metrics", period],
     queryFn: async () => {
       const response = await fetch(
-        `/api/metrics/front-funnel?period=${encodeURIComponent(period)}`
+        `/api/metrics/front-funnel?period=${encodeURIComponent(period)}`,
+        { cache: "no-store" }
       );
       if (!response.ok) throw new Error("Failed to load front-funnel metrics");
       return response.json();
     },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 
   return (
@@ -287,6 +301,43 @@ export default function MetricsPage() {
 
       {data && (
         <>
+          <Section
+            title="Sales funnel"
+            description="Live migration-10 funnel flags for the selected America/Chicago lead cohort."
+          >
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+              <MetricCard
+                label="Countable clean leads"
+                value={data.funnel.leads.toLocaleString("en-US")}
+                detail="Live rows from metrics.v_sales_funnel_jobs"
+              />
+              <MetricCard
+                label="Appointment set (broad)"
+                value={formatRate(data.funnel.appointmentSetBroad.percent)}
+                sampleSize={data.funnel.appointmentSetBroad.sampleSize}
+                detail={`${data.funnel.appointmentSetBroad.count} leads`}
+              />
+              <MetricCard
+                label="Booked through Scheduled status (strict)"
+                value={formatRate(data.funnel.appointmentSetStrict.percent)}
+                sampleSize={data.funnel.appointmentSetStrict.sampleSize}
+                detail={`${data.funnel.appointmentSetStrict.count} leads`}
+              />
+              <MetricCard
+                label="Appointment set (broad) → sold"
+                value={formatRate(data.funnel.appointmentToSold.percent)}
+                sampleSize={data.funnel.appointmentToSold.sampleSize}
+                detail={`${data.funnel.appointmentToSold.count} sold`}
+              />
+              <MetricCard
+                label="Insurance sold"
+                value={data.funnel.insuranceSold.count.toLocaleString("en-US")}
+                sampleSize={data.funnel.insuranceSold.sampleSize}
+                detail={data.definitions.insuranceSold}
+              />
+            </div>
+          </Section>
+
           <Section
             title="1. Persistence on never-reached leads"
             description="Human outbound calls and non-automated texts before contact. Only leads with a full 30-day observation window are included."

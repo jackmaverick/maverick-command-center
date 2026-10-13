@@ -17,12 +17,58 @@ import { fromZonedTime, toZonedTime } from "date-fns-tz";
 export const METRICS_TIME_ZONE = "America/Chicago";
 export const METRIC_RULES_APPROVED_AT = "2026-10-07T08:08:00-05:00";
 
-export const CLEAN_LEAD_DEFINITION =
-  "Countable lead = metrics.v_jobs_clean where excluded_sales = false and storm_alert_prospect = false";
+export const SALES_FUNNEL_JOBS_VIEW = "metrics.v_sales_funnel_jobs";
+export const STATUS_FUNNEL_STAGE_TABLE = "metrics.status_funnel_stage";
 
-export function isCountableLead(alias = "j"): string {
-  return `${alias}.excluded_sales = false
-    AND ${alias}.storm_alert_prospect = false`;
+export const SALES_FUNNEL_COLUMNS = {
+  createdDate: "created_ct",
+  appointmentSetBroad: "appt_set_broad",
+  appointmentSetStrict: "appt_set_strict",
+  appointmentByStatus: "appt_by_status",
+  appointmentByTask: "appt_by_task",
+  sold: "sold",
+  insuranceSold: "insurance_sold",
+  approvedClaim: "approved_claim",
+  repBucket: "rep_bucket",
+} as const;
+
+export const STATUS_FUNNEL_COLUMNS = {
+  statusName: "status_name",
+  countsAsAppointmentBroad: "counts_as_appt_broad",
+  isStrictScheduled: "is_strict_scheduled",
+  isSold: "is_sold",
+  isInsuranceSold: "is_insurance_sold",
+} as const;
+
+export const ESTIMATE_SENT_STATUS = "Estimate Sent";
+export const SALES_FUNNEL_REFERENCE_WINDOW = {
+  startDate: "2026-04-06",
+  endDateExclusive: "2026-10-07",
+  label: "Apr 6 – Oct 6, 2026",
+} as const;
+
+export const CLEAN_LEAD_DEFINITION =
+  "Countable lead = one row from metrics.v_sales_funnel_jobs, which already excludes excluded_sales and storm_alert_prospect jobs";
+
+export function salesFunnelJobsSql(alias = "funnel_job"): string {
+  return `${SALES_FUNNEL_JOBS_VIEW} ${alias}`;
+}
+
+export function statusFunnelStageSql(alias = "funnel_stage"): string {
+  return `${STATUS_FUNNEL_STAGE_TABLE} ${alias}`;
+}
+
+export function funnelCreatedDateWhere(
+  alias = "funnel_job",
+  startParameter = "$4",
+  endParameter = "$5"
+): string {
+  return `${alias}.${SALES_FUNNEL_COLUMNS.createdDate} >= ${startParameter}::date
+    AND ${alias}.${SALES_FUNNEL_COLUMNS.createdDate} < ${endParameter}::date`;
+}
+
+export function isCountableLead(alias = "funnel_job"): string {
+  return `${alias}.job_id IS NOT NULL`;
 }
 
 export const APPOINTMENT_SET_BROAD_DEFINITION =
@@ -32,140 +78,34 @@ export const APPOINTMENT_SET_STRICT_DEFINITION =
   "Booked through Scheduled status (strict) = status trail includes Appointment Scheduled, Appt Scheduled, Storm Inspection Scheduled, or Adjuster Appt Scheduled";
 
 export const INSURANCE_SOLD_DEFINITION =
-  "Insurance sold = reached Deductible Collected or a later sold/production/AR/completed workflow status; Fully Approved and Deductible Invoice Sent are not sold";
+  "Insurance sold = metrics.v_sales_funnel_jobs.insurance_sold; migration 10 starts this at Deductible Collected or later, not Fully Approved or Deductible Invoice Sent";
 
-const APPOINTMENT_SCHEDULED_STATUSES = [
-  "Appointment Scheduled",
-  "Appt Scheduled",
-  "Storm Inspection Scheduled",
-  "Adjuster Appt Scheduled",
-] as const;
-
-const APPOINTMENT_TASK_TYPES = [
-  "Inspection Request",
-  "Repair Inspection Request",
-  "Insurance - Inspection Request",
-  "Storm Inspection",
-  "Adjuster Meeting",
-  "Insurance - Sales Sit Down",
-] as const;
-
-function sqlList(values: readonly string[]): string {
-  return values.map((value) => `'${value.replaceAll("'", "''")}'`).join(", ");
+export function isAppointmentSetStrict(alias = "funnel_job"): string {
+  return `${alias}.${SALES_FUNNEL_COLUMNS.appointmentSetStrict} = true`;
 }
 
-export function appointmentSetStrictAtSql(alias = "j"): string {
-  const stages = sqlList(APPOINTMENT_SCHEDULED_STATUSES);
-  return `(
-    SELECT MIN(strict_history.changed_at)
-    FROM job_stage_history strict_history
-    WHERE strict_history.job_jnid = ${alias}.jnid
-      AND strict_history.to_stage_name IN (${stages})
-  )`;
+export function isAppointmentSetBroad(alias = "funnel_job"): string {
+  return `${alias}.${SALES_FUNNEL_COLUMNS.appointmentSetBroad} = true`;
 }
 
-export function isAppointmentSetStrict(alias = "j"): string {
-  return `${alias}.appointment_set_strict_at IS NOT NULL`;
+export function isSold(alias = "funnel_job"): string {
+  return `${alias}.${SALES_FUNNEL_COLUMNS.sold} = true`;
 }
 
-export function appointmentSetBroadAtSql(alias = "j"): string {
-  const stages = sqlList(APPOINTMENT_SCHEDULED_STATUSES);
-  const appointmentTaskTypes = sqlList(APPOINTMENT_TASK_TYPES);
-  return `(
-    SELECT MIN(broad_evidence.observed_at)
-    FROM (
-      SELECT broad_history.changed_at AS observed_at
-      FROM job_stage_history broad_history
-      JOIN workflow_stages reached_stage
-        ON reached_stage.workflow_id = ${alias}.workflow_id
-       AND reached_stage.name = broad_history.to_stage_name
-      WHERE broad_history.job_jnid = ${alias}.jnid
-        AND reached_stage.stage_order >= (
-          SELECT MIN(scheduled_stage.stage_order)
-          FROM workflow_stages scheduled_stage
-          WHERE scheduled_stage.workflow_id = ${alias}.workflow_id
-            AND scheduled_stage.name IN (${stages})
-        )
-
-      UNION ALL
-
-      SELECT to_timestamp(${alias}.jn_date_status_change)
-      FROM workflow_stages current_stage
-      WHERE current_stage.workflow_id = ${alias}.workflow_id
-        AND current_stage.name = ${alias}.status_name
-        AND current_stage.stage_order >= (
-          SELECT MIN(scheduled_stage.stage_order)
-          FROM workflow_stages scheduled_stage
-          WHERE scheduled_stage.workflow_id = ${alias}.workflow_id
-            AND scheduled_stage.name IN (${stages})
-        )
-
-      UNION ALL
-
-      SELECT COALESCE(
-        to_timestamp(appointment_task.jn_date_created),
-        appointment_task.created_at,
-        appointment_task.start_date
-      )
-      FROM tasks appointment_task
-      WHERE appointment_task.job_jnid = ${alias}.jnid
-        AND appointment_task.deleted_at IS NULL
-        AND (
-          appointment_task.task_type ILIKE '%appointment%'
-          OR appointment_task.task_type IN (${appointmentTaskTypes})
-        )
-    ) broad_evidence
-  )`;
+export function isInsuranceSold(alias = "funnel_job"): string {
+  return `${alias}.${SALES_FUNNEL_COLUMNS.insuranceSold} = true`;
 }
 
-export function isAppointmentSetBroad(alias = "j"): string {
-  return `${alias}.appointment_set_broad_at IS NOT NULL`;
+export function isUnassignedLead(alias = "funnel_job"): string {
+  return `${alias}.${SALES_FUNNEL_COLUMNS.repBucket} = 'Unassigned'`;
 }
 
-export function insuranceSoldAtSql(alias = "j"): string {
-  return `(
-    SELECT MIN(sold_evidence.observed_at)
-    FROM (
-      SELECT insurance_history.changed_at AS observed_at
-      FROM job_stage_history insurance_history
-      JOIN workflow_stages reached_stage
-        ON reached_stage.workflow_id = ${alias}.workflow_id
-       AND reached_stage.name = insurance_history.to_stage_name
-      WHERE insurance_history.job_jnid = ${alias}.jnid
-        AND reached_stage.stage_order >= (
-          SELECT deductible_stage.stage_order
-          FROM workflow_stages deductible_stage
-          WHERE deductible_stage.workflow_id = ${alias}.workflow_id
-            AND deductible_stage.name = 'Deductible Collected'
-          LIMIT 1
-        )
-        AND reached_stage.jn_stage IN (
-          'Sold', 'In Production', 'Accounts Receivable', 'Completed'
-        )
-
-      UNION ALL
-
-      SELECT to_timestamp(${alias}.jn_date_status_change)
-      FROM workflow_stages current_stage
-      WHERE current_stage.workflow_id = ${alias}.workflow_id
-        AND current_stage.name = ${alias}.status_name
-        AND current_stage.stage_order >= (
-          SELECT deductible_stage.stage_order
-          FROM workflow_stages deductible_stage
-          WHERE deductible_stage.workflow_id = ${alias}.workflow_id
-            AND deductible_stage.name = 'Deductible Collected'
-          LIMIT 1
-        )
-        AND current_stage.jn_stage IN (
-          'Sold', 'In Production', 'Accounts Receivable', 'Completed'
-        )
-    ) sold_evidence
-  )`;
+export function countsAsAppointmentBroad(alias = "funnel_stage"): string {
+  return `${alias}.${STATUS_FUNNEL_COLUMNS.countsAsAppointmentBroad} = true`;
 }
 
-export function isInsuranceSold(alias = "j"): string {
-  return `${alias}.record_type_name = 'Insurance'
-    AND ${alias}.insurance_sold_at IS NOT NULL`;
+export function isStrictScheduledStage(alias = "funnel_stage"): string {
+  return `${alias}.${STATUS_FUNNEL_COLUMNS.isStrictScheduled} = true`;
 }
 
 export const AUTO_OPENER_DEFINITION =
@@ -210,6 +150,7 @@ export function automaticOpenerSql(smsAlias = "s"): string {
 }
 
 export type MetricsPeriod =
+  | "reference"
   | "six_months"
   | "week"
   | "last_week"
@@ -231,6 +172,7 @@ export function isMetricsPeriod(value: string): value is MetricsPeriod {
   if (
     [
       "six_months",
+      "reference",
       "week",
       "last_week",
       "month",
@@ -290,6 +232,13 @@ export function getMetricsDateRange(
     })}`;
   } else {
     switch (period) {
+      case "reference":
+        startLocal = parseISO(SALES_FUNNEL_REFERENCE_WINDOW.startDate);
+        end = chicagoBoundary(
+          parseISO(SALES_FUNNEL_REFERENCE_WINDOW.endDateExclusive)
+        );
+        label = SALES_FUNNEL_REFERENCE_WINDOW.label;
+        break;
       case "six_months":
         startLocal = startOfDay(subMonths(localNow, 6));
         label = "Last 6 Months";
@@ -328,5 +277,26 @@ export function getMetricsDateRange(
     label,
     start: chicagoBoundary(startLocal),
     end,
+  };
+}
+
+export function getMetricsCreatedDateBounds(range: MetricsDateRange): {
+  startDate: string;
+  endDateExclusive: string;
+} {
+  const localStart = toZonedTime(range.start, METRICS_TIME_ZONE);
+  const localEnd = toZonedTime(range.end, METRICS_TIME_ZONE);
+  const endIsDayBoundary =
+    localEnd.getHours() === 0 &&
+    localEnd.getMinutes() === 0 &&
+    localEnd.getSeconds() === 0 &&
+    localEnd.getMilliseconds() === 0;
+  const endExclusive = endIsDayBoundary
+    ? localEnd
+    : addDays(startOfDay(localEnd), 1);
+
+  return {
+    startDate: format(localStart, "yyyy-MM-dd"),
+    endDateExclusive: format(endExclusive, "yyyy-MM-dd"),
   };
 }
