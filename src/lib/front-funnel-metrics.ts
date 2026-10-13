@@ -19,6 +19,7 @@ export const METRIC_RULES_APPROVED_AT = "2026-10-07T08:08:00-05:00";
 
 export const SALES_FUNNEL_JOBS_VIEW = "metrics.v_sales_funnel_jobs";
 export const STATUS_FUNNEL_STAGE_TABLE = "metrics.status_funnel_stage";
+export const CLEAN_JOBS_VIEW = "metrics.v_jobs_clean";
 
 export const SALES_FUNNEL_COLUMNS = {
   createdDate: "created_ct",
@@ -56,6 +57,17 @@ export function salesFunnelJobsSql(alias = "funnel_job"): string {
 
 export function statusFunnelStageSql(alias = "funnel_stage"): string {
   return `${STATUS_FUNNEL_STAGE_TABLE} ${alias}`;
+}
+
+export function cleanJobsSql(alias = "clean_job"): string {
+  return `${CLEAN_JOBS_VIEW} ${alias}`;
+}
+
+export function statusFunnelStageJoinOn(
+  stageAlias = "funnel_stage",
+  historyAlias = "history"
+): string {
+  return `${stageAlias}.${STATUS_FUNNEL_COLUMNS.statusName} = ${historyAlias}.to_stage_name`;
 }
 
 export function funnelCreatedDateWhere(

@@ -3,6 +3,7 @@ import {
   SALES_FUNNEL_JOBS_VIEW,
   STATUS_FUNNEL_STAGE_TABLE,
   automaticOpenerSql,
+  cleanJobsSql,
   funnelCreatedDateWhere,
   getMetricsCreatedDateBounds,
   getMetricsDateRange,
@@ -23,6 +24,7 @@ describe("front-funnel metric rules", () => {
     expect(statusFunnelStageSql("stage")).toBe(
       `${STATUS_FUNNEL_STAGE_TABLE} stage`
     );
+    expect(cleanJobsSql("source")).toBe("metrics.v_jobs_clean source");
     expect(isCountableLead("lead")).toBe("lead.job_id IS NOT NULL");
     expect(funnelCreatedDateWhere("lead", "$1", "$2")).toContain(
       "lead.created_ct >= $1::date"

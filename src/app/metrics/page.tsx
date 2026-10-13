@@ -309,7 +309,7 @@ export default function MetricsPage() {
               <MetricCard
                 label="Countable clean leads"
                 value={data.funnel.leads.toLocaleString("en-US")}
-                detail="Live rows from metrics.v_sales_funnel_jobs"
+                detail="Live migration-10 funnel rows"
               />
               <MetricCard
                 label="Appointment set (broad)"

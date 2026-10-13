@@ -10,6 +10,7 @@ import {
   METRICS_TIME_ZONE,
   ESTIMATE_SENT_STATUS,
   automaticOpenerSql,
+  cleanJobsSql,
   countsAsAppointmentBroad,
   funnelCreatedDateWhere,
   getMetricsCreatedDateBounds,
@@ -23,6 +24,7 @@ import {
   isStrictScheduledStage,
   isUnassignedLead,
   salesFunnelJobsSql,
+  statusFunnelStageJoinOn,
   statusFunnelStageSql,
   type MetricsPeriod,
 } from "@/lib/front-funnel-metrics";
@@ -67,7 +69,7 @@ clean_jobs AS (
       right(regexp_replace(COALESCE(c.work_phone, ''), '\\D', '', 'g'), 10)
     ], '') AS phones
   FROM funnel_jobs funnel_job
-  JOIN metrics.v_jobs_clean source_job ON source_job.jnid = funnel_job.jnid
+  JOIN ${cleanJobsSql("source_job")} ON source_job.jnid = funnel_job.jnid
   LEFT JOIN contacts c ON c.jnid = source_job.primary_contact_jnid
 ),
 cohort AS (
@@ -470,7 +472,7 @@ appointment_events AS (
   FROM cohort j
   LEFT JOIN job_stage_history h ON h.job_jnid = j.jnid
   LEFT JOIN ${statusFunnelStageSql("funnel_stage")}
-    ON funnel_stage.status_name = h.to_stage_name
+    ON ${statusFunnelStageJoinOn("funnel_stage", "h")}
   WHERE j.record_type_name IN ('Retail', 'Repairs', 'Insurance')
   GROUP BY
     j.jnid,
