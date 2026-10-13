@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFullSync } from "@/lib/sync";
-import { isSessionOrBearerAuthorized } from "@/lib/auth";
 
 /**
  * POST /api/sync
  * Manually trigger a full sync from JobNimbus to Supabase
  */
 export async function POST(request: NextRequest) {
-  if (!(await isSessionOrBearerAuthorized(request, "CRON_SECRET"))) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   try {
     const result = await runFullSync();
     return NextResponse.json(result, {
@@ -32,10 +27,6 @@ export async function POST(request: NextRequest) {
  * Check sync status and last sync time
  */
 export async function GET(request: NextRequest) {
-  if (!(await isSessionOrBearerAuthorized(request, "CRON_SECRET"))) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   try {
     const { Pool } = await import("pg");
     const pool = new Pool({

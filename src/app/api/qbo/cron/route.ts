@@ -2,13 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { getQBOConnection } from "@/lib/quickbooks";
 import { runIncrementalQboSync } from "@/lib/qbo-sync";
 import { checkRefreshTokenExpiry } from "@/lib/qbo-token-alert";
-import { hasBearerToken, isSessionOrBearerAuthorized } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+function isAuthorized(req: NextRequest): boolean {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) return true;
+  return req.headers.get("authorization") === `Bearer ${cronSecret}`;
+}
+
 async function handleCron(req: NextRequest) {
-  if (!(await isSessionOrBearerAuthorized(req, "CRON_SECRET"))) {
+  if (!isAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -35,9 +40,6 @@ async function handleCron(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  if (!hasBearerToken(req, "CRON_SECRET")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
   return handleCron(req);
 }
 
