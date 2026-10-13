@@ -27,6 +27,7 @@ import {
   HandCoins,
   CalendarClock,
   TrendingUpDown,
+  Gauge,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -71,6 +72,7 @@ const navGroups = [
   {
     label: "ANALYTICS",
     items: [
+      { href: "/metrics", label: "Front-Funnel Metrics", icon: Gauge },
       { href: "/leads", label: "Leads by Month", icon: TrendingUpDown },
       { href: "/lead-sources", label: "Lead Sources", icon: Target },
       { href: "/direct-mail", label: "Direct Mail", icon: MapPinned },
