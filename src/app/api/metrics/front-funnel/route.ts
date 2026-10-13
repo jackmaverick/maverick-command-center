@@ -98,10 +98,7 @@ call_candidates AS (
   FROM calls c
   JOIN cohort matched_lead ON c.job_jnid = matched_lead.jnid
   WHERE c.started_at >= matched_lead.lead_created_at
-    AND c.started_at <= LEAST(
-      $3::timestamptz,
-      matched_lead.lead_created_at + interval '30 days'
-    )
+    AND c.started_at <= $3::timestamptz
 
   UNION ALL
 
@@ -114,10 +111,7 @@ call_candidates AS (
   JOIN cohort matched_lead
     ON c.contact_jnid = matched_lead.primary_contact_jnid
   WHERE c.started_at >= matched_lead.lead_created_at
-    AND c.started_at <= LEAST(
-      $3::timestamptz,
-      matched_lead.lead_created_at + interval '30 days'
-    )
+    AND c.started_at <= $3::timestamptz
 
   UNION ALL
 
@@ -136,14 +130,22 @@ call_candidates AS (
       10
     ) = matched_lead.phone
   WHERE c.started_at >= matched_lead.lead_created_at
-    AND c.started_at <= LEAST(
-      $3::timestamptz,
-      matched_lead.lead_created_at + interval '30 days'
-    )
+    AND c.started_at <= $3::timestamptz
 ),
 call_matches AS MATERIALIZED (
   SELECT DISTINCT ON (openphone_call_id) *
   FROM call_candidates
+  WHERE started_at <= matched_lead_created_at + interval '30 days'
+  ORDER BY
+    openphone_call_id,
+    match_priority DESC,
+    matched_lead_created_at DESC
+),
+reporting_call_matches AS MATERIALIZED (
+  SELECT DISTINCT ON (openphone_call_id) *
+  FROM call_candidates
+  WHERE started_at >= $1::timestamptz
+    AND started_at <= $3::timestamptz
   ORDER BY
     openphone_call_id,
     match_priority DESC,
@@ -440,7 +442,7 @@ missed_calls_matched AS (
     c.phone_number_id,
     c.matched_job_jnid AS job_jnid,
     right(regexp_replace(c.from_number, '\\D', '', 'g'), 10) AS caller_phone
-  FROM call_matches c
+  FROM reporting_call_matches c
   WHERE c.direction = 'inbound'
     AND c.status = 'no-answer'
     AND c.started_at >= $1::timestamptz
@@ -453,7 +455,7 @@ missed_with_callback AS (
   FROM missed_calls_matched missed
   LEFT JOIN LATERAL (
     SELECT c.started_at
-    FROM call_matches c
+    FROM reporting_call_matches c
     WHERE c.direction = 'outbound'
       AND c.started_at > missed.missed_at
       AND c.started_at <= $3::timestamptz
@@ -466,7 +468,7 @@ inbound_call_counts AS (
   SELECT
     phone_number_id,
     COUNT(*)::int AS inbound_n
-  FROM call_matches
+  FROM reporting_call_matches
   WHERE direction = 'inbound'
     AND started_at >= $1::timestamptz
     AND started_at < $2::timestamptz
