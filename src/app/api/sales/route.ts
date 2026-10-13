@@ -5,6 +5,8 @@ import { segmentWhereClause } from "@/lib/segment";
 import { LOSS_STATUSES, TRADE_CF_YES_VALUES } from "@/lib/constants";
 import type { Segment, TradeFilter } from "@/lib/constants";
 
+export const dynamic = "force-dynamic";
+
 const VALID_SEGMENTS: Segment[] = [
   "real_estate", "retail", "insurance", "repairs", "warranty",
 ];
@@ -184,12 +186,19 @@ export async function GET(request: NextRequest) {
     void totalLost;
     const avgCloseRate = totalJobs > 0 ? round1((totalWon / totalJobs) * 100) : 0;
 
-    return NextResponse.json({
-      period: { key: period, label: range.label, start: range.start.toISOString(), end: range.end.toISOString() },
-      filters: { segment, rep: repJnid, trade },
-      summary: { totalRevenue, avgCloseRate, avgCycleTimeDays: 0, activeReps: repMetrics.length, totalJobs, totalWon },
-      reps: repMetrics,
-    });
+    return NextResponse.json(
+      {
+        period: { key: period, label: range.label, start: range.start.toISOString(), end: range.end.toISOString() },
+        filters: { segment, rep: repJnid, trade },
+        summary: { totalRevenue, avgCloseRate, avgCycleTimeDays: 0, activeReps: repMetrics.length, totalJobs, totalWon },
+        reps: repMetrics,
+      },
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=900",
+        },
+      }
+    );
   } catch (error) {
     console.error("Sales API error:", error);
     return NextResponse.json({ error: String(error) }, { status: 500 });

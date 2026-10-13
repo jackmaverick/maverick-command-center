@@ -30,7 +30,6 @@ import {
 } from "@/lib/front-funnel-metrics";
 
 export const dynamic = "force-dynamic";
-export const revalidate = 60;
 
 const REAL_CONVERSATION_SECONDS = 30;
 const BUSINESS_HOURS_DEFINITION =
@@ -82,10 +81,80 @@ cohort AS (
     ${isInsuranceSold("clean_jobs")} AS insurance_sold_flag
   FROM clean_jobs
 ),
+cohort_phones AS MATERIALIZED (
+  SELECT DISTINCT
+    matched_lead.jnid,
+    matched_lead.lead_created_at,
+    phone
+  FROM cohort matched_lead
+  CROSS JOIN LATERAL unnest(matched_lead.phones) AS phone
+),
+call_candidates AS (
+  SELECT
+    c.*,
+    matched_lead.jnid AS matched_job_jnid,
+    matched_lead.lead_created_at AS matched_lead_created_at,
+    2 AS match_priority
+  FROM calls c
+  JOIN cohort matched_lead ON c.job_jnid = matched_lead.jnid
+  WHERE c.started_at >= matched_lead.lead_created_at
+    AND c.started_at <= $3::timestamptz
+
+  UNION ALL
+
+  SELECT
+    c.*,
+    matched_lead.jnid AS matched_job_jnid,
+    matched_lead.lead_created_at AS matched_lead_created_at,
+    1 AS match_priority
+  FROM calls c
+  JOIN cohort matched_lead
+    ON c.contact_jnid = matched_lead.primary_contact_jnid
+  WHERE c.started_at >= matched_lead.lead_created_at
+    AND c.started_at <= $3::timestamptz
+
+  UNION ALL
+
+  SELECT
+    c.*,
+    matched_lead.jnid AS matched_job_jnid,
+    matched_lead.lead_created_at AS matched_lead_created_at,
+    0 AS match_priority
+  FROM calls c
+  JOIN cohort_phones matched_lead
+    ON right(
+      regexp_replace(
+        CASE WHEN c.direction = 'inbound' THEN c.from_number ELSE c.to_number END,
+        '\\D', '', 'g'
+      ),
+      10
+    ) = matched_lead.phone
+  WHERE c.started_at >= matched_lead.lead_created_at
+    AND c.started_at <= $3::timestamptz
+),
+call_matches AS MATERIALIZED (
+  SELECT DISTINCT ON (openphone_call_id) *
+  FROM call_candidates
+  WHERE started_at <= matched_lead_created_at + interval '30 days'
+  ORDER BY
+    openphone_call_id,
+    match_priority DESC,
+    matched_lead_created_at DESC
+),
+reporting_call_matches AS MATERIALIZED (
+  SELECT DISTINCT ON (openphone_call_id) *
+  FROM call_candidates
+  WHERE started_at >= $1::timestamptz
+    AND started_at <= $3::timestamptz
+  ORDER BY
+    openphone_call_id,
+    match_priority DESC,
+    matched_lead_created_at DESC
+),
 call_communications AS (
   SELECT
     'call:' || c.openphone_call_id AS event_id,
-    j.jnid AS job_jnid,
+    c.matched_job_jnid AS job_jnid,
     c.started_at AS event_at,
     c.direction = 'outbound' AS is_attempt,
     (
@@ -99,37 +168,75 @@ call_communications AS (
         AND COALESCE(c.duration_seconds, 0) >= ${REAL_CONVERSATION_SECONDS}
       )
     ) AS is_first_touch
-  FROM calls c
-  JOIN LATERAL (
-    SELECT matched_lead.*
-    FROM cohort matched_lead
-    WHERE c.started_at >= matched_lead.lead_created_at
-      AND c.started_at <= LEAST(
-        $3::timestamptz,
-        matched_lead.lead_created_at + interval '30 days'
-      )
-      AND (
-        c.job_jnid = matched_lead.jnid
-        OR c.contact_jnid = matched_lead.primary_contact_jnid
-        OR right(
-          regexp_replace(
-            CASE WHEN c.direction = 'inbound' THEN c.from_number ELSE c.to_number END,
-            '\\D', '', 'g'
-          ),
-          10
-        ) = ANY(matched_lead.phones)
-      )
-    ORDER BY
-      (c.job_jnid = matched_lead.jnid) DESC,
-      (c.contact_jnid = matched_lead.primary_contact_jnid) DESC,
-      matched_lead.lead_created_at DESC
-    LIMIT 1
-  ) j ON true
+  FROM call_matches c
+),
+sms_candidates AS (
+  SELECT
+    s.*,
+    matched_lead.jnid AS matched_job_jnid,
+    matched_lead.lead_created_at AS matched_lead_created_at,
+    2 AS match_priority
+  FROM sms_messages s
+  JOIN cohort matched_lead ON s.job_jnid = matched_lead.jnid
+  WHERE s.sent_at >= matched_lead.lead_created_at
+    AND s.sent_at <= LEAST(
+      $3::timestamptz,
+      matched_lead.lead_created_at + interval '30 days'
+    )
+
+  UNION ALL
+
+  SELECT
+    s.*,
+    matched_lead.jnid AS matched_job_jnid,
+    matched_lead.lead_created_at AS matched_lead_created_at,
+    1 AS match_priority
+  FROM sms_messages s
+  JOIN cohort matched_lead
+    ON s.contact_jnid = matched_lead.primary_contact_jnid
+  WHERE s.sent_at >= matched_lead.lead_created_at
+    AND s.sent_at <= LEAST(
+      $3::timestamptz,
+      matched_lead.lead_created_at + interval '30 days'
+    )
+
+  UNION ALL
+
+  SELECT
+    s.*,
+    matched_lead.jnid AS matched_job_jnid,
+    matched_lead.lead_created_at AS matched_lead_created_at,
+    0 AS match_priority
+  FROM sms_messages s
+  JOIN cohort_phones matched_lead
+    ON right(
+      regexp_replace(
+        CASE
+          WHEN s.direction = 'incoming' THEN s.from_number
+          ELSE s.to_numbers::text
+        END,
+        '\\D', '', 'g'
+      ),
+      10
+    ) = matched_lead.phone
+  WHERE s.sent_at >= matched_lead.lead_created_at
+    AND s.sent_at <= LEAST(
+      $3::timestamptz,
+      matched_lead.lead_created_at + interval '30 days'
+    )
+),
+sms_matches AS (
+  SELECT DISTINCT ON (openphone_message_id) *
+  FROM sms_candidates
+  ORDER BY
+    openphone_message_id,
+    match_priority DESC,
+    matched_lead_created_at DESC
 ),
 sms_communications AS (
   SELECT
     'sms:' || s.openphone_message_id AS event_id,
-    j.jnid AS job_jnid,
+    s.matched_job_jnid AS job_jnid,
     s.sent_at AS event_at,
     (s.direction = 'outgoing' AND NOT ${automaticOpenerSql("s")}) AS is_attempt,
     s.direction = 'incoming' AS is_conversation,
@@ -137,35 +244,7 @@ sms_communications AS (
       s.direction = 'incoming'
       OR (s.direction = 'outgoing' AND NOT ${automaticOpenerSql("s")})
     ) AS is_first_touch
-  FROM sms_messages s
-  JOIN LATERAL (
-    SELECT matched_lead.*
-    FROM cohort matched_lead
-    WHERE s.sent_at >= matched_lead.lead_created_at
-      AND s.sent_at <= LEAST(
-        $3::timestamptz,
-        matched_lead.lead_created_at + interval '30 days'
-      )
-      AND (
-        s.job_jnid = matched_lead.jnid
-        OR s.contact_jnid = matched_lead.primary_contact_jnid
-        OR right(
-          regexp_replace(
-            CASE
-              WHEN s.direction = 'incoming' THEN s.from_number
-              ELSE s.to_numbers::text
-            END,
-            '\\D', '', 'g'
-          ),
-          10
-        ) = ANY(matched_lead.phones)
-      )
-    ORDER BY
-      (s.job_jnid = matched_lead.jnid) DESC,
-      (s.contact_jnid = matched_lead.primary_contact_jnid) DESC,
-      matched_lead.lead_created_at DESC
-    LIMIT 1
-  ) j ON true
+  FROM sms_matches s
 ),
 communications AS (
   SELECT * FROM call_communications
@@ -361,23 +440,9 @@ missed_calls_matched AS (
     c.openphone_call_id,
     c.started_at AS missed_at,
     c.phone_number_id,
-    j.jnid AS job_jnid,
+    c.matched_job_jnid AS job_jnid,
     right(regexp_replace(c.from_number, '\\D', '', 'g'), 10) AS caller_phone
-  FROM calls c
-  JOIN LATERAL (
-    SELECT clean_jobs.jnid
-    FROM clean_jobs
-    WHERE c.started_at >= to_timestamp(clean_jobs.jn_date_created)
-      AND (
-        c.job_jnid = clean_jobs.jnid
-        OR c.contact_jnid = clean_jobs.primary_contact_jnid
-        OR right(regexp_replace(c.from_number, '\\D', '', 'g'), 10) = ANY(clean_jobs.phones)
-      )
-    ORDER BY
-      (c.job_jnid = clean_jobs.jnid) DESC,
-      (c.contact_jnid = clean_jobs.primary_contact_jnid) DESC
-    LIMIT 1
-  ) j ON true
+  FROM reporting_call_matches c
   WHERE c.direction = 'inbound'
     AND c.status = 'no-answer'
     AND c.started_at >= $1::timestamptz
@@ -390,17 +455,24 @@ missed_with_callback AS (
   FROM missed_calls_matched missed
   LEFT JOIN LATERAL (
     SELECT c.started_at
-    FROM calls c
+    FROM reporting_call_matches c
     WHERE c.direction = 'outbound'
       AND c.started_at > missed.missed_at
       AND c.started_at <= $3::timestamptz
-      AND (
-        c.job_jnid = missed.job_jnid
-        OR right(regexp_replace(c.to_number, '\\D', '', 'g'), 10) = missed.caller_phone
-      )
+      AND c.matched_job_jnid = missed.job_jnid
     ORDER BY c.started_at
     LIMIT 1
   ) callback ON true
+),
+inbound_call_counts AS (
+  SELECT
+    phone_number_id,
+    COUNT(*)::int AS inbound_n
+  FROM reporting_call_matches
+  WHERE direction = 'inbound'
+    AND started_at >= $1::timestamptz
+    AND started_at < $2::timestamptz
+  GROUP BY phone_number_id
 ),
 missed_call_metrics AS (
   SELECT jsonb_agg(
@@ -422,25 +494,7 @@ missed_call_metrics AS (
     SELECT
       COALESCE(NULLIF(p.name, ''), 'Unknown line') AS line,
       COUNT(*)::int AS missed_n,
-      (
-        SELECT COUNT(*)::int
-        FROM calls inbound
-        JOIN LATERAL (
-          SELECT 1
-          FROM clean_jobs
-          WHERE inbound.started_at >= to_timestamp(clean_jobs.jn_date_created)
-            AND (
-              inbound.job_jnid = clean_jobs.jnid
-              OR inbound.contact_jnid = clean_jobs.primary_contact_jnid
-              OR right(regexp_replace(inbound.from_number, '\\D', '', 'g'), 10) = ANY(clean_jobs.phones)
-            )
-          LIMIT 1
-        ) clean_match ON true
-        WHERE inbound.direction = 'inbound'
-          AND inbound.phone_number_id = missed.phone_number_id
-          AND inbound.started_at >= $1::timestamptz
-          AND inbound.started_at < $2::timestamptz
-      ) AS inbound_n,
+      COALESCE(inbound.inbound_n, 0) AS inbound_n,
       COUNT(*) FILTER (WHERE callback_at IS NOT NULL)::int AS callback_n,
       ROUND((
         percentile_cont(0.5) WITHIN GROUP (
@@ -450,7 +504,9 @@ missed_call_metrics AS (
     FROM missed_with_callback missed
     LEFT JOIN openphone_phone_numbers p
       ON p.phone_number_id = missed.phone_number_id
-    GROUP BY missed.phone_number_id, p.name
+    LEFT JOIN inbound_call_counts inbound
+      ON inbound.phone_number_id = missed.phone_number_id
+    GROUP BY missed.phone_number_id, p.name, inbound.inbound_n
   ) by_line
 ),
 appointment_events AS (
@@ -743,7 +799,7 @@ export async function GET(request: NextRequest) {
       },
     }, {
       headers: {
-        "Cache-Control": "private, no-store, max-age=0",
+        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=900",
       },
     });
   } catch (error) {

@@ -4,6 +4,8 @@ import { type PeriodKey, getDateRange, getPreviousDateRange, isValidPeriodKey, t
 import { SEGMENT_SQL } from "@/lib/segment";
 import { STATUS_TO_STAGE, STAGES, CHART_COLORS } from "@/lib/constants";
 
+export const dynamic = "force-dynamic";
+
 // Valid period keys for input validation
 
 // Statuses that count as "converted" (Sold or later)
@@ -511,7 +513,11 @@ export async function GET(request: NextRequest) {
       },
     };
 
-    return NextResponse.json(dashboard);
+    return NextResponse.json(dashboard, {
+      headers: {
+        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=900",
+      },
+    });
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     const errorCode = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : 'UNKNOWN';

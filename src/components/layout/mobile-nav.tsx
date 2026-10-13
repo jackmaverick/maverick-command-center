@@ -40,8 +40,11 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
 
   return (
     <Sheet open={open} onOpenChange={onClose}>
-      <SheetContent side="left" className="w-72 bg-[#0d1117] border-[#30363d] p-0">
-        <SheetHeader className="px-6 py-4 border-b border-[#30363d]">
+      <SheetContent
+        side="left"
+        className="h-dvh max-h-dvh w-72 gap-0 overflow-hidden border-[#30363d] bg-[#0d1117] p-0"
+      >
+        <SheetHeader className="shrink-0 border-b border-[#30363d] px-6 py-4">
           <SheetTitle className="text-[#e6edf3] text-left">
             MAVERICK
             <span className="block text-xs font-normal text-[#8b949e]">
@@ -49,7 +52,10 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
             </span>
           </SheetTitle>
         </SheetHeader>
-        <nav className="py-4 px-3">
+        <nav
+          className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-4 [-webkit-overflow-scrolling:touch]"
+          aria-label="Mobile navigation"
+        >
           <ul className="space-y-1">
             {navItems.map((item) => {
               const isActive =

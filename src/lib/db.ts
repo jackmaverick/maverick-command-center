@@ -11,8 +11,13 @@ export function getPool(): Pool {
 
     pool = new Pool({
       connectionString: dbUrl,
-      max: 10,
+      // Keep each Fluid Compute instance from exhausting Supabase connections
+      // when dashboard routes fan out several queries at once.
+      max: 5,
+      connectionTimeoutMillis: 5000,
       idleTimeoutMillis: 30000,
+      statement_timeout: 12000,
+      query_timeout: 15000,
       ssl: { rejectUnauthorized: false },
     });
 
