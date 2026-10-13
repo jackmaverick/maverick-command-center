@@ -161,11 +161,13 @@ export default function SalesPage() {
     },
   });
 
+  const reps = data?.reps;
+
   // Sorted reps
   const sortedReps = useMemo(() => {
-    if (!data?.reps) return [];
-    const reps = [...data.reps];
-    reps.sort((a, b) => {
+    if (!reps) return [];
+    const sorted = [...reps];
+    sorted.sort((a, b) => {
       const aVal = a[sortField];
       const bVal = b[sortField];
       if (typeof aVal === "string" && typeof bVal === "string") {
@@ -177,30 +179,30 @@ export default function SalesPage() {
         ? (aVal as number) - (bVal as number)
         : (bVal as number) - (aVal as number);
     });
-    return reps;
-  }, [data?.reps, sortField, sortAsc]);
+    return sorted;
+  }, [reps, sortField, sortAsc]);
 
   // Selected rep
   const selectedRep = useMemo(() => {
-    if (!data?.reps) return null;
-    if (selectedRepId) return data.reps.find((r) => r.repId === selectedRepId) ?? null;
+    if (!reps) return null;
+    if (selectedRepId) return reps.find((r) => r.repId === selectedRepId) ?? null;
     return sortedReps[0] ?? null;
-  }, [data?.reps, selectedRepId, sortedReps]);
+  }, [reps, selectedRepId, sortedReps]);
 
   // Chart data for segment close rates
   const segmentChartData = useMemo(() => {
-    if (!data?.reps) return [];
+    if (!reps) return [];
     const segKeys = Object.keys(SEGMENTS) as Segment[];
     return segKeys.map((segKey) => {
       const entry: Record<string, string | number> = {
         segment: SEGMENTS[segKey].label,
       };
-      data.reps.forEach((rep) => {
+      reps.forEach((rep) => {
         entry[rep.repName] = rep.segmentCloseRates[segKey] ?? 0;
       });
       return entry;
     });
-  }, [data?.reps]);
+  }, [reps]);
 
   function handleSort(field: SortField) {
     if (sortField === field) {
