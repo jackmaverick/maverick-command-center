@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ApiErrorState } from "@/components/api-error-state";
 
 interface Rate {
   count: number;
@@ -232,7 +233,7 @@ function LoadingState() {
 
 export default function MetricsPage() {
   const [period, setPeriod] = useState("reference");
-  const { data, isLoading, isError } = useQuery<MetricsData>({
+  const { data, isLoading, isError, refetch } = useQuery<MetricsData>({
     queryKey: ["front-funnel-metrics", period],
     queryFn: async () => {
       const response = await fetch(
@@ -293,10 +294,10 @@ export default function MetricsPage() {
       {isLoading && <LoadingState />}
 
       {isError && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-5 text-sm text-red-300">
-          Front-funnel metrics could not be loaded. Check the database connection and try
-          again.
-        </div>
+        <ApiErrorState
+          title="Front-funnel metrics could not be loaded"
+          onRetry={() => void refetch()}
+        />
       )}
 
       {data && (

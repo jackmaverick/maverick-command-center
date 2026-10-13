@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ApiErrorState } from "@/components/api-error-state";
 import {
   Table,
   TableBody,
@@ -152,7 +153,7 @@ export default function SalesPage() {
 
   const segmentParam = segment === "all" ? "" : `&segment=${segment}`;
 
-  const { data, isLoading, isError } = useQuery<SalesData>({
+  const { data, isLoading, isError, refetch } = useQuery<SalesData>({
     queryKey: ["sales", period, segment],
     queryFn: async () => {
       const res = await fetch(`/api/sales?period=${period}${segmentParam}`);
@@ -618,11 +619,11 @@ export default function SalesPage() {
 
       {/* ---- Error State ------------------------------------------------- */}
       {isError && (
-        <div className="mt-6 bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-center">
-          <p className="text-sm text-red-400">
-            Failed to load sales data. Check your database connection and try
-            again.
-          </p>
+        <div className="mt-6">
+          <ApiErrorState
+            title="Sales data could not be loaded"
+            onRetry={() => void refetch()}
+          />
         </div>
       )}
     </div>

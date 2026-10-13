@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PeriodSelector } from "@/components/layout/period-selector";
 import { InfoTooltip } from "@/components/InfoTooltip";
 import { ConversionFunnel } from "@/components/ConversionFunnel";
+import { ApiErrorState } from "@/components/api-error-state";
 import { formatCurrency, formatPercent } from "@/lib/dates";
 import { CHART_COLORS, SEGMENTS } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
@@ -219,7 +220,7 @@ function CustomTooltip({
 export default function DashboardPage() {
   const [period, setPeriod] = useState("month");
 
-  const { data, isLoading, isError } = useQuery<DashboardData>({
+  const { data, isLoading, isError, refetch } = useQuery<DashboardData>({
     queryKey: ["dashboard", period],
     queryFn: async () => {
       const res = await fetch(`/api/dashboard?period=${period}`);
@@ -1057,10 +1058,11 @@ export default function DashboardPage() {
 
       {/* ── Error State ─────────────────────────────────────────────── */}
       {isError && (
-        <div className="mt-6 bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-center">
-          <p className="text-sm text-red-400">
-            Failed to load dashboard data. Check your database connection and try again.
-          </p>
+        <div className="mt-6">
+          <ApiErrorState
+            title="Dashboard data could not be loaded"
+            onRetry={() => void refetch()}
+          />
         </div>
       )}
     </div>

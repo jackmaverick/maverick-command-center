@@ -35,7 +35,7 @@ describe("front-funnel metrics endpoint", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(response.headers.get("cache-control")).toContain("s-maxage=300");
 
     const [sql, params] = queryOne.mock.calls[0];
     expect(sql).toContain("metrics.v_sales_funnel_jobs");
@@ -43,6 +43,11 @@ describe("front-funnel metrics endpoint", () => {
     expect(sql).toContain("appt_set_broad");
     expect(sql).toContain("appt_set_strict");
     expect(sql).toContain("insurance_sold");
+    expect(sql).toContain("call_candidates AS");
+    expect(sql).toContain("sms_candidates AS");
+    expect(sql).toContain("match_priority DESC");
+    expect(sql).not.toMatch(/FROM calls c\s+JOIN LATERAL/);
+    expect(sql).not.toMatch(/FROM sms_messages s\s+JOIN LATERAL/);
     expect(sql).not.toContain("Appointment Scheduled");
     expect(params[3]).toBe("2026-04-06");
     expect(params[4]).toBe("2026-10-07");
