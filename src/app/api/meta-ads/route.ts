@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { getDateRange, isValidPeriodKey, toUnixSeconds, type PeriodKey } from "@/lib/dates";
+import { isValidPeriodKey, toUnixSeconds, type PeriodKey } from "@/lib/dates";
+
+import { reportingWindow } from "@/lib/acquisition-report";
 
 const META_ACCOUNT_ID = "act_1782311009876417";
 const ROOF_IGNITE_SOURCE = "Roof Ignite - Meta Ads";
@@ -44,11 +46,12 @@ const round = (value: number, decimals = 2) => Number(value.toFixed(decimals));
 export async function GET(request: NextRequest) {
   const periodParam = (new URL(request.url).searchParams.get("period") ?? "month") as PeriodKey;
   const period = isValidPeriodKey(periodParam) ? periodParam : "month";
-  const range = getDateRange(period);
+  const window = reportingWindow(period);
+  const range = {start:new Date(window.start),end:new Date(window.end),label:period};
   const startUnix = toUnixSeconds(range.start);
   const endUnix = toUnixSeconds(range.end);
-  const startDate = range.start.toISOString().slice(0, 10);
-  const endDate = range.end.toISOString().slice(0, 10);
+  const startDate = window.startDate;
+  const endDate = window.endDate;
 
   try {
     const [campaignRows, funnelRows, syncRows] = await Promise.all([
@@ -63,8 +66,9 @@ export async function GET(request: NextRequest) {
            FROM meta_ads_daily_insights
           WHERE account_id = $1
             AND report_level = 'campaign'
+            AND breakdown = '{}'::jsonb
             AND date_start >= $2::date
-            AND date_start <= $3::date
+            AND date_start < $3::date
           GROUP BY campaign_id, campaign_name
           ORDER BY SUM(spend) DESC`,
         [META_ACCOUNT_ID, startDate, endDate],
@@ -73,9 +77,10 @@ export async function GET(request: NextRequest) {
         `WITH cohort AS (
            SELECT j.jnid
              FROM jobs j
-            WHERE LOWER(TRIM(COALESCE(j.source_name, ''))) = LOWER($1)
+            WHERE j.deleted_at IS NULL
+              AND LOWER(TRIM(COALESCE(j.source_name, ''))) = LOWER($1)
               AND j.jn_date_created >= $2
-              AND j.jn_date_created <= $3
+              AND j.jn_date_created < $3
               AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|verification|scout_test)'
          ), status_events AS (
            SELECT DISTINCT a.job_jnid, a.to_status::text
@@ -150,7 +155,7 @@ export async function GET(request: NextRequest) {
       period: { key: period, label: range.label, start: startDate, end: endDate },
       meta: {
         accountId: META_ACCOUNT_ID,
-        spend: round(totals.spend), impressions: totals.impressions, clicks: totals.clicks,
+        spend: campaignRows.length ? round(totals.spend) : null, impressions: totals.impressions, clicks: totals.clicks,
         linkClicks: totals.linkClicks, landingPageViews: totals.landingPageViews,
         websiteLeads: totals.metaLeads,
         costPerLead: totals.metaLeads ? round(totals.spend / totals.metaLeads) : null,
@@ -181,11 +186,11 @@ export async function GET(request: NextRequest) {
       },
       attribution: {
         sourceName: ROOF_IGNITE_SOURCE,
-        unmatchedMetaLeads: Math.max(0, totals.metaLeads - crmLeads),
-        crmMatchRate: totals.metaLeads ? round((crmLeads / totals.metaLeads) * 100, 1) : null,
-        revenueRoas: revenue > 0 && totals.spend > 0 ? round(revenue / totals.spend, 2) : null,
-        costPerMaterialOnlyProfit: profitCoverageComplete && revenue > toNumber(funnel?.material_cost)
-          ? round(totals.spend / (revenue - toNumber(funnel?.material_cost))) : null,
+        unmatchedMetaLeads: null,
+        crmMatchRate: null,
+        revenueRoas: null,
+        costPerMaterialOnlyProfit: null,
+        note: "Source-labelled job counts are not record-level Meta matches. ROAS and cost/profit are withheld because comparable attribution and complete costs are unverified.",
       },
       sync: syncRows[0] || null,
     });
