@@ -192,7 +192,10 @@ WITH paid_jobs AS (
   WHERE COALESCE(invoice.status_name, '') <> 'Draft'
   GROUP BY invoice.job_jnid
   HAVING sum(
-    COALESCE(invoice.due, invoice.total - COALESCE(invoice.total_paid, 0), 0)
+    GREATEST(
+      COALESCE(invoice.due, invoice.total - COALESCE(invoice.total_paid, 0), 0),
+      0
+    )
   ) <= 0.01
     AND max(invoice.date_paid_in_full) IS NOT NULL
 )
