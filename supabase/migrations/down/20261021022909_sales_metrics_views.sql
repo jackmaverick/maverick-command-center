@@ -22,7 +22,7 @@ WHERE status_name IN (
 UPDATE metrics.status_funnel_stage
 SET
   funnel_stage = 'appointment',
-  stage_order = 103,
+  stage_order = 122,
   counts_as_appt_broad = true,
   is_strict_scheduled = false,
   is_sold = false,

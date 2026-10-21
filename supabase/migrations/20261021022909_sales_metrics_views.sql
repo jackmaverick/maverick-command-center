@@ -90,6 +90,17 @@ WITH status_events AS (
   WHERE timeline.job_jnid IS NOT NULL
     AND timeline.event_type = 'stage_change'
     AND timeline.title LIKE 'Moved from % to %'
+
+  UNION ALL
+
+  SELECT
+    timeline.job_jnid::text AS job_jnid,
+    btrim(substring(timeline.details FROM 'Status: [^\n]* => ([^\n]*)')) AS status_name,
+    timeline.event_time AS entered_at
+  FROM public.job_timeline timeline
+  WHERE timeline.job_jnid IS NOT NULL
+    AND timeline.event_type IN ('status_change', 'status_changed')
+    AND timeline.details LIKE '%Status:%=>%'
 ),
 deduplicated_events AS (
   SELECT DISTINCT job_jnid, status_name, entered_at
@@ -204,15 +215,16 @@ SELECT
   date_trunc('month', stage.sold_at AT TIME ZONE 'America/Chicago')::date AS sold_month_ct,
   stage.sold_at,
   paid.paid_at,
-  round(
-    (extract(epoch FROM (paid.paid_at - stage.sold_at)) / 86400.0)::numeric,
-    1
+  (
+    (paid.paid_at AT TIME ZONE 'America/Chicago')::date
+    - (stage.sold_at AT TIME ZONE 'America/Chicago')::date
   ) AS days_to_paid,
   stage.sold_at > now() - interval '90 days' AS provisional
 FROM metrics.v_stage_dates stage
 JOIN paid_jobs paid ON paid.job_jnid = stage.job_jnid
 WHERE stage.record_type_name IN ('Insurance', 'Retail', 'Repairs')
-  AND stage.sold_at >= now() - interval '12 months'
+  AND (stage.sold_at AT TIME ZONE 'America/Chicago')::date
+    >= (now() AT TIME ZONE 'America/Chicago')::date - interval '12 months'
   AND paid.paid_at >= stage.sold_at;
 
 CREATE OR REPLACE VIEW metrics.v_sales_metrics_jobs
