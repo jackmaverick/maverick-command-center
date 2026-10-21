@@ -4,6 +4,12 @@ import type { Segment, Stage } from "@/lib/constants";
 export interface DashboardMetrics {
   revenue: number;
   pipelineValue: number;
+  pipelineJobCount: number;
+  pipelineAgedValue: number;
+  pipelineAgedCount: number;
+  appointmentsNotQuoted: number;
+  approvedClaimValue: number;
+  approvedClaimCount: number;
   newLeads: number;
   conversionRate: number;
   avgTicket: number;

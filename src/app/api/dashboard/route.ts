@@ -51,20 +51,87 @@ export async function GET(request: NextRequest) {
 
       // 2. Pipeline Value - active estimates on jobs that are not closed/archived
       //    (jobs in estimate-related statuses that haven't been fully invoiced)
-      query<{ total: string; job_count: string }>(
-        `SELECT COALESCE(SUM(
-           COALESCE(
-             NULLIF(j.approved_estimate_total, 0),
-             j.last_estimate,
-             0
-           )
-         ), 0) AS total,
-         COUNT(*)::text AS job_count
-         FROM metrics.v_sales_funnel_jobs funnel
-         JOIN metrics.v_jobs_clean j ON j.jnid = funnel.jnid
-         WHERE j.is_active = true
-           AND j.is_closed = false
-           AND funnel.current_funnel_stage IN ('appointment', 'approved_claim')`,
+      query<{
+        total: string;
+        job_count: string;
+        aged_total: string;
+        aged_count: string;
+        appointments_not_quoted: string;
+        approved_claim_total: string;
+        approved_claim_count: string;
+      }>(
+        `WITH pipeline AS (
+           SELECT
+             funnel.jnid,
+             funnel.status_name,
+             funnel.current_funnel_stage,
+             COALESCE(
+               NULLIF(j.approved_estimate_total, 0),
+               j.last_estimate,
+               0
+             ) AS estimate_value,
+             (
+               to_timestamp(COALESCE(
+                 NULLIF(j.jn_date_status_change, 0),
+                 j.jn_date_created
+               )) AT TIME ZONE 'America/Chicago'
+             )::date AS status_changed_ct,
+             EXISTS (
+               SELECT 1
+               FROM estimates estimate
+               WHERE estimate.job_jnid = funnel.jnid
+                 AND COALESCE(estimate.is_active, true)
+                 AND NOT COALESCE(estimate.is_archived, false)
+                 AND COALESCE(estimate.status_name, '') <> 'Void'
+                 AND COALESCE(estimate.total, 0) > 0
+             ) AS has_quote
+           FROM metrics.v_sales_funnel_jobs funnel
+           JOIN metrics.v_jobs_clean j ON j.jnid = funnel.jnid
+           WHERE j.is_active = true
+             AND j.is_closed = false
+             AND j.record_type_name IN ('Insurance', 'Retail', 'Repairs')
+         )
+         SELECT
+           COALESCE(SUM(estimate_value) FILTER (
+             WHERE current_funnel_stage IN ('appointment', 'approved_claim')
+               AND estimate_value > 0
+               AND status_changed_ct >
+                 (now() AT TIME ZONE 'America/Chicago')::date - 90
+           ), 0)::text AS total,
+           COUNT(*) FILTER (
+             WHERE current_funnel_stage IN ('appointment', 'approved_claim')
+               AND estimate_value > 0
+               AND status_changed_ct >
+                 (now() AT TIME ZONE 'America/Chicago')::date - 90
+           )::text AS job_count,
+           COALESCE(SUM(estimate_value) FILTER (
+             WHERE current_funnel_stage IN ('appointment', 'approved_claim')
+               AND estimate_value > 0
+               AND status_changed_ct <=
+                 (now() AT TIME ZONE 'America/Chicago')::date - 90
+           ), 0)::text AS aged_total,
+           COUNT(*) FILTER (
+             WHERE current_funnel_stage IN ('appointment', 'approved_claim')
+               AND estimate_value > 0
+               AND status_changed_ct <=
+                 (now() AT TIME ZONE 'America/Chicago')::date - 90
+           )::text AS aged_count,
+           COUNT(*) FILTER (
+             WHERE (
+               current_funnel_stage = 'appointment'
+               OR status_name = 'Claim Denied'
+             )
+               AND NOT has_quote
+           )::text AS appointments_not_quoted,
+           COALESCE(SUM(estimate_value) FILTER (
+             WHERE current_funnel_stage = 'approved_claim'
+               AND estimate_value > 0
+           ), 0)::text AS approved_claim_total,
+           COUNT(*) FILTER (
+             WHERE current_funnel_stage = 'approved_claim'
+               AND estimate_value > 0
+           )::text AS approved_claim_count
+         FROM pipeline`,
         []
       ),
 
@@ -284,6 +351,24 @@ export async function GET(request: NextRequest) {
       pipelineRows[0]?.job_count ?? "0",
       10
     );
+    const pipelineAgedValue = parseFloat(
+      pipelineRows[0]?.aged_total ?? "0"
+    );
+    const pipelineAgedCount = parseInt(
+      pipelineRows[0]?.aged_count ?? "0",
+      10
+    );
+    const appointmentsNotQuoted = parseInt(
+      pipelineRows[0]?.appointments_not_quoted ?? "0",
+      10
+    );
+    const approvedClaimValue = parseFloat(
+      pipelineRows[0]?.approved_claim_total ?? "0"
+    );
+    const approvedClaimCount = parseInt(
+      pipelineRows[0]?.approved_claim_count ?? "0",
+      10
+    );
     const qboRevenue = Math.round((parseFloat(qboRevenueRows[0]?.total ?? "0") || 0) * 100) / 100;
     const qboInvoiceCount = parseInt(qboRevenueRows[0]?.count ?? "0", 10);
     const qboBalance = Math.round((parseFloat(qboRevenueRows[0]?.balance ?? "0") || 0) * 100) / 100;
@@ -426,6 +511,11 @@ export async function GET(request: NextRequest) {
       qboRevenueVariance,
       pipelineValue,
       pipelineJobCount,
+      pipelineAgedValue,
+      pipelineAgedCount,
+      appointmentsNotQuoted,
+      approvedClaimValue,
+      approvedClaimCount,
       newLeads,
       conversionRate: Math.round(conversionRate * 10) / 10,
       avgTicket: Math.round(avgTicket * 100) / 100,

@@ -54,6 +54,11 @@ interface DashboardData {
   qboRevenueVariance: number;
   pipelineValue: number;
   pipelineJobCount: number;
+  pipelineAgedValue: number;
+  pipelineAgedCount: number;
+  appointmentsNotQuoted: number;
+  approvedClaimValue: number;
+  approvedClaimCount: number;
   newLeads: number;
   conversionRate: number;
   avgTicket: number;
@@ -278,8 +283,86 @@ export default function DashboardPage() {
         <PeriodSelector value={period} onChange={setPeriod} />
       </div>
 
+      {/* ── Headline Pipeline ────────────────────────────────────────── */}
+      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card className="border-[#58a6ff]/30 bg-[#161b22]">
+          <CardHeader className="pb-2">
+            <InfoTooltip
+              label="Headline Pipeline"
+              explanation="Open Insurance, Retail, and Repairs jobs in Appointment or Approved Claim, with value above zero and a JobNimbus status change in the last 90 CT calendar days. Value uses approved estimate, otherwise latest estimate."
+            >
+              <CardTitle className="text-xs font-medium text-[#8b949e]">
+                Headline Pipeline
+              </CardTitle>
+            </InfoTooltip>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-12 w-36 bg-[#21262d]" />
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-[#58a6ff]">
+                  {formatFullCurrency(data?.pipelineValue ?? 0)}
+                </p>
+                <p className="mt-1 text-xs text-[#8b949e]">
+                  {data?.pipelineJobCount ?? 0} jobs · changed within 90 days
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Link href="/metrics/stale-estimates" className="group block">
+          <Card className="h-full border-[#d29922]/30 bg-[#161b22] transition-colors group-hover:border-[#d29922]">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-medium text-[#8b949e]">
+                Aged 90+
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-[#d29922]">
+                {formatFullCurrency(data?.pipelineAgedValue ?? 0)}
+              </p>
+              <p className="mt-1 text-xs text-[#8b949e]">
+                {data?.pipelineAgedCount ?? 0} jobs · review list →
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Card className="border-[#30363d] bg-[#161b22]">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-[#8b949e]">
+              Appointments not yet quoted
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-[#e6edf3]">
+              {data?.appointmentsNotQuoted ?? 0}
+            </p>
+            <p className="mt-1 text-xs text-[#8b949e]">count only</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-[#30363d] bg-[#161b22]">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-[#8b949e]">
+              Approved Claim
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-[#3fb950]">
+              {formatFullCurrency(data?.approvedClaimValue ?? 0)}
+            </p>
+            <p className="mt-1 text-xs text-[#8b949e]">
+              {data?.approvedClaimCount ?? 0} jobs
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* ── KPI Cards ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {/* Revenue */}
         <Link href={`/revenue?period=${period}`} className="block group">
           <Card className="h-full bg-[#161b22] border-[#30363d] group-hover:border-[#58a6ff] transition-colors">
@@ -317,29 +400,6 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </Link>
-
-        {/* Pipeline */}
-        <Card className="bg-[#161b22] border-[#30363d]">
-          <CardHeader className="pb-2">
-            <InfoTooltip label="Pipeline Value" explanation="Approved estimate, otherwise latest estimate, for active open jobs in the canonical Appointment and Approved Claim funnel stages. Counted once per job.">
-              <CardTitle className="text-xs font-medium text-[#8b949e]">Pipeline Value</CardTitle>
-            </InfoTooltip>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-8 w-24 bg-[#21262d]" />
-            ) : (
-              <>
-                <p className="text-2xl font-bold text-[#e6edf3]">
-                  {formatCurrency(data?.pipelineValue ?? 0)}
-                </p>
-                <p className="mt-1 text-xs text-[#8b949e]">
-                  {data?.pipelineJobCount ?? 0} open jobs
-                </p>
-              </>
-            )}
-          </CardContent>
-        </Card>
 
         {/* New Leads */}
         <Card className="bg-[#161b22] border-[#30363d]">
