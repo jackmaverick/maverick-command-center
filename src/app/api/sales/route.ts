@@ -10,7 +10,6 @@ export const dynamic = "force-dynamic";
 const VALID_SEGMENTS: Segment[] = [
   "real_estate", "retail", "insurance", "repairs", "warranty",
 ];
-const WON_STATUSES = ["Sold Job", "Production Ready", "In Progress", "Insurance Pending", "Future Work", "Needs Rescheduling", "Invoiced", "Final Invoicing", "Pending Final Payment", "Job Close Out", "Paid & Closed", "All Work Completed", "All Work Complete", "Job Completed", "Warranty Complete"];
 const INVOICED_STATUSES = ["Sent", "Open", "Closed"];
 const ACTIVE_REAL_JOB_WHERE = `
   j.is_active = true
@@ -64,7 +63,6 @@ function buildJobFilter(startUnix: number, endUnix: number, segment: Segment | n
 
 function buildInvoiceFilter(startUnix: number, endUnix: number, segment: Segment | null, repJnid: string | null, trade: TradeFilter): { where: string; params: unknown[]; nextIdx: number } {
   const conditions = [
-    `i.is_active = true`,
     `COALESCE(i.status_name, i.status::text, '') = ANY($1::text[])`,
     `${EFFECTIVE_INVOICE_DATE} >= $2`,
     `${EFFECTIVE_INVOICE_DATE} < $3`,
@@ -123,7 +121,8 @@ export async function GET(request: NextRequest) {
 
     const repsRows = await query<{ sales_rep_jnid: string; sales_rep_name: string }>(
       `SELECT DISTINCT COALESCE(j.sales_rep_jnid, 'unassigned') AS sales_rep_jnid, COALESCE(j.sales_rep_name, 'Unassigned') AS sales_rep_name
-       FROM jobs j
+       FROM metrics.v_sales_funnel_jobs f
+       JOIN metrics.v_jobs_clean j ON j.jnid = f.jnid
        WHERE ${repConditions.join(" AND ")}
        ORDER BY sales_rep_name`,
       repParams
@@ -136,10 +135,10 @@ export async function GET(request: NextRequest) {
       const repInvoiceFilter = buildInvoiceFilter(startUnix, endUnix, segment, rep.sales_rep_jnid, trade);
 
       const [totalRes, wonRes, lostRes, revenueRes] = await Promise.all([
-        query<{ count: string }>(`SELECT COUNT(*) AS count FROM jobs j WHERE ${repFilter.where}`, repFilter.params),
-        query<{ count: string }>(`SELECT COUNT(*) AS count FROM jobs j WHERE ${repFilter.where} AND j.status_name = ANY($${repFilter.nextIdx}::text[])`, [...repFilter.params, WON_STATUSES]),
-        query<{ count: string }>(`SELECT COUNT(*) AS count FROM jobs j WHERE ${repFilter.where} AND j.status_name = ANY($${repFilter.nextIdx}::text[])`, [...repFilter.params, LOSS_STATUSES]),
-        query<{ total: string }>(`SELECT COALESCE(SUM(i.total), 0) AS total FROM invoices i JOIN jobs j ON j.jnid = i.job_jnid WHERE ${repInvoiceFilter.where}`, repInvoiceFilter.params),
+        query<{ count: string }>(`SELECT COUNT(*) AS count FROM metrics.v_sales_funnel_jobs f JOIN metrics.v_jobs_clean j ON j.jnid = f.jnid WHERE ${repFilter.where}`, repFilter.params),
+        query<{ count: string }>(`SELECT COUNT(*) AS count FROM metrics.v_sales_funnel_jobs f JOIN metrics.v_jobs_clean j ON j.jnid = f.jnid WHERE ${repFilter.where} AND f.sold = true`, repFilter.params),
+        query<{ count: string }>(`SELECT COUNT(*) AS count FROM metrics.v_sales_funnel_jobs f JOIN metrics.v_jobs_clean j ON j.jnid = f.jnid WHERE ${repFilter.where} AND j.status_name = ANY($${repFilter.nextIdx}::text[])`, [...repFilter.params, LOSS_STATUSES]),
+        query<{ total: string }>(`SELECT COALESCE(SUM(i.total), 0) AS total FROM metrics.v_invoices_clean i JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid WHERE ${repInvoiceFilter.where}`, repInvoiceFilter.params),
       ]);
 
       const totalJobs = parseInt(totalRes[0]?.count ?? "0", 10);
@@ -151,9 +150,9 @@ export async function GET(request: NextRequest) {
       for (const seg of VALID_SEGMENTS) {
         const segFilter = buildJobFilter(startUnix, endUnix, seg, rep.sales_rep_jnid, trade);
         const [segTotal, segWon, segLost] = await Promise.all([
-          query<{ count: string }>(`SELECT COUNT(*) AS count FROM jobs j WHERE ${segFilter.where}`, segFilter.params),
-          query<{ count: string }>(`SELECT COUNT(*) AS count FROM jobs j WHERE ${segFilter.where} AND j.status_name = ANY($${segFilter.nextIdx}::text[])`, [...segFilter.params, WON_STATUSES]),
-          query<{ count: string }>(`SELECT COUNT(*) AS count FROM jobs j WHERE ${segFilter.where} AND j.status_name = ANY($${segFilter.nextIdx}::text[])`, [...segFilter.params, LOSS_STATUSES]),
+          query<{ count: string }>(`SELECT COUNT(*) AS count FROM metrics.v_sales_funnel_jobs f JOIN metrics.v_jobs_clean j ON j.jnid = f.jnid WHERE ${segFilter.where}`, segFilter.params),
+          query<{ count: string }>(`SELECT COUNT(*) AS count FROM metrics.v_sales_funnel_jobs f JOIN metrics.v_jobs_clean j ON j.jnid = f.jnid WHERE ${segFilter.where} AND f.sold = true`, segFilter.params),
+          query<{ count: string }>(`SELECT COUNT(*) AS count FROM metrics.v_sales_funnel_jobs f JOIN metrics.v_jobs_clean j ON j.jnid = f.jnid WHERE ${segFilter.where} AND j.status_name = ANY($${segFilter.nextIdx}::text[])`, [...segFilter.params, LOSS_STATUSES]),
         ]);
         const st = parseInt(segTotal[0]?.count ?? "0", 10);
         const sw = parseInt(segWon[0]?.count ?? "0", 10);

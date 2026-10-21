@@ -359,7 +359,7 @@ export default function DashboardPage() {
         {/* Conversion Rate */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <InfoTooltip label="Conv Rate" explanation="Percentage of jobs created in this period that have reached &quot;Sold Job&quot; status or beyond. This tracks cohort close rate (jobs created in the period that closed).">
+            <InfoTooltip label="Conv Rate" explanation="Percentage of clean jobs created in this period that meet the canonical sold mapping. Insurance starts at Deductible Collected; pre-sold statuses do not count.">
               <CardTitle className="text-xs font-medium text-[#8b949e]">Conv Rate</CardTitle>
             </InfoTooltip>
           </CardHeader>
@@ -398,7 +398,7 @@ export default function DashboardPage() {
         <h2 className="text-sm font-semibold text-[#e6edf3] mb-4">
           <InfoTooltip 
             label={`Sold ${data?.period.label ?? "This Period"}`}
-            explanation="Jobs that FIRST entered the Sold stage during this period, regardless of when the lead was created. Insurance workflow uses Deductible Collected, Retail uses Sold Job, etc. — whichever status under the Sold stage came first. Estimate value = COALESCE(approved_estimate_total, last_estimate, 0). Trades can overlap; total is distinct jobs. This is the second clock — different from cohort close rate above."
+            explanation="Jobs that first entered a canonically mapped sold status during this period, regardless of lead date. Insurance starts at Deductible Collected. Estimate value is counted once per clean job."
           />
         </h2>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1018,7 +1018,7 @@ export default function DashboardPage() {
         <h2 className="text-sm font-semibold text-[#e6edf3] mb-4">
           <InfoTooltip
             label="Cohort Close by Segment"
-            explanation="Jobs CREATED in this period that have CURRENTLY reached Sold Job or beyond. This tracks the cohort close rate — different from 'Sold This Period' above which counts first-sold date."
+            explanation="Clean jobs created in this period that currently meet the canonical sold mapping. Insurance starts at Deductible Collected; Future Work and other pre-sold statuses are excluded."
           />
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">

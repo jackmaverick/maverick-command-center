@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
 import { toUnixSeconds } from "@/lib/dates";
 import { SEGMENT_SQL } from "@/lib/segment";
-import { ORDERED_STATUSES, LOSS_STATUSES } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
 import type { WeeklySnapshot, SnapshotMetrics } from "@/types";
 import {
@@ -29,12 +28,6 @@ const VALID_TYPES = ["weekly", "monthly"] as const;
 type SnapshotType = (typeof VALID_TYPES)[number];
 
 const ALL_SEGMENTS: Segment[] = ["real_estate", "retail", "insurance", "repairs", "warranty"];
-
-/** Statuses at or past "Sold Job" count as won. */
-const WON_STATUSES = (() => {
-  const idx = ORDERED_STATUSES.indexOf("Sold Job");
-  return [...ORDERED_STATUSES.slice(idx)];
-})();
 
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
@@ -123,9 +116,8 @@ async function handleGenerate(request: NextRequest) {
       // 1. Revenue (accrual basis — invoices.date_invoice BIGINT unix seconds)
       query<{ total: string }>(
         `SELECT COALESCE(SUM(i.total), 0)::text AS total
-         FROM invoices i
-         WHERE i.is_active = true
-           AND i.date_invoice >= $1
+         FROM metrics.v_invoices_clean i
+         WHERE i.date_invoice >= $1
            AND i.date_invoice <= $2`,
         [startUnix, endUnix]
       ),
@@ -133,38 +125,38 @@ async function handleGenerate(request: NextRequest) {
       // 2. New leads (jobs created in period)
       query<{ count: string }>(
         `SELECT COUNT(*)::text AS count
-         FROM jobs j
-         WHERE j.jn_date_created >= $1
-           AND j.jn_date_created <= $2`,
+         FROM metrics.v_sales_funnel_jobs funnel
+         WHERE funnel.created_at >= to_timestamp($1)
+           AND funnel.created_at <= to_timestamp($2)`,
         [startUnix, endUnix]
       ),
 
       // 3. Jobs won (reached won status during period)
       query<{ count: string }>(
         `SELECT COUNT(*)::text AS count
-         FROM jobs j
-         WHERE j.jn_date_created >= $1
-           AND j.jn_date_created <= $2
-           AND j.status_name = ANY($3::text[])`,
-        [startUnix, endUnix, WON_STATUSES]
+         FROM metrics.v_sales_funnel_jobs funnel
+         WHERE funnel.created_at >= to_timestamp($1)
+           AND funnel.created_at <= to_timestamp($2)
+           AND funnel.sold`,
+        [startUnix, endUnix]
       ),
 
       // 4. Jobs lost
       query<{ count: string }>(
         `SELECT COUNT(*)::text AS count
-         FROM jobs j
-         WHERE j.jn_date_created >= $1
-           AND j.jn_date_created <= $2
-           AND j.status_name = ANY($3::text[])`,
-        [startUnix, endUnix, [...LOSS_STATUSES]]
+         FROM metrics.v_sales_funnel_jobs funnel
+         JOIN metrics.status_funnel_stage mapping ON mapping.status_name = funnel.status_name
+         WHERE funnel.created_at >= to_timestamp($1)
+           AND funnel.created_at <= to_timestamp($2)
+           AND mapping.funnel_stage = 'closed_lost'`,
+        [startUnix, endUnix]
       ),
 
       // 5. Avg ticket (from invoices in period)
       query<{ avg_ticket: string }>(
         `SELECT COALESCE(AVG(i.total), 0)::text AS avg_ticket
-         FROM invoices i
-         WHERE i.is_active = true
-           AND i.date_invoice >= $1
+         FROM metrics.v_invoices_clean i
+         WHERE i.date_invoice >= $1
            AND i.date_invoice <= $2
            AND i.total > 0`,
         [startUnix, endUnix]
@@ -172,8 +164,22 @@ async function handleGenerate(request: NextRequest) {
 
       // 6. Pipeline value (active non-closed jobs)
       query<{ total: string }>(
-        `SELECT COALESCE(SUM(j.approved_estimate_total), 0)::text AS total
-         FROM jobs j
+        `SELECT COALESCE(SUM(GREATEST(
+           COALESCE(j.approved_estimate_total, 0),
+           COALESCE(j.last_estimate, 0),
+           COALESCE(latest_estimate.total, 0)
+         )), 0)::text AS total
+         FROM metrics.v_jobs_clean j
+         LEFT JOIN LATERAL (
+           SELECT estimate.total
+           FROM estimates estimate
+           WHERE estimate.job_jnid = j.jnid
+             AND estimate.is_active = true
+             AND estimate.is_archived = false
+             AND COALESCE(estimate.status_name, '') <> 'Void'
+           ORDER BY estimate.date_estimate DESC NULLS LAST, estimate.jn_date_updated DESC NULLS LAST
+           LIMIT 1
+         ) latest_estimate ON true
          WHERE j.is_active = true
            AND j.is_closed = false
            AND j.is_archived = false
@@ -186,7 +192,6 @@ async function handleGenerate(request: NextRequest) {
       ),
 
       // 7. Segment breakdown: leads, won, lost per segment
-      // $1=start, $2=end, $3=WON, $4=LOSS
       query<{
         segment: string;
         leads: string;
@@ -196,13 +201,15 @@ async function handleGenerate(request: NextRequest) {
         `SELECT
            (${SEGMENT_SQL}) AS segment,
            COUNT(*)::text AS leads,
-           COUNT(*) FILTER (WHERE j.status_name = ANY($3::text[]))::text AS won,
-           COUNT(*) FILTER (WHERE j.status_name = ANY($4::text[]))::text AS lost
-         FROM jobs j
-         WHERE j.jn_date_created >= $1
-           AND j.jn_date_created <= $2
+           COUNT(*) FILTER (WHERE funnel.sold)::text AS won,
+           COUNT(*) FILTER (WHERE mapping.funnel_stage = 'closed_lost')::text AS lost
+         FROM metrics.v_sales_funnel_jobs funnel
+         JOIN metrics.v_jobs_clean j ON j.jnid = funnel.jnid
+         LEFT JOIN metrics.status_funnel_stage mapping ON mapping.status_name = funnel.status_name
+         WHERE funnel.created_at >= to_timestamp($1)
+           AND funnel.created_at <= to_timestamp($2)
          GROUP BY (${SEGMENT_SQL})`,
-        [startUnix, endUnix, WON_STATUSES, [...LOSS_STATUSES]]
+        [startUnix, endUnix]
       ),
 
       // 7b. Segment revenue (via invoices joined to jobs)
@@ -210,17 +217,15 @@ async function handleGenerate(request: NextRequest) {
         `SELECT
            (${SEGMENT_SQL}) AS segment,
            COALESCE(SUM(i.total), 0)::text AS revenue
-         FROM invoices i
-         JOIN jobs j ON j.jnid = i.job_jnid
-         WHERE i.is_active = true
-           AND i.date_invoice >= $1
+         FROM metrics.v_invoices_clean i
+         JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
+         WHERE i.date_invoice >= $1
            AND i.date_invoice <= $2
          GROUP BY (${SEGMENT_SQL})`,
         [startUnix, endUnix]
       ),
 
       // 8. Rep core metrics: leads, won per rep
-      // $1=start, $2=end, $3=WON
       query<{
         sales_rep_jnid: string;
         sales_rep_name: string;
@@ -228,36 +233,33 @@ async function handleGenerate(request: NextRequest) {
         won: string;
       }>(
         `SELECT
-           j.sales_rep_jnid,
-           COALESCE(j.sales_rep_name, u.name, 'Unknown') AS sales_rep_name,
+           COALESCE(j.sales_rep_jnid, 'unassigned') AS sales_rep_jnid,
+           COALESCE(NULLIF(j.sales_rep_name, ''), u.name, 'Unassigned') AS sales_rep_name,
            COUNT(*)::text AS leads,
-           COUNT(*) FILTER (WHERE j.status_name = ANY($3::text[]))::text AS won
-         FROM jobs j
+           COUNT(*) FILTER (WHERE funnel.sold)::text AS won
+         FROM metrics.v_sales_funnel_jobs funnel
+         JOIN metrics.v_jobs_clean j ON j.jnid = funnel.jnid
          LEFT JOIN jobnimbus_users u ON u.jnid = j.sales_rep_jnid
-         WHERE j.jn_date_created >= $1
-           AND j.jn_date_created <= $2
-           AND j.sales_rep_jnid IS NOT NULL
-         GROUP BY j.sales_rep_jnid, j.sales_rep_name, u.name`,
-        [startUnix, endUnix, WON_STATUSES]
+         WHERE funnel.created_at >= to_timestamp($1)
+           AND funnel.created_at <= to_timestamp($2)
+         GROUP BY COALESCE(j.sales_rep_jnid, 'unassigned'), COALESCE(NULLIF(j.sales_rep_name, ''), u.name, 'Unassigned')`,
+        [startUnix, endUnix]
       ),
 
       // 9. Revenue per rep (accrual basis)
       query<{ sales_rep_jnid: string; revenue: string }>(
         `SELECT
-           jj.sales_rep_jnid,
+           COALESCE(jj.sales_rep_jnid, 'unassigned') AS sales_rep_jnid,
            COALESCE(SUM(i.total), 0)::text AS revenue
-         FROM invoices i
-         JOIN jobs jj ON jj.jnid = i.job_jnid
-         WHERE i.is_active = true
-           AND i.date_invoice >= $1
+         FROM metrics.v_invoices_clean i
+         JOIN metrics.v_jobs_clean jj ON jj.jnid = i.job_jnid
+         WHERE i.date_invoice >= $1
            AND i.date_invoice <= $2
-           AND jj.sales_rep_jnid IS NOT NULL
-         GROUP BY jj.sales_rep_jnid`,
+         GROUP BY COALESCE(jj.sales_rep_jnid, 'unassigned')`,
         [startUnix, endUnix]
       ),
 
       // 10. Lead sources: leads, won per source
-      // $1=start, $2=end, $3=WON
       query<{
         source_name: string;
         leads: string;
@@ -266,13 +268,14 @@ async function handleGenerate(request: NextRequest) {
         `SELECT
            COALESCE(j.source_name, 'Unknown') AS source_name,
            COUNT(*)::text AS leads,
-           COUNT(*) FILTER (WHERE j.status_name = ANY($3::text[]))::text AS won
-         FROM jobs j
-         WHERE j.jn_date_created >= $1
-           AND j.jn_date_created <= $2
+           COUNT(*) FILTER (WHERE funnel.sold)::text AS won
+         FROM metrics.v_sales_funnel_jobs funnel
+         JOIN metrics.v_jobs_clean j ON j.jnid = funnel.jnid
+         WHERE funnel.created_at >= to_timestamp($1)
+           AND funnel.created_at <= to_timestamp($2)
          GROUP BY COALESCE(j.source_name, 'Unknown')
          ORDER BY COUNT(*) DESC`,
-        [startUnix, endUnix, WON_STATUSES]
+        [startUnix, endUnix]
       ),
 
       // 10b. Lead source revenue (via invoices joined to jobs)
@@ -280,10 +283,9 @@ async function handleGenerate(request: NextRequest) {
         `SELECT
            COALESCE(j.source_name, 'Unknown') AS source_name,
            COALESCE(SUM(i.total), 0)::text AS revenue
-         FROM invoices i
-         JOIN jobs j ON j.jnid = i.job_jnid
-         WHERE i.is_active = true
-           AND i.date_invoice >= $1
+         FROM metrics.v_invoices_clean i
+         JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
+         WHERE i.date_invoice >= $1
            AND i.date_invoice <= $2
          GROUP BY COALESCE(j.source_name, 'Unknown')`,
         [startUnix, endUnix]

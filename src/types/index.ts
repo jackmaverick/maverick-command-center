@@ -347,6 +347,9 @@ export interface CashFlowMetrics {
   currentCash: number;
   burnRate: number;
   runwayWeeks: number;
+  accountsReceivable: AccountsReceivableSummary;
+  supplierPayables: SupplierPayablesSummary;
+  daysToPaid: DaysToPaidMetric[];
   revenueForecast: CashFlowRevenueForecast;
   weeklyProjections: CashFlowWeek[];
   scenarios: {
@@ -355,6 +358,36 @@ export interface CashFlowMetrics {
     conservative: CashFlowScenario;
   };
   expectedCollections: ExpectedCollection[];
+}
+
+export interface AccountsReceivableSummary {
+  asOfDateCt: string;
+  dueThroughYesterday: { count: number; amount: number };
+  notYetDue: { count: number; amount: number };
+}
+
+export interface SupplierPayableSnapshot {
+  supplier: string;
+  openCount: number;
+  amountOwed: number;
+  oldestDueDate: string | null;
+  asOf: string;
+  source: string;
+  isLive: boolean;
+}
+
+export interface SupplierPayablesSummary {
+  total: number;
+  suppliers: SupplierPayableSnapshot[];
+}
+
+export interface DaysToPaidMetric {
+  recordType: "Insurance" | "Retail" | "Repairs";
+  sampleSize: number;
+  medianDays: number | null;
+  p75Days: number | null;
+  p90Days: number | null;
+  provisionalSampleSize: number;
 }
 
 export interface CashFlowRevenueForecast {

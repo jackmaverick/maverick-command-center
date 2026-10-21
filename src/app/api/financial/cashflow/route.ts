@@ -10,6 +10,7 @@ import {
   subMonths,
   format,
 } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 import type {
   CashFlowMetrics,
   CashFlowWeek,
@@ -17,6 +18,8 @@ import type {
   ExpectedCollection,
   EstimateSentForecastGroup,
   EstimateSentForecastJob,
+  DaysToPaidMetric,
+  SupplierPayableSnapshot,
 } from "@/types";
 
 type Horizon = "30" | "60" | "90";
@@ -37,6 +40,33 @@ type EstimateSentHistoryRow = {
   historical_sent: string;
   historical_sold: string;
   avg_days_to_close: string | null;
+};
+
+type AccountsReceivableRow = {
+  as_of_date_ct: string;
+  due_count: string;
+  due_amount: string;
+  not_due_count: string;
+  not_due_amount: string;
+};
+
+type SupplierPayableRow = {
+  supplier: string;
+  open_count: string;
+  amount_owed: string;
+  oldest_due_date: string | null;
+  as_of: string;
+  source: string;
+  is_live: boolean;
+};
+
+type DaysToPaidRow = {
+  record_type: DaysToPaidMetric["recordType"];
+  sample_size: string;
+  median_days: string | null;
+  p75_days: string | null;
+  p90_days: string | null;
+  provisional_sample_size: string;
 };
 
 function roundMoney(value: number): number {
@@ -124,6 +154,12 @@ export async function GET(request: NextRequest) {
       estimateSentCurrentRows,
       // Historical Estimate Sent conversion cohorts by record type + inferred trade
       estimateSentHistoryRows,
+      // JobNimbus AR split at yesterday CT
+      accountsReceivableRows,
+      // Latest supplier-level AP snapshots
+      supplierPayableRows,
+      // Sold-to-paid timing from clean runtime views
+      daysToPaidRows,
     ] = await Promise.all([
       // 1. Bank account balances from QBO
       qboQuery<{
@@ -319,6 +355,64 @@ export async function GET(request: NextRequest) {
          HAVING COUNT(*) FILTER (WHERE estimate_sent_at IS NOT NULL) > 0
          ORDER BY historical_sent DESC`
       ),
+
+      query<AccountsReceivableRow>(
+        `WITH ct AS (
+           SELECT (now() AT TIME ZONE 'America/Chicago')::date AS today_ct
+         ), clean_ar AS (
+           SELECT
+             invoice.due,
+             CASE
+               WHEN invoice.date_due IS NULL THEN NULL
+               ELSE (to_timestamp(invoice.date_due) AT TIME ZONE 'America/Chicago')::date
+             END AS due_date_ct
+           FROM metrics.v_invoices_clean invoice
+           WHERE invoice.status_name IN ('Sent', 'Open')
+             AND invoice.due > 0
+         )
+         SELECT
+           ct.today_ct::text AS as_of_date_ct,
+           COUNT(*) FILTER (WHERE clean_ar.due_date_ct <= ct.today_ct - 1)::text AS due_count,
+           COALESCE(SUM(clean_ar.due) FILTER (WHERE clean_ar.due_date_ct <= ct.today_ct - 1), 0)::text AS due_amount,
+           COUNT(*) FILTER (WHERE clean_ar.due_date_ct >= ct.today_ct)::text AS not_due_count,
+           COALESCE(SUM(clean_ar.due) FILTER (WHERE clean_ar.due_date_ct >= ct.today_ct), 0)::text AS not_due_amount
+         FROM clean_ar
+         CROSS JOIN ct
+         GROUP BY ct.today_ct`
+      ),
+
+      query<SupplierPayableRow>(
+        `SELECT DISTINCT ON (snapshot.supplier)
+           snapshot.supplier,
+           snapshot.open_count::text,
+           snapshot.amount_owed::text,
+           snapshot.oldest_due_date::text,
+           snapshot.as_of::text,
+           snapshot.source,
+           snapshot.is_live
+         FROM metrics.supplier_ap_snapshots snapshot
+         ORDER BY snapshot.supplier, snapshot.as_of DESC, snapshot.created_at DESC`
+      ).catch((error) => {
+        // The UI remains deployable before the additive migration is applied.
+        console.warn("[Cash Flow] Supplier AP view unavailable:", error instanceof Error ? error.message : error);
+        return [] as SupplierPayableRow[];
+      }),
+
+      query<DaysToPaidRow>(
+        `SELECT
+           timing.record_type_name AS record_type,
+           COUNT(*)::text AS sample_size,
+           ROUND((percentile_cont(0.5) WITHIN GROUP (ORDER BY timing.days_to_paid))::numeric, 1)::text AS median_days,
+           ROUND((percentile_cont(0.75) WITHIN GROUP (ORDER BY timing.days_to_paid))::numeric, 1)::text AS p75_days,
+           ROUND((percentile_cont(0.9) WITHIN GROUP (ORDER BY timing.days_to_paid))::numeric, 1)::text AS p90_days,
+           COUNT(*) FILTER (WHERE timing.provisional)::text AS provisional_sample_size
+         FROM metrics.v_days_to_paid timing
+         GROUP BY timing.record_type_name
+         ORDER BY timing.record_type_name`
+      ).catch((error) => {
+        console.warn("[Cash Flow] Days-to-paid view unavailable:", error instanceof Error ? error.message : error);
+        return [] as DaysToPaidRow[];
+      }),
     ]);
 
     // ── Process results ───────────────────────────────────────────────────
@@ -568,6 +662,42 @@ export async function GET(request: NextRequest) {
     const runwayWeeks =
       weeklyBurn > 0 ? Math.round((currentCash / weeklyBurn) * 10) / 10 : 999;
 
+    const ar = accountsReceivableRows[0];
+    const accountsReceivable = {
+      asOfDateCt:
+        ar?.as_of_date_ct ??
+        formatInTimeZone(now, "America/Chicago", "yyyy-MM-dd"),
+      dueThroughYesterday: {
+        count: parseInt(ar?.due_count ?? "0", 10),
+        amount: roundMoney(parseFloat(ar?.due_amount ?? "0")),
+      },
+      notYetDue: {
+        count: parseInt(ar?.not_due_count ?? "0", 10),
+        amount: roundMoney(parseFloat(ar?.not_due_amount ?? "0")),
+      },
+    };
+
+    const suppliers: SupplierPayableSnapshot[] = supplierPayableRows
+      .map((row) => ({
+        supplier: row.supplier,
+        openCount: parseInt(row.open_count, 10) || 0,
+        amountOwed: roundMoney(parseFloat(row.amount_owed) || 0),
+        oldestDueDate: row.oldest_due_date,
+        asOf: row.as_of,
+        source: row.source,
+        isLive: row.is_live,
+      }))
+      .sort((a, b) => b.amountOwed - a.amountOwed);
+
+    const daysToPaid: DaysToPaidMetric[] = daysToPaidRows.map((row) => ({
+      recordType: row.record_type,
+      sampleSize: parseInt(row.sample_size, 10) || 0,
+      medianDays: row.median_days === null ? null : parseFloat(row.median_days),
+      p75Days: row.p75_days === null ? null : parseFloat(row.p75_days),
+      p90Days: row.p90_days === null ? null : parseFloat(row.p90_days),
+      provisionalSampleSize: parseInt(row.provisional_sample_size, 10) || 0,
+    }));
+
     function calcScenarioRunway(projections: CashFlowWeek[]): number {
       for (let i = 0; i < projections.length; i++) {
         if (projections[i].runningBalance <= 0) return i + 1;
@@ -579,6 +709,12 @@ export async function GET(request: NextRequest) {
       currentCash: Math.round(currentCash),
       burnRate: Math.round(burnRate),
       runwayWeeks,
+      accountsReceivable,
+      supplierPayables: {
+        total: roundMoney(suppliers.reduce((sum, supplier) => sum + supplier.amountOwed, 0)),
+        suppliers,
+      },
+      daysToPaid,
       revenueForecast: {
         arWeighted: Math.round(totalWeightedInflows),
         soldPipelineWeighted: Math.round(soldPipelineWeighted),

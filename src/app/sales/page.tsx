@@ -271,7 +271,7 @@ export default function SalesPage() {
           },
           {
             label: "Avg Close Rate",
-            explanation: "Average close rate across all active reps. Close rate = jobs reaching Sold Job or beyond / total jobs assigned to rep",
+            explanation: "Average close rate across all active reps using the canonical clean sold mapping. Insurance begins at Deductible Collected; pre-sold statuses are excluded.",
             value: data ? formatPercent(data.summary.avgCloseRate) : null,
           },
           {

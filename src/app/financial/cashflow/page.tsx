@@ -53,6 +53,27 @@ function formatPercent(value: number | null | undefined): string {
   return `${value.toFixed(1)}%`;
 }
 
+function formatExactCurrency(value: number): string {
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatCtDate(value: string): string {
+  return new Date(`${value.slice(0, 10)}T12:00:00Z`).toLocaleDateString(
+    "en-US",
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "America/Chicago",
+    }
+  );
+}
+
 export default function CashFlowPage() {
   const [scenario, setScenario] = useState<Scenario>("realistic");
   const [horizon, setHorizon] = useState<Horizon>("90");
@@ -138,12 +159,12 @@ export default function CashFlowPage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      {/* Cash and supplier obligations */}
+      <div className="mb-8 grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-[#8b949e]">
-              Cash in Bank
+              Live QBO Bank Balance
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -154,53 +175,183 @@ export default function CashFlowPage() {
                 {formatCurrency(data?.currentCash ?? 0)}
               </p>
             )}
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-md border border-[#30363d] bg-[#0d1117] p-3">
+                <p className="text-[11px] text-[#8b949e]">Monthly burn</p>
+                <p className="mt-1 font-mono text-sm text-[#f85149]">
+                  {formatCurrency(data?.burnRate ?? 0)}
+                </p>
+              </div>
+              <div className="rounded-md border border-[#30363d] bg-[#0d1117] p-3">
+                <p className="text-[11px] text-[#8b949e]">Runway</p>
+                <p className="mt-1 font-mono text-sm text-[#e6edf3]">
+                  {(data?.runwayWeeks ?? 0) > 52
+                    ? "52+ weeks"
+                    : `${data?.runwayWeeks ?? 0} weeks`}
+                </p>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
         <Card className="bg-[#161b22] border-[#30363d]">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">
-              Monthly Burn Rate
-            </CardTitle>
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-xs font-medium text-[#8b949e]">
+                  Supplier Payables
+                </CardTitle>
+                <p className="mt-1 text-[11px] text-[#8b949e]">
+                  Latest snapshot per supplier
+                </p>
+              </div>
+              <p className="font-mono text-xl font-bold text-[#f85149]">
+                {formatExactCurrency(data?.supplierPayables.total ?? 0)}
+              </p>
+            </div>
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <Skeleton className="h-8 w-24 bg-[#21262d]" />
-            ) : (
-              <p className="text-2xl font-bold text-[#f85149]">
-                {formatCurrency(data?.burnRate ?? 0)}
+              <Skeleton className="h-24 w-full bg-[#21262d]" />
+            ) : !data?.supplierPayables.suppliers.length ? (
+              <p className="rounded-md border border-dashed border-[#30363d] p-4 text-xs text-[#8b949e]">
+                No supplier snapshot loaded yet.
               </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="bg-[#161b22] border-[#30363d]">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-[#8b949e]">
-              Cash Runway
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-8 w-24 bg-[#21262d]" />
             ) : (
-              <p
-                className={`text-2xl font-bold ${
-                  (data?.runwayWeeks ?? 0) < 8
-                    ? "text-[#f85149]"
-                    : (data?.runwayWeeks ?? 0) < 16
-                      ? "text-[#d29922]"
-                      : "text-[#3fb950]"
-                }`}
-              >
-                {(data?.runwayWeeks ?? 0) > 52
-                  ? "52+ weeks"
-                  : `${data?.runwayWeeks ?? 0} weeks`}
-              </p>
+              <div className="space-y-2">
+                {data.supplierPayables.suppliers.map((supplier) => (
+                  <div
+                    key={supplier.supplier}
+                    className="flex items-center justify-between gap-3 border-b border-[#21262d] pb-2 text-xs"
+                  >
+                    <div>
+                      <p className="font-medium text-[#e6edf3]">
+                        {supplier.supplier}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-[#8b949e]">
+                        {supplier.openCount} open · {supplier.source} · as of{" "}
+                        {formatCtDate(supplier.asOf)}
+                        {!supplier.isLive && " · snapshot"}
+                      </p>
+                    </div>
+                    <p className="font-mono text-[#f85149]">
+                      {formatExactCurrency(supplier.amountOwed)}
+                    </p>
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {/* JobNimbus AR */}
+      <Card className="mb-8 bg-[#161b22] border-[#30363d]">
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+              JobNimbus Accounts Receivable
+            </CardTitle>
+            {data?.accountsReceivable && (
+              <p className="text-xs text-[#8b949e]">
+                As of {formatCtDate(data.accountsReceivable.asOfDateCt)} CT
+              </p>
+            )}
+          </div>
+          <p className="text-xs text-[#8b949e]">
+            Invoices Sent and Open with a remaining balance.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="rounded-lg border border-[#f85149]/20 bg-[#f85149]/5 p-4">
+              <p className="text-xs font-medium text-[#8b949e]">
+                Due through yesterday
+              </p>
+              <p className="mt-2 text-2xl font-bold text-[#f85149]">
+                {formatExactCurrency(
+                  data?.accountsReceivable.dueThroughYesterday.amount ?? 0
+                )}
+              </p>
+              <p className="mt-1 text-xs text-[#8b949e]">
+                {data?.accountsReceivable.dueThroughYesterday.count ?? 0} invoices
+              </p>
+            </div>
+            <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-4">
+              <p className="text-xs font-medium text-[#8b949e]">Not yet due</p>
+              <p className="mt-2 text-2xl font-bold text-[#58a6ff]">
+                {formatExactCurrency(
+                  data?.accountsReceivable.notYetDue.amount ?? 0
+                )}
+              </p>
+              <p className="mt-1 text-xs text-[#8b949e]">
+                {data?.accountsReceivable.notYetDue.count ?? 0} invoices
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Days to paid */}
+      <Card className="mb-8 bg-[#161b22] border-[#30363d]">
+        <CardHeader>
+          <CardTitle className="text-sm font-semibold text-[#e6edf3]">
+            Days from Sold to Paid in Full
+          </CardTitle>
+          <p className="text-xs text-[#8b949e]">
+            Jobs sold in the trailing 12 months. Sold cohorts under 90 days old
+            are provisional.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {(["Insurance", "Retail", "Repairs"] as const).map((recordType) => {
+              const metric = data?.daysToPaid.find(
+                (row) => row.recordType === recordType
+              );
+              return (
+                <div
+                  key={recordType}
+                  className="rounded-lg border border-[#30363d] bg-[#0d1117] p-4"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-[#e6edf3]">
+                      {recordType}
+                    </p>
+                    <span className="text-[11px] text-[#8b949e]">
+                      n={metric?.sampleSize ?? 0}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-3xl font-bold text-[#58a6ff]">
+                    {metric?.medianDays ?? "—"}
+                    <span className="ml-1 text-xs font-normal text-[#8b949e]">
+                      median days
+                    </span>
+                  </p>
+                  <div className="mt-3 flex gap-4 text-xs text-[#8b949e]">
+                    <span>P75 {metric?.p75Days ?? "—"}d</span>
+                    <span>P90 {metric?.p90Days ?? "—"}d</span>
+                  </div>
+                  {(metric?.provisionalSampleSize ?? 0) > 0 && (
+                    <p className="mt-3 text-[11px] text-[#d29922]">
+                      {metric?.provisionalSampleSize} jobs in provisional sold
+                      months
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {isLoading && (
+        <Card className="mb-8 bg-[#161b22] border-[#30363d]">
+          <CardContent className="pt-6">
+            <Skeleton className="h-28 w-full bg-[#21262d]" />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Forward Model Cards */}
       <div className="grid grid-cols-1 gap-4 mb-8 lg:grid-cols-3">

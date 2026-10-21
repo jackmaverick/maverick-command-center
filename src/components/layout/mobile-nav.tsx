@@ -4,31 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-
-const navItems = [
-  { href: "/", label: "Dashboard" },
-  { href: "/pipeline", label: "Pipeline" },
-  { href: "/segments/real-estate", label: "Real Estate" },
-  { href: "/segments/retail", label: "Retail" },
-  { href: "/segments/insurance", label: "Insurance" },
-  { href: "/segments/repairs", label: "Repairs" },
-  { href: "/sales", label: "Sales Performance" },
-  { href: "/speed-to-lead", label: "Speed to Lead" },
-  { href: "/job-types", label: "Job Types" },
-  { href: "/financial/cashflow", label: "Cash Flow" },
-  { href: "/financial/pipeline-cashflow", label: "Pipeline Cashflow" },
-  { href: "/financial/bob-buyout", label: "Bob Buyout" },
-  { href: "/due-dates", label: "Invoice Due Dates" },
-  { href: "/metrics", label: "Front-Funnel Metrics" },
-  { href: "/lead-sources", label: "Lead Sources" },
-  { href: "/direct-mail", label: "Direct Mail" },
-  { href: "/meta-ads", label: "Meta Ads" },
-  { href: "/weekly-review", label: "Weekly Review" },
-  { href: "/loop-health", label: "Loop Health" },
-  { href: "/agents", label: "Agents" },
-  { href: "/faq-review", label: "FAQ Review" },
-  { href: "/settings", label: "Settings" },
-];
+import {
+  isNavigationTabActive,
+  navigationGroups,
+} from "@/components/layout/navigation";
 
 interface MobileNavProps {
   open: boolean;
@@ -56,28 +35,36 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
           className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-4 [-webkit-overflow-scrolling:touch]"
           aria-label="Mobile navigation"
         >
-          <ul className="space-y-1">
-            {navItems.map((item) => {
-              const isActive =
-                pathname === item.href ||
-                (item.href !== "/" && pathname.startsWith(item.href));
-              return (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    onClick={onClose}
-                    className={cn(
-                      "block px-3 py-2 text-sm rounded-md transition-colors",
-                      isActive
-                        ? "bg-[#58a6ff]/10 text-[#58a6ff]"
-                        : "text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d]"
-                    )}
-                  >
-                    {item.label}
-                  </Link>
-                </li>
-              );
-            })}
+          <ul className="space-y-4">
+            {navigationGroups.map((group) => (
+              <li key={group.label}>
+                <div className="flex items-center gap-2 px-3 text-xs font-semibold uppercase tracking-wide text-[#e6edf3]">
+                  <group.icon className="h-3.5 w-3.5 text-[#8b949e]" />
+                  {group.label}
+                </div>
+                <ul className="mt-1 space-y-0.5 border-l border-[#30363d] pl-3 ml-4">
+                  {group.tabs.map((tab) => {
+                    const isActive = isNavigationTabActive(pathname, tab.href);
+                    return (
+                      <li key={tab.href}>
+                        <Link
+                          href={tab.href}
+                          onClick={onClose}
+                          className={cn(
+                            "block rounded-md px-3 py-1.5 text-sm transition-colors",
+                            isActive
+                              ? "bg-[#58a6ff]/10 text-[#58a6ff]"
+                              : "text-[#8b949e] hover:bg-[#21262d] hover:text-[#e6edf3]"
+                          )}
+                        >
+                          {tab.label}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </li>
+            ))}
           </ul>
         </nav>
       </SheetContent>

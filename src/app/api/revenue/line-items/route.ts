@@ -88,8 +88,7 @@ export async function GET(request: NextRequest) {
     const endDate = range.end.toISOString().slice(0, 10);
     const qboParams = [startDate, endDate];
     const invoiceWhere = `
-      i.is_active = true
-      AND ${ACTIVE_REAL_JOB_WHERE}
+      ${ACTIVE_REAL_JOB_WHERE}
       AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
       AND ${EFFECTIVE_INVOICE_DATE} >= $1
       AND ${EFFECTIVE_INVOICE_DATE} < $2
@@ -121,8 +120,8 @@ export async function GET(request: NextRequest) {
            COALESCE(im.status, CASE WHEN qid.qbo_id IS NOT NULL THEN 'matched' ELSE NULL END) AS qbo_match_status,
            COALESCE(im.match_method, CASE WHEN qid.qbo_id IS NOT NULL THEN 'doc_number' ELSE NULL END) AS qbo_match_method,
            COALESCE(im.match_confidence, CASE WHEN qid.qbo_id IS NOT NULL THEN 0.95 ELSE NULL END)::text AS qbo_match_confidence
-         FROM invoices i
-         JOIN jobs j ON j.jnid = i.job_jnid
+         FROM metrics.v_invoices_clean i
+         JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          LEFT JOIN contacts c ON c.jnid = i.contact_jnid
          LEFT JOIN invoice_mapping im ON im.jn_invoice_id = i.jnid
          LEFT JOIN qbo_invoices qim ON qim.qbo_id = im.qbo_invoice_id
@@ -135,8 +134,8 @@ export async function GET(request: NextRequest) {
         `SELECT COALESCE(i.status_name, i.status::text, 'Unknown') AS key,
                 COALESCE(SUM(i.total), 0)::text AS total,
                 COUNT(*)::text AS count
-         FROM invoices i
-         JOIN jobs j ON j.jnid = i.job_jnid
+         FROM metrics.v_invoices_clean i
+         JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          WHERE ${invoiceWhere}
          GROUP BY key
          ORDER BY SUM(i.total) DESC`,
@@ -146,8 +145,8 @@ export async function GET(request: NextRequest) {
         `SELECT COALESCE(j.record_type_name, 'Unknown') AS key,
                 COALESCE(SUM(i.total), 0)::text AS total,
                 COUNT(*)::text AS count
-         FROM invoices i
-         JOIN jobs j ON j.jnid = i.job_jnid
+         FROM metrics.v_invoices_clean i
+         JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          WHERE ${invoiceWhere}
          GROUP BY key
          ORDER BY SUM(i.total) DESC`,
@@ -157,8 +156,8 @@ export async function GET(request: NextRequest) {
         `SELECT COALESCE(j.sales_rep_name, 'Unassigned') AS key,
                 COALESCE(SUM(i.total), 0)::text AS total,
                 COUNT(*)::text AS count
-         FROM invoices i
-         JOIN jobs j ON j.jnid = i.job_jnid
+         FROM metrics.v_invoices_clean i
+         JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          WHERE ${invoiceWhere}
          GROUP BY key
          ORDER BY SUM(i.total) DESC`,
