@@ -466,7 +466,7 @@ export default function DashboardPage() {
                 <div className="space-y-3">
                   {(Object.entries(SEGMENTS) as [Segment, (typeof SEGMENTS)[Segment]][])
                     .filter(([key]) => (data?.soldThisPeriod?.bySegment[key]?.jobs ?? 0) > 0)
-                    .map(([key, segment], i) => {
+                    .map(([key, segment]) => {
                       const segData = data?.soldThisPeriod?.bySegment[key];
                       return (
                         <div key={key}>
