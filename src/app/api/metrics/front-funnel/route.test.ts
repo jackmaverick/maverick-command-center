@@ -35,7 +35,7 @@ describe("front-funnel metrics endpoint", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("s-maxage=300");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
 
     const [sql, params] = queryOne.mock.calls[0];
     expect(sql).toContain("metrics.v_sales_funnel_jobs");
