@@ -6,9 +6,7 @@ import {
 } from "@/lib/front-funnel-metrics";
 import { SQL } from "./route";
 
-const runIntegration =
-  process.env.METRICS_INTEGRATION_TEST === "1" &&
-  Boolean(process.env.DATABASE_URL);
+const runIntegration = Boolean(process.env.DATABASE_URL);
 
 describe.runIf(runIntegration)("front-funnel SQL integration", () => {
   it("executes against the actual metrics view definitions", async () => {
