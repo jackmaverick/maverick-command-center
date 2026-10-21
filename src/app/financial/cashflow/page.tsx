@@ -231,6 +231,9 @@ export default function CashFlowPage() {
                       <p className="mt-0.5 text-[11px] text-[#8b949e]">
                         {supplier.openCount} open · {supplier.source} · as of{" "}
                         {formatCtDate(supplier.asOf)}
+                        {supplier.oldestDueDate
+                          ? ` · oldest due ${formatCtDate(supplier.oldestDueDate)}`
+                          : ""}
                         {!supplier.isLive && " · snapshot"}
                       </p>
                     </div>

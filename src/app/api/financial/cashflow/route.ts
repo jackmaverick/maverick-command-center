@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { qboQuery, qboReport, getQBOConnection } from "@/lib/quickbooks";
 import { query } from "@/lib/db";
 import { SEGMENT_SQL } from "@/lib/segment";
-import { toUnixSeconds } from "@/lib/dates";
 import {
   addWeeks,
   startOfWeek,
-  endOfWeek,
   subMonths,
   format,
 } from "date-fns";
@@ -14,7 +12,6 @@ import { formatInTimeZone } from "date-fns-tz";
 import type {
   CashFlowMetrics,
   CashFlowWeek,
-  CashFlowScenario,
   ExpectedCollection,
   EstimateSentForecastGroup,
   EstimateSentForecastJob,
@@ -119,12 +116,6 @@ function getCollectionProbability(
 export async function GET(request: NextRequest) {
   try {
     const conn = await getQBOConnection();
-    if (!conn) {
-      return NextResponse.json(
-        { error: "QuickBooks not connected" },
-        { status: 400 }
-      );
-    }
 
     const { searchParams } = new URL(request.url);
     const horizonParam = searchParams.get("horizon") ?? "90";
@@ -146,10 +137,6 @@ export async function GET(request: NextRequest) {
       outstandingInvoices,
       // Pipeline (weighted by stage)
       pipelineJobs,
-      // QBO outstanding invoices
-      qboOutstanding,
-      // Material costs (projected outflows)
-      recentMaterialCosts,
       // Open Estimate Sent jobs for probability-weighted revenue forecast
       estimateSentCurrentRows,
       // Historical Estimate Sent conversion cohorts by record type + inferred trade
@@ -162,21 +149,21 @@ export async function GET(request: NextRequest) {
       daysToPaidRows,
     ] = await Promise.all([
       // 1. Bank account balances from QBO
-      qboQuery<{
+      conn ? qboQuery<{
         Id: string;
         Name: string;
         CurrentBalance: number;
         AccountType: string;
       }>(
         "SELECT Id, Name, CurrentBalance, AccountType FROM Account WHERE AccountType = 'Bank' AND Active = true"
-      ),
+      ) : Promise.resolve([]),
 
       // 2. Trailing 3-month expenses for burn rate
-      qboReport("ProfitAndLoss", {
+      conn ? qboReport("ProfitAndLoss", {
         start_date: format(subMonths(now, 3), "yyyy-MM-dd"),
         end_date: format(now, "yyyy-MM-dd"),
         summarize_column_by: "Month",
-      }),
+      }) : Promise.resolve({ Rows: { Row: [] } }),
 
       // 3. Outstanding JN invoices (not fully paid)
       query<{
@@ -228,32 +215,6 @@ export async function GET(request: NextRequest) {
            AND j.is_archived = false
            AND j.status_name IN ('Estimating', 'Estimate Sent', 'Sold Job', 'Production Ready', 'In Progress')
            AND j.approved_estimate_total > 0`
-      ),
-
-      // 5. QBO outstanding invoices
-      qboQuery<{
-        Id: string;
-        DocNumber: string;
-        CustomerRef: { name: string };
-        TotalAmt: number;
-        Balance: number;
-        DueDate: string;
-        TxnDate: string;
-      }>("SELECT * FROM Invoice WHERE Balance > '0'"),
-
-      // 6. Recent material costs (trailing 3 months avg for projected outflows)
-      query<{ avg_monthly: string }>(
-        `SELECT COALESCE(AVG(monthly_cost), 0)::text AS avg_monthly
-         FROM (
-           SELECT
-             EXTRACT(MONTH FROM to_timestamp(i.date_invoice)) AS m,
-             SUM(i.total) AS monthly_cost
-           FROM invoices i
-           WHERE i.is_active = true
-             AND i.date_invoice >= $1
-           GROUP BY m
-         ) sub`,
-        [toUnixSeconds(subMonths(now, 3))]
       ),
 
       query<EstimateSentCurrentRow>(
@@ -613,11 +574,6 @@ export async function GET(request: NextRequest) {
     const totalWeightedInflows = expectedCollections.reduce(
       (sum, c) => sum + c.weightedAmount,
       0
-    );
-
-    // 4. Projected outflows from material costs
-    const avgMonthlyMaterials = parseFloat(
-      recentMaterialCosts[0]?.avg_monthly ?? "0"
     );
 
     // ── Build weekly projections ──────────────────────────────────────────

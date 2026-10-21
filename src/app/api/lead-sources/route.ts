@@ -2,30 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { type PeriodKey, getDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
 import { SEGMENT_SQL } from "@/lib/segment";
-import { LOSS_STATUSES } from "@/lib/constants";
 import type { Segment } from "@/lib/constants";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-
-/** Jobs are won when they reach "Sold Job" status or beyond. */
-const WON_STATUSES = [
-  "Sold Job",
-  "Production Ready",
-  "In Progress",
-  "Insurance Pending",
-  "Future Work",
-  "Needs Rescheduling",
-  "Invoiced",
-  "Final Invoicing",
-  "Pending Final Payment",
-  "Job Close Out",
-  "Paid & Closed",
-  "All Work Completed",
-  "All Work Complete",
-  "Job Completed",
-  "Warranty Complete",
-];
 
 const INVOICED_STATUSES = ["Sent", "Open", "Closed"];
 const ACTIVE_REAL_JOB_WHERE = `
@@ -180,20 +160,20 @@ export async function GET(request: NextRequest) {
       oneTimeMarketingRows,
     ] = await Promise.all([
       // 1. Source performance: leads, won, lost per source
-      // $1=start, $2=end, $3=WON_STATUSES, $4=LOSS_STATUSES
       query<SourceRow>(
         `SELECT
            COALESCE(NULLIF(TRIM(j.source_name), ''), 'Unknown') AS source_name,
            COUNT(*)::text AS total_leads,
-           COUNT(*) FILTER (WHERE j.status_name = ANY($3::text[]))::text AS won_jobs,
-           COUNT(*) FILTER (WHERE j.status_name = ANY($4::text[]))::text AS lost_jobs
-         FROM jobs j
-         WHERE j.jn_date_created >= $1
-           AND j.jn_date_created < $2
-           AND ${ACTIVE_REAL_JOB_WHERE}
+           COUNT(*) FILTER (WHERE funnel.sold)::text AS won_jobs,
+           COUNT(*) FILTER (WHERE mapping.funnel_stage = 'closed_lost')::text AS lost_jobs
+         FROM metrics.v_sales_funnel_jobs funnel
+         JOIN metrics.v_jobs_clean j ON j.jnid = funnel.jnid
+         LEFT JOIN metrics.status_funnel_stage mapping ON mapping.status_name = funnel.status_name
+         WHERE funnel.created_at >= to_timestamp($1)
+           AND funnel.created_at < to_timestamp($2)
          GROUP BY COALESCE(NULLIF(TRIM(j.source_name), ''), 'Unknown')
          ORDER BY COUNT(*) DESC`,
-        [startUnix, endUnix, [...WON_STATUSES], [...LOSS_STATUSES]]
+        [startUnix, endUnix]
       ),
 
       // 2. Revenue per source (accrual basis via invoices.date_invoice)
@@ -202,10 +182,9 @@ export async function GET(request: NextRequest) {
         `SELECT
            COALESCE(NULLIF(TRIM(j.source_name), ''), 'Unknown') AS source_name,
            COALESCE(SUM(i.total), 0)::text AS revenue
-         FROM invoices i
-         JOIN jobs j ON j.jnid = i.job_jnid
-         WHERE i.is_active = true
-           AND ${ACTIVE_REAL_JOB_WHERE}
+         FROM metrics.v_invoices_clean i
+         JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
+         WHERE ${ACTIVE_REAL_JOB_WHERE}
            AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
            AND ${EFFECTIVE_INVOICE_DATE} >= $1
            AND ${EFFECTIVE_INVOICE_DATE} < $2
@@ -220,10 +199,10 @@ export async function GET(request: NextRequest) {
            COALESCE(NULLIF(TRIM(j.source_name), ''), 'Unknown') AS source_name,
            (${SEGMENT_SQL}) AS segment,
            COUNT(*)::text AS count
-         FROM jobs j
-         WHERE j.jn_date_created >= $1
-           AND j.jn_date_created < $2
-           AND ${ACTIVE_REAL_JOB_WHERE}
+         FROM metrics.v_sales_funnel_jobs funnel
+         JOIN metrics.v_jobs_clean j ON j.jnid = funnel.jnid
+         WHERE funnel.created_at >= to_timestamp($1)
+           AND funnel.created_at < to_timestamp($2)
          GROUP BY COALESCE(NULLIF(TRIM(j.source_name), ''), 'Unknown'),
                   (${SEGMENT_SQL})`,
         [startUnix, endUnix]
