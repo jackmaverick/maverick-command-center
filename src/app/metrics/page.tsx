@@ -386,7 +386,7 @@ export default function MetricsPage() {
                     : `${data.salesSummary.dataQuality.missingRep + data.salesSummary.dataQuality.missingStatus} flags`
                 }
                 sampleSize={data.salesSummary.dataQuality.sampleSize}
-                detail={`${data.salesSummary.dataQuality.missingRep} unassigned · ${data.salesSummary.dataQuality.missingStatus} missing status`}
+                detail={`${data.salesSummary.dataQuality.missingRep} no sales rep on job · ${data.salesSummary.dataQuality.missingStatus} missing status`}
                 warning={
                   data.salesSummary.dataQuality.missingRep +
                     data.salesSummary.dataQuality.missingStatus >
