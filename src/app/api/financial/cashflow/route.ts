@@ -662,9 +662,10 @@ export async function GET(request: NextRequest) {
     }
 
     const metrics: CashFlowMetrics = {
-      currentCash: Math.round(currentCash),
-      burnRate: Math.round(burnRate),
-      runwayWeeks,
+      qboConnected: Boolean(conn),
+      currentCash: conn ? Math.round(currentCash) : null,
+      burnRate: conn ? Math.round(burnRate) : null,
+      runwayWeeks: conn ? runwayWeeks : null,
       accountsReceivable,
       supplierPayables: {
         total: roundMoney(suppliers.reduce((sum, supplier) => sum + supplier.amountOwed, 0)),
@@ -721,7 +722,11 @@ export async function GET(request: NextRequest) {
         .slice(0, 20),
     };
 
-    return NextResponse.json(metrics);
+    return NextResponse.json(metrics, {
+      headers: {
+        "Cache-Control": "private, no-store",
+      },
+    });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error("[Cash Flow API] Error:", msg);

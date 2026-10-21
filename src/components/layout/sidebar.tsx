@@ -35,7 +35,9 @@ export function Sidebar() {
           {navigationGroups.map((group) => {
             const isActiveGroup = activeGroup?.label === group.label;
             const isExpanded =
-              isActiveGroup || expandedGroup === group.label;
+              expandedGroup === group.label ||
+              (isActiveGroup &&
+                expandedGroup !== `collapsed:${group.label}`);
 
             return (
               <li key={group.label}>
@@ -43,8 +45,8 @@ export function Sidebar() {
                   type="button"
                   aria-expanded={isExpanded}
                   onClick={() =>
-                    setExpandedGroup((current) =>
-                      current === group.label ? null : group.label
+                    setExpandedGroup(
+                      isExpanded ? `collapsed:${group.label}` : group.label
                     )
                   }
                   className={cn(

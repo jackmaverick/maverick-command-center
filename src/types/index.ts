@@ -344,9 +344,10 @@ export interface ExpenseCategory {
 
 // Cash Flow
 export interface CashFlowMetrics {
-  currentCash: number;
-  burnRate: number;
-  runwayWeeks: number;
+  qboConnected: boolean;
+  currentCash: number | null;
+  burnRate: number | null;
+  runwayWeeks: number | null;
   accountsReceivable: AccountsReceivableSummary;
   supplierPayables: SupplierPayablesSummary;
   daysToPaid: DaysToPaidMetric[];

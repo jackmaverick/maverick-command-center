@@ -170,24 +170,38 @@ export default function CashFlowPage() {
           <CardContent>
             {isLoading ? (
               <Skeleton className="h-8 w-24 bg-[#21262d]" />
-            ) : (
+            ) : data?.qboConnected ? (
               <p className="text-2xl font-bold text-[#3fb950]">
-                {formatCurrency(data?.currentCash ?? 0)}
+                {formatCurrency(data.currentCash ?? 0)}
               </p>
+            ) : (
+              <div>
+                <p className="text-lg font-semibold text-[#d29922]">
+                  QuickBooks not connected
+                </p>
+                <p className="mt-1 text-xs text-[#8b949e]">
+                  Bank balance, burn, and runway are unavailable.
+                </p>
+              </div>
             )}
             <div className="mt-4 grid grid-cols-2 gap-3">
               <div className="rounded-md border border-[#30363d] bg-[#0d1117] p-3">
                 <p className="text-[11px] text-[#8b949e]">Monthly burn</p>
                 <p className="mt-1 font-mono text-sm text-[#f85149]">
-                  {formatCurrency(data?.burnRate ?? 0)}
+                  {data?.burnRate === null || data?.burnRate === undefined
+                    ? "—"
+                    : formatCurrency(data.burnRate)}
                 </p>
               </div>
               <div className="rounded-md border border-[#30363d] bg-[#0d1117] p-3">
                 <p className="text-[11px] text-[#8b949e]">Runway</p>
                 <p className="mt-1 font-mono text-sm text-[#e6edf3]">
-                  {(data?.runwayWeeks ?? 0) > 52
+                  {data?.runwayWeeks === null ||
+                  data?.runwayWeeks === undefined
+                    ? "—"
+                    : data.runwayWeeks > 52
                     ? "52+ weeks"
-                    : `${data?.runwayWeeks ?? 0} weeks`}
+                    : `${data.runwayWeeks} weeks`}
                 </p>
               </div>
             </div>
