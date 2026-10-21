@@ -11,10 +11,10 @@ const EFFECTIVE_INVOICE_DATE = "COALESCE(i.date_invoice, i.jn_date_created)";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const periodParam = (searchParams.get("period") ?? "month") as PeriodKey;
+    const periodParam = (searchParams.get("period") ?? "reference") as PeriodKey;
 
     // Validate period
-    const period = isValidPeriodKey(periodParam) ? periodParam : "month";
+    const period = isValidPeriodKey(periodParam) ? periodParam : "reference";
     const range = getDateRange(period);
 
     // Convert date range to unix seconds for BIGINT columns

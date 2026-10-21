@@ -218,7 +218,7 @@ function CustomTooltip({
 /* ── Main Component ──────────────────────────────────────────────────── */
 
 export default function DashboardPage() {
-  const [period, setPeriod] = useState("month");
+  const [period, setPeriod] = useState("reference");
 
   const { data, isLoading, isError, refetch } = useQuery<DashboardData>({
     queryKey: ["dashboard", period],
