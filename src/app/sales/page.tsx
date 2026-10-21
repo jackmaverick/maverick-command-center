@@ -9,7 +9,6 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  Cell,
   Legend,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,7 +22,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -179,14 +177,14 @@ export default function SalesPage() {
         : (bVal as number) - (aVal as number);
     });
     return reps;
-  }, [data?.reps, sortField, sortAsc]);
+  }, [data, sortField, sortAsc]);
 
   // Selected rep
   const selectedRep = useMemo(() => {
     if (!data?.reps) return null;
     if (selectedRepId) return data.reps.find((r) => r.repId === selectedRepId) ?? null;
     return sortedReps[0] ?? null;
-  }, [data?.reps, selectedRepId, sortedReps]);
+  }, [data, selectedRepId, sortedReps]);
 
   // Chart data for segment close rates
   const segmentChartData = useMemo(() => {
@@ -201,7 +199,7 @@ export default function SalesPage() {
       });
       return entry;
     });
-  }, [data?.reps]);
+  }, [data]);
 
   function handleSort(field: SortField) {
     if (sortField === field) {
