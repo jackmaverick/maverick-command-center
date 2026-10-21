@@ -33,6 +33,7 @@ export const navigationGroups: NavigationGroup[] = [
     icon: GitBranch,
     tabs: [
       { href: "/metrics", label: "Metrics" },
+      { href: "/metrics/stale-estimates", label: "Stale Estimates" },
       { href: "/pipeline", label: "Pipeline" },
       { href: "/segments/real-estate", label: "Real Estate" },
       { href: "/segments/retail", label: "Retail" },
@@ -85,5 +86,15 @@ export const navigationGroups: NavigationGroup[] = [
 ];
 
 export function isNavigationTabActive(pathname: string, href: string): boolean {
-  return pathname === href || (href !== "/" && pathname.startsWith(href));
+  if (pathname === href) return true;
+  if (href === "/" || !pathname.startsWith(`${href}/`)) return false;
+
+  return !navigationGroups.some((group) =>
+    group.tabs.some(
+      (tab) =>
+        tab.href !== href &&
+        tab.href.startsWith(`${href}/`) &&
+        (pathname === tab.href || pathname.startsWith(`${tab.href}/`))
+    )
+  );
 }

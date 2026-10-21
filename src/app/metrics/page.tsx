@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Info } from "lucide-react";
@@ -393,6 +394,12 @@ export default function MetricsPage() {
                 }
               />
             </div>
+            <Link
+              href="/metrics/stale-estimates"
+              className="mt-4 inline-flex text-xs font-medium text-[#58a6ff] hover:underline"
+            >
+              Review stale estimate jobs →
+            </Link>
           </Section>
 
           <Section

@@ -46,7 +46,7 @@ interface MetricsRow {
   sales_summary: Record<string, unknown>;
 }
 
-const SQL = `
+export const SQL = `
 WITH funnel_jobs AS (
   SELECT funnel_job.*
   FROM ${salesFunnelJobsSql("funnel_job")}
@@ -59,6 +59,9 @@ clean_jobs AS (
     funnel_job.created_at AS lead_created_at,
     source_job.primary_contact_jnid,
     source_job.jn_date_created,
+    source_job.jn_date_status_change,
+    source_job.approved_estimate_total,
+    source_job.last_estimate,
     ARRAY_REMOVE(ARRAY[
       right(regexp_replace(COALESCE(source_job.primary_contact_number, ''), '\\D', '', 'g'), 10),
       right(regexp_replace(COALESCE(source_job.parent_mobile_phone, ''), '\\D', '', 'g'), 10),
@@ -763,41 +766,26 @@ sales_summary AS (
         1
       )
     ),
-    'staleEstimates14', COUNT(*) FILTER (
-      WHERE status_name = '${ESTIMATE_SENT_STATUS}'
-        AND COALESCE(
-          (
-            SELECT MIN(stale_history.changed_at)
-            FROM job_stage_history stale_history
-            WHERE stale_history.job_jnid = cohort.jnid
-              AND stale_history.to_stage_name = '${ESTIMATE_SENT_STATUS}'
-          ),
-          to_timestamp(cohort.jn_date_status_change)
-        ) <= now() - interval '14 days'
-    )::int,
-    'staleEstimates90', COUNT(*) FILTER (
-      WHERE status_name = '${ESTIMATE_SENT_STATUS}'
-        AND COALESCE(
-          (
-            SELECT MIN(stale_history.changed_at)
-            FROM job_stage_history stale_history
-            WHERE stale_history.job_jnid = cohort.jnid
-              AND stale_history.to_stage_name = '${ESTIMATE_SENT_STATUS}'
-          ),
-          to_timestamp(cohort.jn_date_status_change)
-        ) <= now() - interval '90 days'
-    )::int,
+    'staleEstimates14', (
+      SELECT COUNT(*)::int
+      FROM metrics.v_stale_estimates stale
+      WHERE stale.stale_14
+    ),
+    'staleEstimates90', (
+      SELECT COUNT(*)::int
+      FROM metrics.v_stale_estimates stale
+      WHERE stale.stale_90
+    ),
     'soldValue', COALESCE(SUM(
       CASE WHEN sold_flag
-        THEN COALESCE(approved_estimate_total, last_estimate, 0)
+        THEN COALESCE(NULLIF(approved_estimate_total, 0), last_estimate, 0)
         ELSE 0
       END
     ), 0),
     'billedRevenue', COALESCE((
       SELECT SUM(clean_invoice.total)
-      FROM metrics.v_invoices_clean clean_invoice
+      FROM metrics.v_billed_invoices clean_invoice
       JOIN cohort billed_job ON billed_job.jnid = clean_invoice.job_jnid
-      WHERE COALESCE(clean_invoice.status_name, '') IN ('Sent', 'Open', 'Closed', 'Paid')
     ), 0),
     'dataQuality', jsonb_build_object(
       'missingRep', COUNT(*) FILTER (
