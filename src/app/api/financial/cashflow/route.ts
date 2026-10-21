@@ -6,7 +6,6 @@ import {
   addWeeks,
   startOfWeek,
   subMonths,
-  format,
 } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import type {
@@ -160,8 +159,12 @@ export async function GET(request: NextRequest) {
 
       // 2. Trailing 3-month expenses for burn rate
       conn ? qboReport("ProfitAndLoss", {
-        start_date: format(subMonths(now, 3), "yyyy-MM-dd"),
-        end_date: format(now, "yyyy-MM-dd"),
+        start_date: formatInTimeZone(
+          subMonths(now, 3),
+          "America/Chicago",
+          "yyyy-MM-dd"
+        ),
+        end_date: formatInTimeZone(now, "America/Chicago", "yyyy-MM-dd"),
         summarize_column_by: "Month",
       }) : Promise.resolve({ Rows: { Row: [] } }),
 
@@ -600,7 +603,11 @@ export async function GET(request: NextRequest) {
         runningBalance += netCash;
 
         projections.push({
-          weekStart: format(weekStart, "yyyy-MM-dd"),
+          weekStart: formatInTimeZone(
+            weekStart,
+            "America/Chicago",
+            "yyyy-MM-dd"
+          ),
           inflows: Math.round(weeklyInflow),
           outflows: Math.round(weeklyOutflow),
           netCash: Math.round(netCash),

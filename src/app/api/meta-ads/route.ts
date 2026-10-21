@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { getDateRange, isValidPeriodKey, toUnixSeconds, type PeriodKey } from "@/lib/dates";
+import { formatCtDateKey, getDateRange, isValidPeriodKey, toUnixSeconds, type PeriodKey } from "@/lib/dates";
 
 const META_ACCOUNT_ID = "act_1782311009876417";
 const ROOF_IGNITE_SOURCE = "Roof Ignite - Meta Ads";
@@ -47,8 +47,8 @@ export async function GET(request: NextRequest) {
   const range = getDateRange(period);
   const startUnix = toUnixSeconds(range.start);
   const endUnix = toUnixSeconds(range.end);
-  const startDate = range.start.toISOString().slice(0, 10);
-  const endDate = range.end.toISOString().slice(0, 10);
+  const startDate = formatCtDateKey(range.start);
+  const endDate = formatCtDateKey(range.end);
 
   try {
     const [campaignRows, funnelRows, syncRows] = await Promise.all([

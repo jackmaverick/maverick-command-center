@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
-import { toUnixSeconds } from "@/lib/dates";
+import {
+  APP_TIME_ZONE,
+  getDateRange,
+  toUnixSeconds,
+} from "@/lib/dates";
 import { SEGMENT_SQL } from "@/lib/segment";
 import type { Segment } from "@/lib/constants";
 import type { WeeklySnapshot, SnapshotMetrics } from "@/types";
-import {
-  startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
-  subWeeks,
-  subMonths,
-  format,
-} from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 
 // ── POST /api/snapshots/generate ────────────────────────────────────────────
 // Computes metrics for the most recent completed period and upserts a snapshot.
@@ -41,24 +37,8 @@ function round2(n: number): number {
  * Compute the start/end dates for the most recent completed period.
  */
 function getPeriodBounds(type: SnapshotType): { start: Date; end: Date } {
-  const now = new Date();
-
-  if (type === "weekly") {
-    // Most recent completed week (Mon-Sun).
-    // If today is Monday, "last week" is the one that just ended yesterday (Sun).
-    const lastWeek = subWeeks(now, 1);
-    return {
-      start: startOfWeek(lastWeek, { weekStartsOn: 1 }),
-      end: endOfWeek(lastWeek, { weekStartsOn: 1 }),
-    };
-  }
-
-  // Monthly: most recent completed month.
-  const lastMonth = subMonths(now, 1);
-  return {
-    start: startOfMonth(lastMonth),
-    end: endOfMonth(lastMonth),
-  };
+  const range = getDateRange(type === "weekly" ? "last_week" : "last_month");
+  return { start: range.start, end: range.end };
 }
 
 // ── POST handler ────────────────────────────────────────────────────────────
@@ -92,8 +72,8 @@ async function handleGenerate(request: NextRequest) {
     const { start, end } = getPeriodBounds(snapshotType);
     const startUnix = toUnixSeconds(start);
     const endUnix = toUnixSeconds(end);
-    const startDate = format(start, "yyyy-MM-dd");
-    const endDate = format(end, "yyyy-MM-dd");
+    const startDate = formatInTimeZone(start, APP_TIME_ZONE, "yyyy-MM-dd");
+    const endDate = formatInTimeZone(end, APP_TIME_ZONE, "yyyy-MM-dd");
 
     // ── Run all metric queries in parallel ────────────────────────────
 
@@ -117,8 +97,9 @@ async function handleGenerate(request: NextRequest) {
       query<{ total: string }>(
         `SELECT COALESCE(SUM(i.total), 0)::text AS total
          FROM metrics.v_invoices_clean i
-         WHERE i.date_invoice >= $1
-           AND i.date_invoice <= $2`,
+         WHERE COALESCE(i.status_name, '') <> 'Draft'
+           AND COALESCE(i.date_invoice, i.jn_date_created) >= $1
+           AND COALESCE(i.date_invoice, i.jn_date_created) <= $2`,
         [startUnix, endUnix]
       ),
 
@@ -156,30 +137,22 @@ async function handleGenerate(request: NextRequest) {
       query<{ avg_ticket: string }>(
         `SELECT COALESCE(AVG(i.total), 0)::text AS avg_ticket
          FROM metrics.v_invoices_clean i
-         WHERE i.date_invoice >= $1
-           AND i.date_invoice <= $2
+         WHERE COALESCE(i.status_name, '') <> 'Draft'
+           AND COALESCE(i.date_invoice, i.jn_date_created) >= $1
+           AND COALESCE(i.date_invoice, i.jn_date_created) <= $2
            AND i.total > 0`,
         [startUnix, endUnix]
       ),
 
       // 6. Pipeline value (active non-closed jobs)
       query<{ total: string }>(
-        `SELECT COALESCE(SUM(GREATEST(
-           COALESCE(j.approved_estimate_total, 0),
-           COALESCE(j.last_estimate, 0),
-           COALESCE(latest_estimate.total, 0)
+        `SELECT COALESCE(SUM(COALESCE(
+           NULLIF(j.approved_estimate_total, 0),
+           j.last_estimate,
+           0
          )), 0)::text AS total
-         FROM metrics.v_jobs_clean j
-         LEFT JOIN LATERAL (
-           SELECT estimate.total
-           FROM estimates estimate
-           WHERE estimate.job_jnid = j.jnid
-             AND estimate.is_active = true
-             AND estimate.is_archived = false
-             AND COALESCE(estimate.status_name, '') <> 'Void'
-           ORDER BY estimate.date_estimate DESC NULLS LAST, estimate.jn_date_updated DESC NULLS LAST
-           LIMIT 1
-         ) latest_estimate ON true
+         FROM metrics.v_sales_funnel_jobs funnel
+         JOIN metrics.v_jobs_clean j ON j.jnid = funnel.jnid
          WHERE j.is_active = true
            AND j.is_closed = false
            AND j.is_archived = false
@@ -219,8 +192,9 @@ async function handleGenerate(request: NextRequest) {
            COALESCE(SUM(i.total), 0)::text AS revenue
          FROM metrics.v_invoices_clean i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
-         WHERE i.date_invoice >= $1
-           AND i.date_invoice <= $2
+         WHERE COALESCE(i.status_name, '') <> 'Draft'
+           AND COALESCE(i.date_invoice, i.jn_date_created) >= $1
+           AND COALESCE(i.date_invoice, i.jn_date_created) <= $2
          GROUP BY (${SEGMENT_SQL})`,
         [startUnix, endUnix]
       ),
@@ -233,29 +207,31 @@ async function handleGenerate(request: NextRequest) {
         won: string;
       }>(
         `SELECT
-           COALESCE(j.sales_rep_jnid, 'unassigned') AS sales_rep_jnid,
-           COALESCE(NULLIF(j.sales_rep_name, ''), u.name, 'Unassigned') AS sales_rep_name,
+           COALESCE(sales_job.sales_rep_jnid, 'unassigned') AS sales_rep_jnid,
+           sales_job.sales_rep_name,
            COUNT(*)::text AS leads,
-           COUNT(*) FILTER (WHERE funnel.sold)::text AS won
-         FROM metrics.v_sales_funnel_jobs funnel
-         JOIN metrics.v_jobs_clean j ON j.jnid = funnel.jnid
-         LEFT JOIN jobnimbus_users u ON u.jnid = j.sales_rep_jnid
-         WHERE funnel.created_at >= to_timestamp($1)
-           AND funnel.created_at <= to_timestamp($2)
-         GROUP BY COALESCE(j.sales_rep_jnid, 'unassigned'), COALESCE(NULLIF(j.sales_rep_name, ''), u.name, 'Unassigned')`,
+           COUNT(*) FILTER (WHERE sales_job.sold)::text AS won
+         FROM metrics.v_sales_metrics_jobs sales_job
+         WHERE sales_job.created_at >= to_timestamp($1)
+           AND sales_job.created_at <= to_timestamp($2)
+         GROUP BY
+           COALESCE(sales_job.sales_rep_jnid, 'unassigned'),
+           sales_job.sales_rep_name`,
         [startUnix, endUnix]
       ),
 
       // 9. Revenue per rep (accrual basis)
       query<{ sales_rep_jnid: string; revenue: string }>(
         `SELECT
-           COALESCE(jj.sales_rep_jnid, 'unassigned') AS sales_rep_jnid,
+           COALESCE(sales_job.sales_rep_jnid, 'unassigned') AS sales_rep_jnid,
            COALESCE(SUM(i.total), 0)::text AS revenue
          FROM metrics.v_invoices_clean i
-         JOIN metrics.v_jobs_clean jj ON jj.jnid = i.job_jnid
-         WHERE i.date_invoice >= $1
-           AND i.date_invoice <= $2
-         GROUP BY COALESCE(jj.sales_rep_jnid, 'unassigned')`,
+         JOIN metrics.v_sales_metrics_jobs sales_job
+           ON sales_job.job_jnid = i.job_jnid
+         WHERE COALESCE(i.status_name, '') <> 'Draft'
+           AND COALESCE(i.date_invoice, i.jn_date_created) >= $1
+           AND COALESCE(i.date_invoice, i.jn_date_created) <= $2
+         GROUP BY COALESCE(sales_job.sales_rep_jnid, 'unassigned')`,
         [startUnix, endUnix]
       ),
 
@@ -285,8 +261,9 @@ async function handleGenerate(request: NextRequest) {
            COALESCE(SUM(i.total), 0)::text AS revenue
          FROM metrics.v_invoices_clean i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
-         WHERE i.date_invoice >= $1
-           AND i.date_invoice <= $2
+         WHERE COALESCE(i.status_name, '') <> 'Draft'
+           AND COALESCE(i.date_invoice, i.jn_date_created) >= $1
+           AND COALESCE(i.date_invoice, i.jn_date_created) <= $2
          GROUP BY COALESCE(j.source_name, 'Unknown')`,
         [startUnix, endUnix]
       ),
