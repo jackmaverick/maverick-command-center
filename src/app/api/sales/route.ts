@@ -26,6 +26,7 @@ type RepCoreRow = {
 
 type RepRevenueRow = {
   rep_id: string;
+  rep_name: string;
   revenue: string;
 };
 
@@ -120,7 +121,7 @@ export async function GET(request: NextRequest) {
       query<RepCoreRow>(
         `SELECT
            COALESCE(sales_job.sales_rep_jnid, 'unassigned') AS rep_id,
-           sales_job.sales_rep_name AS rep_name,
+           MAX(sales_job.sales_rep_name) AS rep_name,
            COUNT(*)::text AS total_jobs,
            COUNT(*) FILTER (WHERE sales_job.sold)::text AS sold_jobs,
            COUNT(*) FILTER (WHERE sales_job.closed_lost)::text AS lost_jobs,
@@ -130,15 +131,14 @@ export async function GET(request: NextRequest) {
          FROM metrics.v_sales_metrics_jobs sales_job
          JOIN metrics.v_jobs_clean j ON j.jnid = sales_job.job_jnid
          WHERE ${where}
-         GROUP BY
-           COALESCE(sales_job.sales_rep_jnid, 'unassigned'),
-           sales_job.sales_rep_name
-         ORDER BY sales_job.sales_rep_name`,
+         GROUP BY COALESCE(sales_job.sales_rep_jnid, 'unassigned')
+         ORDER BY MAX(sales_job.sales_rep_name)`,
         params
       ),
       query<RepRevenueRow>(
         `SELECT
            COALESCE(sales_job.sales_rep_jnid, 'unassigned') AS rep_id,
+           MAX(sales_job.sales_rep_name) AS rep_name,
            COALESCE(SUM(invoice.total), 0)::text AS revenue
          FROM metrics.v_invoices_clean invoice
          JOIN metrics.v_sales_metrics_jobs sales_job
@@ -171,6 +171,10 @@ export async function GET(request: NextRequest) {
     const revenueByRep = new Map(
       revenueRows.map((row) => [row.rep_id, parseFloat(row.revenue) || 0])
     );
+    const revenueNameByRep = new Map(
+      revenueRows.map((row) => [row.rep_id, row.rep_name])
+    );
+    const coreByRep = new Map(coreRows.map((row) => [row.rep_id, row]));
     const segmentByRep = new Map<string, Record<string, number>>();
     for (const row of segmentRows) {
       const rates = segmentByRep.get(row.rep_id) ?? {};
@@ -180,19 +184,25 @@ export async function GET(request: NextRequest) {
       segmentByRep.set(row.rep_id, rates);
     }
 
-    const reps = coreRows.map((row) => {
-      const totalJobs = parseInt(row.total_jobs, 10) || 0;
-      const wonJobs = parseInt(row.sold_jobs, 10) || 0;
+    const repIds = new Set([
+      ...coreRows.map((row) => row.rep_id),
+      ...revenueRows.map((row) => row.rep_id),
+    ]);
+    const reps = Array.from(repIds).map((repId) => {
+      const row = coreByRep.get(repId);
+      const totalJobs = parseInt(row?.total_jobs ?? "0", 10) || 0;
+      const wonJobs = parseInt(row?.sold_jobs ?? "0", 10) || 0;
       return {
-        repId: row.rep_id,
-        repName: row.rep_name,
+        repId,
+        repName:
+          row?.rep_name ?? revenueNameByRep.get(repId) ?? "Unassigned",
         totalJobs,
         wonJobs,
-        lostJobs: parseInt(row.lost_jobs, 10) || 0,
+        lostJobs: parseInt(row?.lost_jobs ?? "0", 10) || 0,
         closeRate: totalJobs > 0 ? round1((wonJobs / totalJobs) * 100) : 0,
-        segmentCloseRates: segmentByRep.get(row.rep_id) ?? {},
-        revenue: round2(revenueByRep.get(row.rep_id) ?? 0),
-        fallbackAssignments: parseInt(row.fallback_jobs, 10) || 0,
+        segmentCloseRates: segmentByRep.get(repId) ?? {},
+        revenue: round2(revenueByRep.get(repId) ?? 0),
+        fallbackAssignments: parseInt(row?.fallback_jobs ?? "0", 10) || 0,
         avgCycleDays: 0,
         statusConversions: [],
         followUpMetrics: {
