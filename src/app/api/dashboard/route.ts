@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { formatCtDateKey, type PeriodKey, getDateRange, getPreviousDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
+import { getCtDateBounds, type PeriodKey, getDateRange, getPreviousDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
 import { SEGMENT_SQL } from "@/lib/segment";
 import { CHART_COLORS } from "@/lib/constants";
 
@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
     // Convert date range to unix seconds for BIGINT columns
     const startUnix = toUnixSeconds(range.start);
     const endUnix = toUnixSeconds(range.end);
+    const dateBounds = getCtDateBounds(range);
 
     // Run all queries in parallel for performance
     const [
@@ -198,7 +199,7 @@ export async function GET(request: NextRequest) {
          WHERE txn_date >= $1::date
            AND txn_date < $2::date
            AND COALESCE(total_amount, 0) > 0`,
-        [formatCtDateKey(range.start), formatCtDateKey(range.end)]
+        [dateBounds.startDate, dateBounds.endDateExclusive]
       ).catch(() => [{ total: "0", balance: "0", count: "0" }]),
 
       // 13. Sold This Period by Trade - first time job entered Sold stage (jn_stage), any vintage

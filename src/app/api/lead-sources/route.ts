@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { formatCtDateKey, type PeriodKey, getDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
+import { getCtDateBounds, type PeriodKey, getDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
 import { SEGMENT_SQL } from "@/lib/segment";
 import type { Segment } from "@/lib/constants";
 
@@ -140,6 +140,7 @@ export async function GET(request: NextRequest) {
     const range = getDateRange(period);
     const startUnix = toUnixSeconds(range.start);
     const endUnix = toUnixSeconds(range.end);
+    const dateBounds = getCtDateBounds(range);
 
     // ── Run all queries in parallel ──────────────────────────────────────
 
@@ -207,7 +208,7 @@ export async function GET(request: NextRequest) {
          WHERE send_date >= $1::date
            AND send_date < $2::date
          GROUP BY channel`,
-        [formatCtDateKey(range.start), formatCtDateKey(range.end)]
+        [dateBounds.startDate, dateBounds.endDateExclusive]
       ).catch(() => []),
 
       query<CampaignCostRow>(
@@ -226,7 +227,7 @@ export async function GET(request: NextRequest) {
          WHERE category ILIKE 'Marketing'
            AND start_date < $2::date
            AND (end_date IS NULL OR end_date >= $1::date)`,
-        [formatCtDateKey(range.start), formatCtDateKey(range.end)]
+        [dateBounds.startDate, dateBounds.endDateExclusive]
       ).catch(() => []),
 
       query<{ amount: string }>(
@@ -235,7 +236,7 @@ export async function GET(request: NextRequest) {
          WHERE category ILIKE 'Marketing'
            AND expected_date >= $1::date
            AND expected_date < $2::date`,
-        [formatCtDateKey(range.start), formatCtDateKey(range.end)]
+        [dateBounds.startDate, dateBounds.endDateExclusive]
       ).catch(() => [{ amount: "0" }]),
     ]);
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { formatCtDateKey, type PeriodKey, getDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
+import { getCtDateBounds, type PeriodKey, getDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
 
 const EFFECTIVE_INVOICE_DATE = "COALESCE(i.date_invoice, i.jn_date_created)";
 
@@ -76,8 +76,7 @@ export async function GET(request: NextRequest) {
     const endUnix = toUnixSeconds(range.end);
 
     const params = [startUnix, endUnix];
-    const startDate = formatCtDateKey(range.start);
-    const endDate = formatCtDateKey(range.end);
+    const { startDate, endDateExclusive: endDate } = getCtDateBounds(range);
     const qboParams = [startDate, endDate];
     const invoiceWhere = `
       ${EFFECTIVE_INVOICE_DATE} >= $1

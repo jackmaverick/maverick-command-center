@@ -1,10 +1,12 @@
 import {
   startOfWeek,
+  startOfDay,
   endOfWeek,
   startOfMonth,
-  endOfMonth,
   startOfQuarter,
   startOfYear,
+  addDays,
+  addMonths,
   subWeeks,
   subMonths,
   subDays,
@@ -60,7 +62,7 @@ function currentAwareMonthRange(monthDate: Date, now = new Date()): DateRange {
     start: ctBoundary(start),
     end: isSameMonth(monthDate, localNow)
       ? now
-      : ctBoundary(endOfMonth(monthDate)),
+      : ctBoundary(startOfMonth(addMonths(monthDate, 1))),
     label: format(monthDate, "MMMM yyyy"),
   };
 }
@@ -72,7 +74,7 @@ function currentAwareWeekRange(weekDate: Date, now = new Date()): DateRange {
     start: ctBoundary(start),
     end: isSameWeek(weekDate, localNow, { weekStartsOn: 1 })
       ? now
-      : ctBoundary(endOfWeek(weekDate, { weekStartsOn: 1 })),
+      : ctBoundary(addDays(start, 7)),
     label: `${format(start, "MMM d")} - ${format(endOfWeek(weekDate, { weekStartsOn: 1 }), "MMM d, yyyy")}`,
   };
 }
@@ -128,7 +130,9 @@ export function getDateRange(period: PeriodKey | string): DateRange {
       const lastWeek = subWeeks(localNow, 1);
       return {
         start: ctBoundary(startOfWeek(lastWeek, { weekStartsOn: 1 })),
-        end: ctBoundary(endOfWeek(lastWeek, { weekStartsOn: 1 })),
+        end: ctBoundary(
+          addDays(startOfWeek(lastWeek, { weekStartsOn: 1 }), 7)
+        ),
         label: "Last Week",
       };
     }
@@ -142,7 +146,7 @@ export function getDateRange(period: PeriodKey | string): DateRange {
       const lastMonth = subMonths(localNow, 1);
       return {
         start: ctBoundary(startOfMonth(lastMonth)),
-        end: ctBoundary(endOfMonth(lastMonth)),
+        end: ctBoundary(startOfMonth(addMonths(lastMonth, 1))),
         label: "Last Month",
       };
     }
@@ -227,6 +231,26 @@ export function toUnixSeconds(date: Date): number {
 
 export function formatCtDateKey(date: Date): string {
   return formatInTimeZone(date, APP_TIME_ZONE, "yyyy-MM-dd");
+}
+
+export function getCtDateBounds(range: DateRange): {
+  startDate: string;
+  endDateExclusive: string;
+} {
+  const localEnd = toZonedTime(range.end, APP_TIME_ZONE);
+  const endIsBoundary =
+    localEnd.getHours() === 0 &&
+    localEnd.getMinutes() === 0 &&
+    localEnd.getSeconds() === 0 &&
+    localEnd.getMilliseconds() === 0;
+  const endExclusive = endIsBoundary
+    ? localEnd
+    : addDays(startOfDay(localEnd), 1);
+
+  return {
+    startDate: formatCtDateKey(range.start),
+    endDateExclusive: format(endExclusive, "yyyy-MM-dd"),
+  };
 }
 
 /**

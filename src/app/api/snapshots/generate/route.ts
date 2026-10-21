@@ -73,7 +73,11 @@ async function handleGenerate(request: NextRequest) {
     const startUnix = toUnixSeconds(start);
     const endUnix = toUnixSeconds(end);
     const startDate = formatInTimeZone(start, APP_TIME_ZONE, "yyyy-MM-dd");
-    const endDate = formatInTimeZone(end, APP_TIME_ZONE, "yyyy-MM-dd");
+    const endDate = formatInTimeZone(
+      new Date(end.getTime() - 1),
+      APP_TIME_ZONE,
+      "yyyy-MM-dd"
+    );
 
     // ── Run all metric queries in parallel ────────────────────────────
 
@@ -99,7 +103,7 @@ async function handleGenerate(request: NextRequest) {
          FROM metrics.v_invoices_clean i
          WHERE COALESCE(i.status_name, '') <> 'Draft'
            AND COALESCE(i.date_invoice, i.jn_date_created) >= $1
-           AND COALESCE(i.date_invoice, i.jn_date_created) <= $2`,
+           AND COALESCE(i.date_invoice, i.jn_date_created) < $2`,
         [startUnix, endUnix]
       ),
 
@@ -108,7 +112,7 @@ async function handleGenerate(request: NextRequest) {
         `SELECT COUNT(*)::text AS count
          FROM metrics.v_sales_funnel_jobs funnel
          WHERE funnel.created_at >= to_timestamp($1)
-           AND funnel.created_at <= to_timestamp($2)`,
+           AND funnel.created_at < to_timestamp($2)`,
         [startUnix, endUnix]
       ),
 
@@ -117,7 +121,7 @@ async function handleGenerate(request: NextRequest) {
         `SELECT COUNT(*)::text AS count
          FROM metrics.v_sales_funnel_jobs funnel
          WHERE funnel.created_at >= to_timestamp($1)
-           AND funnel.created_at <= to_timestamp($2)
+           AND funnel.created_at < to_timestamp($2)
            AND funnel.sold`,
         [startUnix, endUnix]
       ),
@@ -128,7 +132,7 @@ async function handleGenerate(request: NextRequest) {
          FROM metrics.v_sales_funnel_jobs funnel
          JOIN metrics.status_funnel_stage mapping ON mapping.status_name = funnel.status_name
          WHERE funnel.created_at >= to_timestamp($1)
-           AND funnel.created_at <= to_timestamp($2)
+           AND funnel.created_at < to_timestamp($2)
            AND mapping.funnel_stage = 'closed_lost'`,
         [startUnix, endUnix]
       ),
@@ -139,7 +143,7 @@ async function handleGenerate(request: NextRequest) {
          FROM metrics.v_invoices_clean i
          WHERE COALESCE(i.status_name, '') <> 'Draft'
            AND COALESCE(i.date_invoice, i.jn_date_created) >= $1
-           AND COALESCE(i.date_invoice, i.jn_date_created) <= $2
+           AND COALESCE(i.date_invoice, i.jn_date_created) < $2
            AND i.total > 0`,
         [startUnix, endUnix]
       ),
@@ -180,7 +184,7 @@ async function handleGenerate(request: NextRequest) {
          JOIN metrics.v_jobs_clean j ON j.jnid = funnel.jnid
          LEFT JOIN metrics.status_funnel_stage mapping ON mapping.status_name = funnel.status_name
          WHERE funnel.created_at >= to_timestamp($1)
-           AND funnel.created_at <= to_timestamp($2)
+           AND funnel.created_at < to_timestamp($2)
          GROUP BY (${SEGMENT_SQL})`,
         [startUnix, endUnix]
       ),
@@ -194,7 +198,7 @@ async function handleGenerate(request: NextRequest) {
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          WHERE COALESCE(i.status_name, '') <> 'Draft'
            AND COALESCE(i.date_invoice, i.jn_date_created) >= $1
-           AND COALESCE(i.date_invoice, i.jn_date_created) <= $2
+           AND COALESCE(i.date_invoice, i.jn_date_created) < $2
          GROUP BY (${SEGMENT_SQL})`,
         [startUnix, endUnix]
       ),
@@ -213,7 +217,7 @@ async function handleGenerate(request: NextRequest) {
            COUNT(*) FILTER (WHERE sales_job.sold)::text AS won
          FROM metrics.v_sales_metrics_jobs sales_job
          WHERE sales_job.created_at >= to_timestamp($1)
-           AND sales_job.created_at <= to_timestamp($2)
+           AND sales_job.created_at < to_timestamp($2)
          GROUP BY
            COALESCE(sales_job.sales_rep_jnid, 'unassigned'),
            sales_job.sales_rep_name`,
@@ -230,7 +234,7 @@ async function handleGenerate(request: NextRequest) {
            ON sales_job.job_jnid = i.job_jnid
          WHERE COALESCE(i.status_name, '') <> 'Draft'
            AND COALESCE(i.date_invoice, i.jn_date_created) >= $1
-           AND COALESCE(i.date_invoice, i.jn_date_created) <= $2
+           AND COALESCE(i.date_invoice, i.jn_date_created) < $2
          GROUP BY COALESCE(sales_job.sales_rep_jnid, 'unassigned')`,
         [startUnix, endUnix]
       ),
@@ -248,7 +252,7 @@ async function handleGenerate(request: NextRequest) {
          FROM metrics.v_sales_funnel_jobs funnel
          JOIN metrics.v_jobs_clean j ON j.jnid = funnel.jnid
          WHERE funnel.created_at >= to_timestamp($1)
-           AND funnel.created_at <= to_timestamp($2)
+           AND funnel.created_at < to_timestamp($2)
          GROUP BY COALESCE(j.source_name, 'Unknown')
          ORDER BY COUNT(*) DESC`,
         [startUnix, endUnix]
@@ -263,7 +267,7 @@ async function handleGenerate(request: NextRequest) {
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          WHERE COALESCE(i.status_name, '') <> 'Draft'
            AND COALESCE(i.date_invoice, i.jn_date_created) >= $1
-           AND COALESCE(i.date_invoice, i.jn_date_created) <= $2
+           AND COALESCE(i.date_invoice, i.jn_date_created) < $2
          GROUP BY COALESCE(j.source_name, 'Unknown')`,
         [startUnix, endUnix]
       ),
@@ -279,7 +283,7 @@ async function handleGenerate(request: NextRequest) {
            FROM calls c
            WHERE c.direction = 'inbound'
              AND c.started_at >= $1::timestamptz
-             AND c.started_at <= $2::timestamptz
+             AND c.started_at < $2::timestamptz
              AND c.contact_jnid IS NOT NULL
            GROUP BY c.contact_jnid
 
@@ -292,7 +296,7 @@ async function handleGenerate(request: NextRequest) {
            FROM sms_messages s
            WHERE s.direction = 'inbound'
              AND s.sent_at >= $1::timestamptz
-             AND s.sent_at <= $2::timestamptz
+             AND s.sent_at < $2::timestamptz
              AND s.contact_jnid IS NOT NULL
            GROUP BY s.contact_jnid
          ),
@@ -355,7 +359,7 @@ async function handleGenerate(request: NextRequest) {
            FROM calls c
            WHERE c.direction = 'inbound'
              AND c.started_at >= $1::timestamptz
-             AND c.started_at <= $2::timestamptz
+             AND c.started_at < $2::timestamptz
              AND c.contact_jnid IS NOT NULL
            GROUP BY c.contact_jnid
 
@@ -367,7 +371,7 @@ async function handleGenerate(request: NextRequest) {
            FROM sms_messages s
            WHERE s.direction = 'inbound'
              AND s.sent_at >= $1::timestamptz
-             AND s.sent_at <= $2::timestamptz
+             AND s.sent_at < $2::timestamptz
              AND s.contact_jnid IS NOT NULL
            GROUP BY s.contact_jnid
          ),
@@ -570,7 +574,7 @@ async function handleGenerate(request: NextRequest) {
          FROM job_stage_history h
          JOIN jobs j ON j.jnid = h.job_jnid
          WHERE j.jn_date_created >= $1
-           AND j.jn_date_created <= $2
+           AND j.jn_date_created < $2
            AND h.to_stage_name IN ('Estimate Sent', 'Appointment Scheduled')
          GROUP BY h.job_jnid, h.to_stage_name
        ),
