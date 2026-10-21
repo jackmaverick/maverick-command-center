@@ -114,6 +114,7 @@ export async function GET(request: NextRequest) {
     const tradeFilter = buildTradeFilter(trade);
     if (tradeFilter) conditions.push(tradeFilter.replace(/^AND /, ""));
     const where = conditions.join(" AND ");
+    const attributeWhere = conditions.slice(2).join(" AND ");
 
     const [coreRows, revenueRows, segmentRows] = await Promise.all([
       query<RepCoreRow>(
@@ -143,11 +144,11 @@ export async function GET(request: NextRequest) {
          JOIN metrics.v_sales_metrics_jobs sales_job
            ON sales_job.job_jnid = invoice.job_jnid
          JOIN metrics.v_jobs_clean j ON j.jnid = sales_job.job_jnid
-         WHERE ${where}
-           AND COALESCE(invoice.date_invoice, invoice.jn_date_created)
+         WHERE COALESCE(invoice.date_invoice, invoice.jn_date_created)
              >= EXTRACT(EPOCH FROM $1::timestamptz)
            AND COALESCE(invoice.date_invoice, invoice.jn_date_created)
              < EXTRACT(EPOCH FROM $2::timestamptz)
+           ${attributeWhere ? `AND ${attributeWhere}` : ""}
          GROUP BY COALESCE(sales_job.sales_rep_jnid, 'unassigned')`,
         params
       ),
