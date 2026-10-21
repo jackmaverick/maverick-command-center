@@ -1,6 +1,7 @@
 BEGIN;
 
 DROP VIEW IF EXISTS metrics.v_sales_metrics_jobs;
+DROP VIEW IF EXISTS metrics.v_billed_invoices;
 DROP VIEW IF EXISTS metrics.v_days_to_paid;
 DROP VIEW IF EXISTS metrics.v_stale_estimates;
 DROP VIEW IF EXISTS metrics.v_stage_dates;
