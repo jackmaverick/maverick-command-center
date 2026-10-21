@@ -53,6 +53,7 @@ interface DashboardData {
   qboBalance: number;
   qboRevenueVariance: number;
   pipelineValue: number;
+  pipelineJobCount: number;
   newLeads: number;
   conversionRate: number;
   avgTicket: number;
@@ -320,7 +321,7 @@ export default function DashboardPage() {
         {/* Pipeline */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <InfoTooltip label="Pipeline Value" explanation="Total estimate value of all active jobs currently in Estimating through Invoiced stages (live snapshot, not period-filtered)">
+            <InfoTooltip label="Pipeline Value" explanation="Approved estimate, otherwise latest estimate, for active open jobs in the canonical Appointment and Approved Claim funnel stages. Counted once per job.">
               <CardTitle className="text-xs font-medium text-[#8b949e]">Pipeline Value</CardTitle>
             </InfoTooltip>
           </CardHeader>
@@ -328,9 +329,14 @@ export default function DashboardPage() {
             {isLoading ? (
               <Skeleton className="h-8 w-24 bg-[#21262d]" />
             ) : (
-              <p className="text-2xl font-bold text-[#e6edf3]">
-                {formatCurrency(data?.pipelineValue ?? 0)}
-              </p>
+              <>
+                <p className="text-2xl font-bold text-[#e6edf3]">
+                  {formatCurrency(data?.pipelineValue ?? 0)}
+                </p>
+                <p className="mt-1 text-xs text-[#8b949e]">
+                  {data?.pipelineJobCount ?? 0} open jobs
+                </p>
+              </>
             )}
           </CardContent>
         </Card>
@@ -338,7 +344,7 @@ export default function DashboardPage() {
         {/* New Leads */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <InfoTooltip label="New Leads" explanation="Jobs created in JobNimbus during the selected period. Includes archived/test leads — archive them in JobNimbus then sync to remove">
+            <InfoTooltip label="New Leads" explanation="Jobs in the shared clean sales-funnel cohort created during the selected CT period.">
               <CardTitle className="text-xs font-medium text-[#8b949e]">New Leads</CardTitle>
             </InfoTooltip>
           </CardHeader>

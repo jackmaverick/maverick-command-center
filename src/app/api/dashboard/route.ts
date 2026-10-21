@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
       // 1. YTD Revenue (accrual basis - uses date_invoice BIGINT)
       query<{ total: string }>(
         `SELECT COALESCE(SUM(i.total), 0) AS total
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          WHERE ${EFFECTIVE_INVOICE_DATE} >= $1
            AND ${EFFECTIVE_INVOICE_DATE} < $2`,
         [startUnix, endUnix]
@@ -51,23 +51,20 @@ export async function GET(request: NextRequest) {
 
       // 2. Pipeline Value - active estimates on jobs that are not closed/archived
       //    (jobs in estimate-related statuses that haven't been fully invoiced)
-      query<{ total: string }>(
+      query<{ total: string; job_count: string }>(
         `SELECT COALESCE(SUM(
            COALESCE(
              NULLIF(j.approved_estimate_total, 0),
              j.last_estimate,
              0
            )
-         ), 0) AS total
+         ), 0) AS total,
+         COUNT(*)::text AS job_count
          FROM metrics.v_sales_funnel_jobs funnel
          JOIN metrics.v_jobs_clean j ON j.jnid = funnel.jnid
          WHERE j.is_active = true
            AND j.is_closed = false
-           AND j.status_name IN (
-             'Estimating', 'Estimate Sent', 'Sold Job',
-             'Production Ready', 'In Progress',
-             'Insurance Pending', 'Invoiced'
-           )`,
+           AND funnel.current_funnel_stage IN ('appointment', 'approved_claim')`,
         []
       ),
 
@@ -94,7 +91,7 @@ export async function GET(request: NextRequest) {
       // 5. Avg Ticket - average invoice total for invoiced jobs in period
       query<{ avg_ticket: string }>(
         `SELECT COALESCE(AVG(i.total), 0) AS avg_ticket
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          WHERE ${EFFECTIVE_INVOICE_DATE} >= $1
            AND ${EFFECTIVE_INVOICE_DATE} < $2
            AND i.total > 0`,
@@ -111,7 +108,7 @@ export async function GET(request: NextRequest) {
         const prevEndUnix = toUnixSeconds(prevRange.end);
         return query<{ total: string | null }>(
           `SELECT COALESCE(SUM(i.total), 0) AS total
-           FROM metrics.v_invoices_clean i
+           FROM metrics.v_billed_invoices i
            WHERE ${EFFECTIVE_INVOICE_DATE} >= $1
              AND ${EFFECTIVE_INVOICE_DATE} < $2`,
           [prevStartUnix, prevEndUnix]
@@ -134,7 +131,7 @@ export async function GET(request: NextRequest) {
         `SELECT
            COALESCE(j.record_type_name, 'Unknown') AS record_type_name,
            COALESCE(SUM(i.total), 0) AS total
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          WHERE ${EFFECTIVE_INVOICE_DATE} >= $1
            AND ${EFFECTIVE_INVOICE_DATE} < $2
@@ -283,6 +280,10 @@ export async function GET(request: NextRequest) {
 
     // 2. Pipeline value
     const pipelineValue = parseFloat(pipelineRows[0]?.total ?? "0");
+    const pipelineJobCount = parseInt(
+      pipelineRows[0]?.job_count ?? "0",
+      10
+    );
     const qboRevenue = Math.round((parseFloat(qboRevenueRows[0]?.total ?? "0") || 0) * 100) / 100;
     const qboInvoiceCount = parseInt(qboRevenueRows[0]?.count ?? "0", 10);
     const qboBalance = Math.round((parseFloat(qboRevenueRows[0]?.balance ?? "0") || 0) * 100) / 100;
@@ -424,6 +425,7 @@ export async function GET(request: NextRequest) {
       qboBalance,
       qboRevenueVariance,
       pipelineValue,
+      pipelineJobCount,
       newLeads,
       conversionRate: Math.round(conversionRate * 10) / 10,
       avgTicket: Math.round(avgTicket * 100) / 100,

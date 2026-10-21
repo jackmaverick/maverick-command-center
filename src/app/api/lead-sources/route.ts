@@ -176,7 +176,7 @@ export async function GET(request: NextRequest) {
         `SELECT
            COALESCE(NULLIF(TRIM(j.source_name), ''), 'Unknown') AS source_name,
            COALESCE(SUM(i.total), 0)::text AS revenue
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          WHERE ${EFFECTIVE_INVOICE_DATE} >= $1
            AND ${EFFECTIVE_INVOICE_DATE} < $2

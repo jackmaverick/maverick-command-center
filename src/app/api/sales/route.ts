@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
            COALESCE(sales_job.sales_rep_jnid, 'unassigned') AS rep_id,
            MAX(sales_job.sales_rep_name) AS rep_name,
            COALESCE(SUM(invoice.total), 0)::text AS revenue
-         FROM metrics.v_invoices_clean invoice
+         FROM metrics.v_billed_invoices invoice
          JOIN metrics.v_sales_metrics_jobs sales_job
            ON sales_job.job_jnid = invoice.job_jnid
          JOIN metrics.v_jobs_clean j ON j.jnid = sales_job.job_jnid

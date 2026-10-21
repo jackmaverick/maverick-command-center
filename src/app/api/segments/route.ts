@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
       // $1=start, $2=end, $3=segment
       query<{ revenue: string }>(
         `SELECT COALESCE(SUM(i.total), 0)::text AS revenue
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          WHERE ${EFFECTIVE_INVOICE_DATE} >= $1
            AND ${EFFECTIVE_INVOICE_DATE} < $2
@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
       // $1=start, $2=end, $3=segment
       query<{ avg_ticket: string }>(
         `SELECT COALESCE(AVG(i.total), 0)::text AS avg_ticket
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          WHERE ${EFFECTIVE_INVOICE_DATE} >= $1
            AND ${EFFECTIVE_INVOICE_DATE} < $2

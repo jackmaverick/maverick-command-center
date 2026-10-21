@@ -100,7 +100,7 @@ async function handleGenerate(request: NextRequest) {
       // 1. Revenue (accrual basis — invoices.date_invoice BIGINT unix seconds)
       query<{ total: string }>(
         `SELECT COALESCE(SUM(i.total), 0)::text AS total
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          WHERE COALESCE(i.status_name, '') <> 'Draft'
            AND COALESCE(i.date_invoice, i.jn_date_created) >= $1
            AND COALESCE(i.date_invoice, i.jn_date_created) < $2`,
@@ -140,7 +140,7 @@ async function handleGenerate(request: NextRequest) {
       // 5. Avg ticket (from invoices in period)
       query<{ avg_ticket: string }>(
         `SELECT COALESCE(AVG(i.total), 0)::text AS avg_ticket
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          WHERE COALESCE(i.status_name, '') <> 'Draft'
            AND COALESCE(i.date_invoice, i.jn_date_created) >= $1
            AND COALESCE(i.date_invoice, i.jn_date_created) < $2
@@ -194,7 +194,7 @@ async function handleGenerate(request: NextRequest) {
         `SELECT
            (${SEGMENT_SQL}) AS segment,
            COALESCE(SUM(i.total), 0)::text AS revenue
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          WHERE COALESCE(i.status_name, '') <> 'Draft'
            AND COALESCE(i.date_invoice, i.jn_date_created) >= $1
@@ -229,7 +229,7 @@ async function handleGenerate(request: NextRequest) {
         `SELECT
            COALESCE(sales_job.sales_rep_jnid, 'unassigned') AS sales_rep_jnid,
            COALESCE(SUM(i.total), 0)::text AS revenue
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          JOIN metrics.v_sales_metrics_jobs sales_job
            ON sales_job.job_jnid = i.job_jnid
          WHERE COALESCE(i.status_name, '') <> 'Draft'
@@ -263,7 +263,7 @@ async function handleGenerate(request: NextRequest) {
         `SELECT
            COALESCE(j.source_name, 'Unknown') AS source_name,
            COALESCE(SUM(i.total), 0)::text AS revenue
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          WHERE COALESCE(i.status_name, '') <> 'Draft'
            AND COALESCE(i.date_invoice, i.jn_date_created) >= $1

@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
            COALESCE(im.status, CASE WHEN qid.qbo_id IS NOT NULL THEN 'matched' ELSE NULL END) AS qbo_match_status,
            COALESCE(im.match_method, CASE WHEN qid.qbo_id IS NOT NULL THEN 'doc_number' ELSE NULL END) AS qbo_match_method,
            COALESCE(im.match_confidence, CASE WHEN qid.qbo_id IS NOT NULL THEN 0.95 ELSE NULL END)::text AS qbo_match_confidence
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          LEFT JOIN metrics.v_sales_metrics_jobs sales_job
            ON sales_job.job_jnid = i.job_jnid
@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
         `SELECT COALESCE(i.status_name, i.status::text, 'Unknown') AS key,
                 COALESCE(SUM(i.total), 0)::text AS total,
                 COUNT(*)::text AS count
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          WHERE ${invoiceWhere}
          GROUP BY key
@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
         `SELECT COALESCE(j.record_type_name, 'Unknown') AS key,
                 COALESCE(SUM(i.total), 0)::text AS total,
                 COUNT(*)::text AS count
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          WHERE ${invoiceWhere}
          GROUP BY key
@@ -147,7 +147,7 @@ export async function GET(request: NextRequest) {
         `SELECT COALESCE(sales_job.sales_rep_name, 'Unassigned') AS key,
                 COALESCE(SUM(i.total), 0)::text AS total,
                 COUNT(*)::text AS count
-         FROM metrics.v_invoices_clean i
+         FROM metrics.v_billed_invoices i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
          LEFT JOIN metrics.v_sales_metrics_jobs sales_job
            ON sales_job.job_jnid = i.job_jnid
@@ -255,7 +255,7 @@ export async function GET(request: NextRequest) {
       basis: {
         source: "JobNimbus invoices",
         dateField: "COALESCE(date_invoice, jn_date_created)",
-        includedStatuses: "all statuses from metrics.v_invoices_clean",
+        includedStatuses: "Sent, Open, and Closed from metrics.v_billed_invoices",
         excluded: "Inactive/archived jobs and obvious test/demo/sample jobs",
       },
       qboStatus: qboStatusRows[0] ?? {
