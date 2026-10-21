@@ -1,15 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { type PeriodKey, getDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
+import { formatCtDateKey, type PeriodKey, getDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
 
-
-const INVOICED_STATUSES = ["Sent", "Open", "Closed"];
-const ACTIVE_REAL_JOB_WHERE = `
-  j.is_active = true
-  AND j.is_archived = false
-  AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|verification|scout_test)'
-  AND COALESCE(j.primary_contact_name, '') !~* '(test|dummy|demo|sample|verification)'
-`;
 const EFFECTIVE_INVOICE_DATE = "COALESCE(i.date_invoice, i.jn_date_created)";
 
 type RevenueInvoiceRow = {
@@ -83,14 +75,12 @@ export async function GET(request: NextRequest) {
     const startUnix = toUnixSeconds(range.start);
     const endUnix = toUnixSeconds(range.end);
 
-    const params = [startUnix, endUnix, INVOICED_STATUSES];
-    const startDate = range.start.toISOString().slice(0, 10);
-    const endDate = range.end.toISOString().slice(0, 10);
+    const params = [startUnix, endUnix];
+    const startDate = formatCtDateKey(range.start);
+    const endDate = formatCtDateKey(range.end);
     const qboParams = [startDate, endDate];
     const invoiceWhere = `
-      ${ACTIVE_REAL_JOB_WHERE}
-      AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
-      AND ${EFFECTIVE_INVOICE_DATE} >= $1
+      ${EFFECTIVE_INVOICE_DATE} >= $1
       AND ${EFFECTIVE_INVOICE_DATE} < $2
     `;
 
@@ -110,7 +100,7 @@ export async function GET(request: NextRequest) {
            j.name AS job_name,
            j.status_name AS job_status,
            COALESCE(j.record_type_name, 'Unknown') AS record_type_name,
-           COALESCE(j.sales_rep_name, 'Unassigned') AS sales_rep_name,
+           COALESCE(sales_job.sales_rep_name, 'Unassigned') AS sales_rep_name,
            COALESCE(j.source_name, 'Unknown') AS source_name,
            COALESCE(c.display_name, j.primary_contact_name, 'Unknown') AS customer_name,
            COALESCE(qim.qbo_id, qid.qbo_id) AS qbo_invoice_id,
@@ -122,6 +112,8 @@ export async function GET(request: NextRequest) {
            COALESCE(im.match_confidence, CASE WHEN qid.qbo_id IS NOT NULL THEN 0.95 ELSE NULL END)::text AS qbo_match_confidence
          FROM metrics.v_invoices_clean i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
+         LEFT JOIN metrics.v_sales_metrics_jobs sales_job
+           ON sales_job.job_jnid = i.job_jnid
          LEFT JOIN contacts c ON c.jnid = i.contact_jnid
          LEFT JOIN invoice_mapping im ON im.jn_invoice_id = i.jnid
          LEFT JOIN qbo_invoices qim ON qim.qbo_id = im.qbo_invoice_id
@@ -153,11 +145,13 @@ export async function GET(request: NextRequest) {
         params
       ),
       query<BreakdownRow>(
-        `SELECT COALESCE(j.sales_rep_name, 'Unassigned') AS key,
+        `SELECT COALESCE(sales_job.sales_rep_name, 'Unassigned') AS key,
                 COALESCE(SUM(i.total), 0)::text AS total,
                 COUNT(*)::text AS count
          FROM metrics.v_invoices_clean i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
+         LEFT JOIN metrics.v_sales_metrics_jobs sales_job
+           ON sales_job.job_jnid = i.job_jnid
          WHERE ${invoiceWhere}
          GROUP BY key
          ORDER BY SUM(i.total) DESC`,
@@ -262,7 +256,7 @@ export async function GET(request: NextRequest) {
       basis: {
         source: "JobNimbus invoices",
         dateField: "COALESCE(date_invoice, jn_date_created)",
-        includedStatuses: INVOICED_STATUSES,
+        includedStatuses: "all statuses from metrics.v_invoices_clean",
         excluded: "Inactive/archived jobs and obvious test/demo/sample jobs",
       },
       qboStatus: qboStatusRows[0] ?? {

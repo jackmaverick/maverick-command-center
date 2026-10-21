@@ -1,19 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { type PeriodKey, getDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
+import { formatCtDateKey, type PeriodKey, getDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
 import { SEGMENT_SQL } from "@/lib/segment";
 import type { Segment } from "@/lib/constants";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 
-const INVOICED_STATUSES = ["Sent", "Open", "Closed"];
-const ACTIVE_REAL_JOB_WHERE = `
-  j.is_active = true
-  AND j.is_archived = false
-  AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|verification|scout_test)'
-  AND COALESCE(j.primary_contact_name, '') !~* '(test|dummy|demo|sample|verification)'
-`;
 const EFFECTIVE_INVOICE_DATE = "COALESCE(i.date_invoice, i.jn_date_created)";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -184,12 +177,10 @@ export async function GET(request: NextRequest) {
            COALESCE(SUM(i.total), 0)::text AS revenue
          FROM metrics.v_invoices_clean i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
-         WHERE ${ACTIVE_REAL_JOB_WHERE}
-           AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
-           AND ${EFFECTIVE_INVOICE_DATE} >= $1
+         WHERE ${EFFECTIVE_INVOICE_DATE} >= $1
            AND ${EFFECTIVE_INVOICE_DATE} < $2
          GROUP BY COALESCE(NULLIF(TRIM(j.source_name), ''), 'Unknown')`,
-        [startUnix, endUnix, INVOICED_STATUSES]
+        [startUnix, endUnix]
       ),
 
       // 3. Source x Segment cross-tab
@@ -216,7 +207,7 @@ export async function GET(request: NextRequest) {
          WHERE send_date >= $1::date
            AND send_date < $2::date
          GROUP BY channel`,
-        [range.start.toISOString().slice(0, 10), range.end.toISOString().slice(0, 10)]
+        [formatCtDateKey(range.start), formatCtDateKey(range.end)]
       ).catch(() => []),
 
       query<CampaignCostRow>(
@@ -235,7 +226,7 @@ export async function GET(request: NextRequest) {
          WHERE category ILIKE 'Marketing'
            AND start_date < $2::date
            AND (end_date IS NULL OR end_date >= $1::date)`,
-        [range.start.toISOString().slice(0, 10), range.end.toISOString().slice(0, 10)]
+        [formatCtDateKey(range.start), formatCtDateKey(range.end)]
       ).catch(() => []),
 
       query<{ amount: string }>(
@@ -244,7 +235,7 @@ export async function GET(request: NextRequest) {
          WHERE category ILIKE 'Marketing'
            AND expected_date >= $1::date
            AND expected_date < $2::date`,
-        [range.start.toISOString().slice(0, 10), range.end.toISOString().slice(0, 10)]
+        [formatCtDateKey(range.start), formatCtDateKey(range.end)]
       ).catch(() => [{ amount: "0" }]),
     ]);
 

@@ -1,18 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { type PeriodKey, getDateRange, getPreviousDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
+import { formatCtDateKey, type PeriodKey, getDateRange, getPreviousDateRange, isValidPeriodKey, toUnixSeconds } from "@/lib/dates";
 import { SEGMENT_SQL } from "@/lib/segment";
-import { STAGES, CHART_COLORS } from "@/lib/constants";
+import { CHART_COLORS } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
-const INVOICED_STATUSES = ["Sent", "Open", "Closed"];
-const ACTIVE_REAL_JOB_WHERE = `
-  j.is_active = true
-  AND j.is_archived = false
-  AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|verification|scout_test)'
-  AND COALESCE(j.primary_contact_name, '') !~* '(test|dummy|demo|sample|verification)'
-`;
 const EFFECTIVE_INVOICE_DATE = "COALESCE(i.date_invoice, i.jn_date_created)";
 
 export async function GET(request: NextRequest) {
@@ -50,40 +43,25 @@ export async function GET(request: NextRequest) {
       query<{ total: string }>(
         `SELECT COALESCE(SUM(i.total), 0) AS total
          FROM metrics.v_invoices_clean i
-         JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
-         WHERE ${ACTIVE_REAL_JOB_WHERE}
-           AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
-           AND ${EFFECTIVE_INVOICE_DATE} >= $1
+         WHERE ${EFFECTIVE_INVOICE_DATE} >= $1
            AND ${EFFECTIVE_INVOICE_DATE} < $2`,
-        [startUnix, endUnix, INVOICED_STATUSES]
+        [startUnix, endUnix]
       ),
 
       // 2. Pipeline Value - active estimates on jobs that are not closed/archived
       //    (jobs in estimate-related statuses that haven't been fully invoiced)
       query<{ total: string }>(
         `SELECT COALESCE(SUM(
-           GREATEST(
-             COALESCE(j.approved_estimate_total, 0),
-             COALESCE(j.last_estimate, 0),
-             COALESCE(latest_estimate.total, 0)
+           COALESCE(
+             NULLIF(j.approved_estimate_total, 0),
+             j.last_estimate,
+             0
            )
          ), 0) AS total
-         FROM metrics.v_jobs_clean j
-         LEFT JOIN LATERAL (
-           SELECT estimate.total
-           FROM estimates estimate
-           WHERE estimate.job_jnid = j.jnid
-             AND estimate.is_active = true
-             AND estimate.is_archived = false
-             AND COALESCE(estimate.status_name, '') <> 'Void'
-           ORDER BY estimate.date_estimate DESC NULLS LAST, estimate.jn_date_updated DESC NULLS LAST
-           LIMIT 1
-         ) latest_estimate ON true
+         FROM metrics.v_sales_funnel_jobs funnel
+         JOIN metrics.v_jobs_clean j ON j.jnid = funnel.jnid
          WHERE j.is_active = true
            AND j.is_closed = false
-           AND j.is_archived = false
-           AND COALESCE(j.name, '') !~* '(test|dummy|demo|sample|verification|scout_test)'
-           AND COALESCE(j.primary_contact_name, '') !~* '(test|dummy|demo|sample|verification)'
            AND j.status_name IN (
              'Estimating', 'Estimate Sent', 'Sold Job',
              'Production Ready', 'In Progress',
@@ -95,10 +73,9 @@ export async function GET(request: NextRequest) {
       // 3. New Leads - jobs created in period (active, non-archived only)
       query<{ count: string }>(
         `SELECT COUNT(*) AS count
-         FROM jobs j
-         WHERE j.jn_date_created >= $1
-           AND j.jn_date_created < $2
-           AND ${ACTIVE_REAL_JOB_WHERE}`,
+         FROM metrics.v_sales_funnel_jobs funnel
+         WHERE funnel.created_at >= to_timestamp($1)
+           AND funnel.created_at < to_timestamp($2)`,
         [startUnix, endUnix]
       ),
 
@@ -117,13 +94,10 @@ export async function GET(request: NextRequest) {
       query<{ avg_ticket: string }>(
         `SELECT COALESCE(AVG(i.total), 0) AS avg_ticket
          FROM metrics.v_invoices_clean i
-         JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
-         WHERE ${ACTIVE_REAL_JOB_WHERE}
-           AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
-           AND ${EFFECTIVE_INVOICE_DATE} >= $1
+         WHERE ${EFFECTIVE_INVOICE_DATE} >= $1
            AND ${EFFECTIVE_INVOICE_DATE} < $2
            AND i.total > 0`,
-        [startUnix, endUnix, INVOICED_STATUSES]
+        [startUnix, endUnix]
       ),
 
       // 6. Previous period revenue for delta calculation
@@ -137,12 +111,9 @@ export async function GET(request: NextRequest) {
         return query<{ total: string | null }>(
           `SELECT COALESCE(SUM(i.total), 0) AS total
            FROM metrics.v_invoices_clean i
-           JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
-           WHERE ${ACTIVE_REAL_JOB_WHERE}
-             AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
-             AND ${EFFECTIVE_INVOICE_DATE} >= $1
+           WHERE ${EFFECTIVE_INVOICE_DATE} >= $1
              AND ${EFFECTIVE_INVOICE_DATE} < $2`,
-          [prevStartUnix, prevEndUnix, INVOICED_STATUSES]
+          [prevStartUnix, prevEndUnix]
         );
       })(),
 
@@ -164,25 +135,22 @@ export async function GET(request: NextRequest) {
            COALESCE(SUM(i.total), 0) AS total
          FROM metrics.v_invoices_clean i
          JOIN metrics.v_jobs_clean j ON j.jnid = i.job_jnid
-         WHERE ${ACTIVE_REAL_JOB_WHERE}
-           AND COALESCE(i.status_name, i.status::text, '') = ANY($3::text[])
-           AND ${EFFECTIVE_INVOICE_DATE} >= $1
+         WHERE ${EFFECTIVE_INVOICE_DATE} >= $1
            AND ${EFFECTIVE_INVOICE_DATE} < $2
          GROUP BY j.record_type_name
          ORDER BY total DESC`,
-        [startUnix, endUnix, INVOICED_STATUSES]
+        [startUnix, endUnix]
       ),
 
       // 9. Top Lead Sources - grouped & counted, top 10
       query<{ source_name: string; count: string }>(
         `SELECT
-           COALESCE(j.source_name, 'Unknown') AS source_name,
+           COALESCE(funnel.source_name, 'Unknown') AS source_name,
            COUNT(*) AS count
-         FROM jobs j
-         WHERE j.jn_date_created >= $1
-           AND j.jn_date_created < $2
-           AND ${ACTIVE_REAL_JOB_WHERE}
-         GROUP BY j.source_name
+         FROM metrics.v_sales_funnel_jobs funnel
+         WHERE funnel.created_at >= to_timestamp($1)
+           AND funnel.created_at < to_timestamp($2)
+         GROUP BY funnel.source_name
          ORDER BY count DESC
          LIMIT 10`,
         [startUnix, endUnix]
@@ -193,11 +161,13 @@ export async function GET(request: NextRequest) {
         `SELECT
            ${SEGMENT_SQL} AS segment,
            COUNT(*) AS count
-         FROM jobs j
-         WHERE ${ACTIVE_REAL_JOB_WHERE}
-           AND j.jn_date_created >= $1
-           AND j.jn_date_created < $2
-           AND j.status_name IN ('Lead', 'New', 'Cold Lead', 'Appointment Scheduled', 'Estimating', 'Estimate Sent')
+         FROM metrics.v_sales_funnel_jobs funnel
+         JOIN metrics.v_jobs_clean j ON j.jnid = funnel.jnid
+         JOIN metrics.status_funnel_stage mapping
+           ON mapping.status_name = funnel.status_name
+         WHERE funnel.created_at >= to_timestamp($1)
+           AND funnel.created_at < to_timestamp($2)
+           AND mapping.funnel_stage IN ('lead', 'appointment', 'approved_claim')
          GROUP BY segment
          ORDER BY count DESC`,
         [startUnix, endUnix]
@@ -228,34 +198,12 @@ export async function GET(request: NextRequest) {
          WHERE txn_date >= $1::date
            AND txn_date < $2::date
            AND COALESCE(total_amount, 0) > 0`,
-        [range.start.toISOString().slice(0, 10), range.end.toISOString().slice(0, 10)]
+        [formatCtDateKey(range.start), formatCtDateKey(range.end)]
       ).catch(() => [{ total: "0", balance: "0", count: "0" }]),
 
       // 13. Sold This Period by Trade - first time job entered Sold stage (jn_stage), any vintage
       query<{ trade: string; jobs: string; value: string }>(
-        `WITH first_sold AS (
-           SELECT h.job_jnid, MIN(h.changed_at) AS first_sold_at
-           FROM job_stage_history h
-           LEFT JOIN workflows w ON w.name = h.workflow_name
-           LEFT JOIN workflow_stages ws ON ws.workflow_id = w.id 
-                                        AND ws.name = h.to_stage_name 
-                                        AND ws.deleted_at IS NULL
-           JOIN jobs j_fallback ON j_fallback.jnid = h.job_jnid
-           LEFT JOIN workflows j_w ON j_w.name = j_fallback.record_type_name
-           LEFT JOIN workflow_stages j_ws ON j_ws.workflow_id = j_w.id 
-                                          AND j_ws.name = h.to_stage_name 
-                                          AND j_ws.deleted_at IS NULL
-           LEFT JOIN metrics.status_funnel_stage funnel_stage
-             ON funnel_stage.status_name = h.to_stage_name
-           WHERE CASE
-             WHEN j_fallback.record_type_name = 'Insurance'
-               THEN COALESCE(funnel_stage.is_insurance_sold, false)
-             ELSE COALESCE(funnel_stage.is_sold, false)
-           END
-           GROUP BY h.job_jnid
-           HAVING MIN(h.changed_at) >= $1 AND MIN(h.changed_at) < $2
-         ),
-         sold_jobs AS (
+        `WITH sold_jobs AS (
            SELECT
              j.jnid,
              j.cf_string_24,
@@ -263,10 +211,11 @@ export async function GET(request: NextRequest) {
              j.cf_string_26,
              j.cf_string_27,
              j.record_type_name,
-             COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), 0) AS estimate_value
-           FROM first_sold fs
-           JOIN jobs j ON j.jnid = fs.job_jnid
-           WHERE ${ACTIVE_REAL_JOB_WHERE}
+             COALESCE(NULLIF(j.approved_estimate_total, 0), j.last_estimate, 0) AS estimate_value
+           FROM metrics.v_stage_dates stage
+           JOIN metrics.v_jobs_clean j ON j.jnid = stage.job_jnid
+           WHERE stage.sold_at >= $1
+             AND stage.sold_at < $2
              AND j.record_type_name IS DISTINCT FROM 'Warranty'
          )
          SELECT 'Roof' AS trade,
@@ -298,35 +247,14 @@ export async function GET(request: NextRequest) {
 
       // 14. Sold This Period by Segment - first time job entered Sold stage (jn_stage), any vintage
       query<{ segment: string; jobs: string; value: string }>(
-        `WITH first_sold AS (
-           SELECT h.job_jnid, MIN(h.changed_at) AS first_sold_at
-           FROM job_stage_history h
-           LEFT JOIN workflows w ON w.name = h.workflow_name
-           LEFT JOIN workflow_stages ws ON ws.workflow_id = w.id 
-                                        AND ws.name = h.to_stage_name 
-                                        AND ws.deleted_at IS NULL
-           JOIN jobs j_fallback ON j_fallback.jnid = h.job_jnid
-           LEFT JOIN workflows j_w ON j_w.name = j_fallback.record_type_name
-           LEFT JOIN workflow_stages j_ws ON j_ws.workflow_id = j_w.id 
-                                          AND j_ws.name = h.to_stage_name 
-                                          AND j_ws.deleted_at IS NULL
-           LEFT JOIN metrics.status_funnel_stage funnel_stage
-             ON funnel_stage.status_name = h.to_stage_name
-           WHERE CASE
-             WHEN j_fallback.record_type_name = 'Insurance'
-               THEN COALESCE(funnel_stage.is_insurance_sold, false)
-             ELSE COALESCE(funnel_stage.is_sold, false)
-           END
-           GROUP BY h.job_jnid
-           HAVING MIN(h.changed_at) >= $1 AND MIN(h.changed_at) < $2
-         )
-         SELECT
+        `SELECT
            ${SEGMENT_SQL} AS segment,
            COUNT(j.jnid)::text AS jobs,
-           COALESCE(SUM(COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), 0)), 0)::text AS value
-         FROM first_sold fs
-         JOIN jobs j ON j.jnid = fs.job_jnid
-         WHERE ${ACTIVE_REAL_JOB_WHERE}
+           COALESCE(SUM(COALESCE(NULLIF(j.approved_estimate_total, 0), j.last_estimate, 0)), 0)::text AS value
+         FROM metrics.v_stage_dates stage
+         JOIN metrics.v_jobs_clean j ON j.jnid = stage.job_jnid
+         WHERE stage.sold_at >= $1
+           AND stage.sold_at < $2
            AND j.record_type_name IS DISTINCT FROM 'Warranty'
          GROUP BY segment
          ORDER BY jobs DESC`,
@@ -335,34 +263,13 @@ export async function GET(request: NextRequest) {
 
       // 15. Sold This Period Total (Distinct) - first time job entered Sold stage (jn_stage)
       query<{ total_jobs: string; total_value: string }>(
-        `WITH first_sold AS (
-           SELECT h.job_jnid, MIN(h.changed_at) AS first_sold_at
-           FROM job_stage_history h
-           LEFT JOIN workflows w ON w.name = h.workflow_name
-           LEFT JOIN workflow_stages ws ON ws.workflow_id = w.id 
-                                        AND ws.name = h.to_stage_name 
-                                        AND ws.deleted_at IS NULL
-           JOIN jobs j_fallback ON j_fallback.jnid = h.job_jnid
-           LEFT JOIN workflows j_w ON j_w.name = j_fallback.record_type_name
-           LEFT JOIN workflow_stages j_ws ON j_ws.workflow_id = j_w.id 
-                                          AND j_ws.name = h.to_stage_name 
-                                          AND j_ws.deleted_at IS NULL
-           LEFT JOIN metrics.status_funnel_stage funnel_stage
-             ON funnel_stage.status_name = h.to_stage_name
-           WHERE CASE
-             WHEN j_fallback.record_type_name = 'Insurance'
-               THEN COALESCE(funnel_stage.is_insurance_sold, false)
-             ELSE COALESCE(funnel_stage.is_sold, false)
-           END
-           GROUP BY h.job_jnid
-           HAVING MIN(h.changed_at) >= $1 AND MIN(h.changed_at) < $2
-         )
-         SELECT
+        `SELECT
            COUNT(j.jnid)::text AS total_jobs,
-           COALESCE(SUM(COALESCE(NULLIF(j.approved_estimate_total, 0), NULLIF(j.last_estimate, 0), 0)), 0)::text AS total_value
-         FROM first_sold fs
-         JOIN jobs j ON j.jnid = fs.job_jnid
-         WHERE ${ACTIVE_REAL_JOB_WHERE}
+           COALESCE(SUM(COALESCE(NULLIF(j.approved_estimate_total, 0), j.last_estimate, 0)), 0)::text AS total_value
+         FROM metrics.v_stage_dates stage
+         JOIN metrics.v_jobs_clean j ON j.jnid = stage.job_jnid
+         WHERE stage.sold_at >= $1
+           AND stage.sold_at < $2
            AND j.record_type_name IS DISTINCT FROM 'Warranty'`,
         [range.start, range.end]
       ),
@@ -405,15 +312,21 @@ export async function GET(request: NextRequest) {
 
     // 7. Sales funnel - aggregate JN statuses into stages
     const stageCounts: Record<string, number> = {};
-    const dashboardStages = [...STAGES, "Closed Lost"];
+    const dashboardStages = [
+      "Lead",
+      "Appointment",
+      "Approved Claim",
+      "Sold",
+      "Closed Lost",
+    ];
     for (const stage of dashboardStages) {
       stageCounts[stage] = 0;
     }
     for (const row of funnelRows) {
       const stage = {
         lead: "Lead",
-        appointment: "Lead",
-        approved_claim: "Estimate",
+        appointment: "Appointment",
+        approved_claim: "Approved Claim",
         sold: "Sold",
         closed_lost: "Closed Lost",
       }[row.funnel_stage ?? ""];
@@ -483,10 +396,9 @@ export async function GET(request: NextRequest) {
       const prevEndUnix = toUnixSeconds(prevRange.end);
       const prevLeadsRows = await query<{ count: string }>(
         `SELECT COUNT(*) AS count
-         FROM jobs j
-         WHERE j.jn_date_created >= $1
-           AND j.jn_date_created < $2
-           AND ${ACTIVE_REAL_JOB_WHERE}`,
+         FROM metrics.v_sales_funnel_jobs funnel
+         WHERE funnel.created_at >= to_timestamp($1)
+           AND funnel.created_at < to_timestamp($2)`,
         [prevStartUnix, prevEndUnix]
       );
       const prevLeads = parseInt(prevLeadsRows[0]?.count ?? "0", 10);

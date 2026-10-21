@@ -143,7 +143,7 @@ function conversionColor(rate: number): string {
 /* -- Main Component ------------------------------------------------------- */
 
 export default function SalesPage() {
-  const [period, setPeriod] = useState("month");
+  const [period, setPeriod] = useState("reference");
   const [segment, setSegment] = useState<string>("all");
   const [selectedRepId, setSelectedRepId] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("revenue");
