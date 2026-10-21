@@ -1,25 +1,21 @@
 BEGIN;
 
--- The funnel now represents the full lifecycle rather than silently dropping
--- lead and closed-lost statuses.
+-- This migration extends metrics objects provisioned by the existing
+-- Supabase metrics migration chain. Fail clearly if that prerequisite is
+-- missing instead of partially applying against an unknown schema.
 DO $$
-DECLARE
-  constraint_name text;
 BEGIN
-  SELECT conname
-    INTO constraint_name
-  FROM pg_constraint
-  WHERE conrelid = 'metrics.status_funnel_stage'::regclass
-    AND contype = 'c'
-    AND pg_get_constraintdef(oid) LIKE '%funnel_stage%';
-
-  IF constraint_name IS NOT NULL THEN
-    EXECUTE format(
-      'ALTER TABLE metrics.status_funnel_stage DROP CONSTRAINT %I',
-      constraint_name
-    );
+  IF to_regclass('metrics.status_funnel_stage') IS NULL
+    OR to_regclass('metrics.v_jobs_clean') IS NULL
+    OR to_regclass('metrics.v_invoices_clean') IS NULL
+    OR to_regclass('metrics.v_sales_funnel_jobs') IS NULL
+  THEN
+    RAISE EXCEPTION 'Required metrics baseline objects are missing';
   END IF;
 END $$;
+
+ALTER TABLE metrics.status_funnel_stage
+  DROP CONSTRAINT status_funnel_stage_funnel_stage_check;
 
 ALTER TABLE metrics.status_funnel_stage
   ADD CONSTRAINT status_funnel_stage_funnel_stage_check
@@ -44,31 +40,19 @@ VALUES
   ('Cold Lead', 'closed_lost', 401, false, false, false, false),
   ('Dead', 'closed_lost', 402, false, false, false, false),
   ('Lost', 'closed_lost', 403, false, false, false, false),
-  ('No Damage', 'closed_lost', 404, false, false, false, false),
-  ('Claim Denied', 'closed_lost', 405, true, false, false, false)
-ON CONFLICT (status_name) DO UPDATE SET
-  funnel_stage = EXCLUDED.funnel_stage,
-  stage_order = EXCLUDED.stage_order,
-  counts_as_appt_broad = EXCLUDED.counts_as_appt_broad,
-  is_strict_scheduled = EXCLUDED.is_strict_scheduled,
-  is_sold = EXCLUDED.is_sold,
-  is_insurance_sold = EXCLUDED.is_insurance_sold;
+  ('No Damage', 'closed_lost', 404, false, false, false, false);
 
--- These are explicitly pre-sold. Keeping the correction beside the lifecycle
--- expansion prevents future mapping seeds from turning them into wins.
 UPDATE metrics.status_funnel_stage
 SET
-  funnel_stage = 'approved_claim',
+  funnel_stage = 'closed_lost',
+  stage_order = 405,
+  counts_as_appt_broad = true,
+  is_strict_scheduled = false,
   is_sold = false,
   is_insurance_sold = false
-WHERE status_name IN (
-  'Deductible Invoice Sent',
-  'Deductible Requested',
-  'FEF/Deductible Sent',
-  'Fully Approved'
-);
+WHERE status_name = 'Claim Denied';
 
-CREATE OR REPLACE VIEW metrics.v_stage_dates
+CREATE VIEW metrics.v_stage_dates
 WITH (security_invoker = true)
 AS
 WITH status_events AS (
@@ -155,7 +139,7 @@ FROM (
 ) events
 GROUP BY job_id;
 
-CREATE OR REPLACE VIEW metrics.v_stale_estimates
+CREATE VIEW metrics.v_stale_estimates
 WITH (security_invoker = true)
 AS
 WITH latest_estimate AS (
@@ -197,7 +181,7 @@ WHERE job.status_name = 'Estimate Sent'
   AND NOT job.excluded_sales
   AND NOT COALESCE(job.storm_alert_prospect, false);
 
-CREATE OR REPLACE VIEW metrics.v_days_to_paid
+CREATE VIEW metrics.v_days_to_paid
 WITH (security_invoker = true)
 AS
 WITH paid_jobs AS (
@@ -206,9 +190,11 @@ WITH paid_jobs AS (
     max(to_timestamp(invoice.date_paid_in_full)) AS paid_at
   FROM metrics.v_invoices_clean invoice
   WHERE COALESCE(invoice.status_name, '') <> 'Draft'
-    AND COALESCE(invoice.due, 0) <= 0.01
-    AND invoice.date_paid_in_full IS NOT NULL
   GROUP BY invoice.job_jnid
+  HAVING sum(
+    COALESCE(invoice.due, invoice.total - COALESCE(invoice.total_paid, 0), 0)
+  ) <= 0.01
+    AND max(invoice.date_paid_in_full) IS NOT NULL
 )
 SELECT
   stage.record_type_name,
@@ -227,7 +213,7 @@ WHERE stage.record_type_name IN ('Insurance', 'Retail', 'Repairs')
     >= (now() AT TIME ZONE 'America/Chicago')::date - interval '12 months'
   AND paid.paid_at >= stage.sold_at;
 
-CREATE OR REPLACE VIEW metrics.v_sales_metrics_jobs
+CREATE VIEW metrics.v_sales_metrics_jobs
 WITH (security_invoker = true)
 AS
 WITH invoice_totals AS (
@@ -235,7 +221,7 @@ WITH invoice_totals AS (
     invoice.job_jnid::text AS job_jnid,
     sum(COALESCE(invoice.total, 0))::numeric AS billed_revenue
   FROM metrics.v_invoices_clean invoice
-  WHERE COALESCE(invoice.status_name, '') IN ('Sent', 'Open', 'Closed', 'Paid')
+  WHERE COALESCE(invoice.status_name, '') IN ('Sent', 'Open', 'Closed')
   GROUP BY invoice.job_jnid
 )
 SELECT
@@ -248,7 +234,11 @@ SELECT
   COALESCE(NULLIF(funnel.sales_rep_name, ''), 'Unassigned') AS rep_bucket,
   funnel.sold,
   stage.sold_at,
-  COALESCE(job.approved_estimate_total, job.last_estimate, 0)::numeric AS sold_value,
+  COALESCE(
+    NULLIF(job.approved_estimate_total, 0),
+    NULLIF(job.last_estimate, 0),
+    0
+  )::numeric AS sold_value,
   COALESCE(invoice_totals.billed_revenue, 0)::numeric AS billed_revenue,
   COALESCE(stale.stale_14, false) AS stale_estimate_14,
   COALESCE(stale.stale_90, false) AS stale_estimate_90,
@@ -259,6 +249,13 @@ JOIN metrics.v_jobs_clean job ON job.jnid::text = funnel.jnid::text
 LEFT JOIN metrics.v_stage_dates stage ON stage.job_jnid = funnel.jnid::text
 LEFT JOIN invoice_totals ON invoice_totals.job_jnid = funnel.jnid::text
 LEFT JOIN metrics.v_stale_estimates stale ON stale.job_jnid = funnel.jnid::text;
+
+REVOKE ALL ON
+  metrics.v_stage_dates,
+  metrics.v_stale_estimates,
+  metrics.v_days_to_paid,
+  metrics.v_sales_metrics_jobs
+FROM PUBLIC, anon, authenticated;
 
 GRANT SELECT ON
   metrics.v_stage_dates,

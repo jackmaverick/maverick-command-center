@@ -16,7 +16,7 @@ CREATE INDEX supplier_ap_snapshots_latest_idx
   ON metrics.supplier_ap_snapshots (supplier, as_of DESC, created_at DESC);
 
 ALTER TABLE metrics.supplier_ap_snapshots ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON metrics.supplier_ap_snapshots FROM anon, authenticated;
+REVOKE ALL ON metrics.supplier_ap_snapshots FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON metrics.supplier_ap_snapshots TO service_role;
 
 CREATE POLICY supplier_ap_snapshots_service_role_read
@@ -26,6 +26,6 @@ CREATE POLICY supplier_ap_snapshots_service_role_read
   USING (true);
 
 COMMENT ON TABLE metrics.supplier_ap_snapshots IS
-  'Supplier-level AP snapshots loaded out of band. Contains no homeowner-level data.';
+  'Supplier-level AP snapshots loaded by a database owner out of band. The application service role is read-only. Contains no homeowner-level data.';
 
 COMMIT;
