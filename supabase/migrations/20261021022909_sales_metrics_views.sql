@@ -9,6 +9,8 @@ BEGIN
     OR to_regclass('metrics.v_jobs_clean') IS NULL
     OR to_regclass('metrics.v_invoices_clean') IS NULL
     OR to_regclass('metrics.v_sales_funnel_jobs') IS NULL
+    OR to_regclass('public.job_owners') IS NULL
+    OR to_regclass('public.jobnimbus_users') IS NULL
   THEN
     RAISE EXCEPTION 'Required metrics baseline objects are missing';
   END IF;
@@ -156,9 +158,7 @@ SELECT
     WHEN latest_estimate.sales_rep_jnid IS NOT NULL
       OR NULLIF(btrim(latest_estimate.sales_rep_name), '') IS NOT NULL
       THEN latest_estimate.sales_rep_jnid
-    WHEN job.created_by_jnid IS NOT NULL
-      OR NULLIF(btrim(job.created_by_name), '') IS NOT NULL
-      THEN job.created_by_jnid
+    WHEN human_owner.owner_jnid IS NOT NULL THEN human_owner.owner_jnid
     ELSE NULL
   END AS sales_rep_jnid,
   CASE
@@ -176,13 +176,7 @@ SELECT
         estimate_rep_user.name,
         'Unassigned'
       )
-    WHEN job.created_by_jnid IS NOT NULL
-      OR NULLIF(btrim(job.created_by_name), '') IS NOT NULL
-      THEN COALESCE(
-        NULLIF(btrim(job.created_by_name), ''),
-        owner_user.name,
-        'Unassigned'
-      )
+    WHEN human_owner.owner_jnid IS NOT NULL THEN human_owner.owner_name
     ELSE 'Unassigned'
   END AS sales_rep_name,
   CASE
@@ -190,8 +184,7 @@ SELECT
       OR NULLIF(btrim(job.sales_rep_name), '') IS NOT NULL THEN 'sales_rep'
     WHEN latest_estimate.sales_rep_jnid IS NOT NULL
       OR NULLIF(btrim(latest_estimate.sales_rep_name), '') IS NOT NULL THEN 'estimate_rep'
-    WHEN job.created_by_jnid IS NOT NULL
-      OR NULLIF(btrim(job.created_by_name), '') IS NOT NULL THEN 'job_owner'
+    WHEN human_owner.owner_jnid IS NOT NULL THEN 'job_owner'
     ELSE 'unassigned'
   END AS rep_source,
   job.record_type_name,
@@ -225,8 +218,25 @@ LEFT JOIN public.jobnimbus_users job_rep_user
   ON job_rep_user.jnid = job.sales_rep_jnid
 LEFT JOIN public.jobnimbus_users estimate_rep_user
   ON estimate_rep_user.jnid = latest_estimate.sales_rep_jnid
-LEFT JOIN public.jobnimbus_users owner_user
-  ON owner_user.jnid = job.created_by_jnid
+LEFT JOIN LATERAL (
+  SELECT
+    owner_user.jnid AS owner_jnid,
+    owner_user.name AS owner_name
+  FROM public.job_owners owner
+  JOIN public.jobnimbus_users owner_user
+    ON owner_user.jnid = CASE
+      WHEN owner.user_jnid LIKE '{%'
+        THEN owner.user_jnid::jsonb->>'id'
+      ELSE owner.user_jnid
+    END
+  WHERE owner.job_id = job.id
+    AND COALESCE(owner_user.is_active, true)
+    AND owner_user.deleted_at IS NULL
+    AND lower(COALESCE(owner_user.name, '')) !~
+      '(claude|supabase|roof ignite|bot|integration|automation|zapier|api)'
+  ORDER BY owner.created_at DESC, owner_user.name
+  LIMIT 1
+) human_owner ON true
 WHERE job.status_name = 'Estimate Sent'
   AND NOT job.excluded_sales
   AND NOT COALESCE(job.storm_alert_prospect, false);
@@ -301,7 +311,7 @@ all_invoice_totals AS (
   SELECT
     invoice.job_jnid::text AS job_jnid,
     sum(COALESCE(invoice.total, 0))::numeric AS invoice_revenue
-  FROM metrics.v_invoices_clean invoice
+  FROM metrics.v_billed_invoices invoice
   GROUP BY invoice.job_jnid
 )
 SELECT
@@ -333,7 +343,7 @@ SELECT
   COALESCE(stale.stale_14, false) AS stale_estimate_14,
   COALESCE(stale.stale_90, false) AS stale_estimate_90,
   funnel.status_name IS NULL AS missing_status,
-  effective_rep.rep_source = 'unassigned' AS missing_rep,
+  job.sales_rep_name IS NULL OR btrim(job.sales_rep_name) = '' AS missing_rep,
   effective_rep.rep_source IN ('estimate_rep', 'job_owner') AS rep_fallback
 FROM metrics.v_sales_funnel_jobs funnel
 JOIN metrics.v_jobs_clean job ON job.jnid::text = funnel.jnid::text
@@ -342,8 +352,25 @@ LEFT JOIN public.jobnimbus_users job_rep_user
   ON job_rep_user.jnid = job.sales_rep_jnid
 LEFT JOIN public.jobnimbus_users estimate_rep_user
   ON estimate_rep_user.jnid = latest_estimate.sales_rep_jnid
-LEFT JOIN public.jobnimbus_users owner_user
-  ON owner_user.jnid = job.created_by_jnid
+LEFT JOIN LATERAL (
+  SELECT
+    owner_user.jnid AS owner_jnid,
+    owner_user.name AS owner_name
+  FROM public.job_owners owner
+  JOIN public.jobnimbus_users owner_user
+    ON owner_user.jnid = CASE
+      WHEN owner.user_jnid LIKE '{%'
+        THEN owner.user_jnid::jsonb->>'id'
+      ELSE owner.user_jnid
+    END
+  WHERE owner.job_id = job.id
+    AND COALESCE(owner_user.is_active, true)
+    AND owner_user.deleted_at IS NULL
+    AND lower(COALESCE(owner_user.name, '')) !~
+      '(claude|supabase|roof ignite|bot|integration|automation|zapier|api)'
+  ORDER BY owner.created_at DESC, owner_user.name
+  LIMIT 1
+) human_owner ON true
 LEFT JOIN LATERAL (
   SELECT
     CASE
@@ -353,9 +380,7 @@ LEFT JOIN LATERAL (
       WHEN latest_estimate.sales_rep_jnid IS NOT NULL
         OR NULLIF(btrim(latest_estimate.sales_rep_name), '') IS NOT NULL
         THEN latest_estimate.sales_rep_jnid
-      WHEN job.created_by_jnid IS NOT NULL
-        OR NULLIF(btrim(job.created_by_name), '') IS NOT NULL
-        THEN job.created_by_jnid
+      WHEN human_owner.owner_jnid IS NOT NULL THEN human_owner.owner_jnid
       ELSE NULL
     END AS sales_rep_jnid,
     CASE
@@ -373,13 +398,7 @@ LEFT JOIN LATERAL (
           estimate_rep_user.name,
           'Unassigned'
         )
-      WHEN job.created_by_jnid IS NOT NULL
-        OR NULLIF(btrim(job.created_by_name), '') IS NOT NULL
-        THEN COALESCE(
-          NULLIF(btrim(job.created_by_name), ''),
-          owner_user.name,
-          'Unassigned'
-        )
+      WHEN human_owner.owner_jnid IS NOT NULL THEN human_owner.owner_name
       ELSE 'Unassigned'
     END AS sales_rep_name,
     CASE
@@ -387,8 +406,7 @@ LEFT JOIN LATERAL (
         OR NULLIF(btrim(job.sales_rep_name), '') IS NOT NULL THEN 'sales_rep'
       WHEN latest_estimate.sales_rep_jnid IS NOT NULL
         OR NULLIF(btrim(latest_estimate.sales_rep_name), '') IS NOT NULL THEN 'estimate_rep'
-      WHEN job.created_by_jnid IS NOT NULL
-        OR NULLIF(btrim(job.created_by_name), '') IS NOT NULL THEN 'job_owner'
+      WHEN human_owner.owner_jnid IS NOT NULL THEN 'job_owner'
       ELSE 'unassigned'
     END AS rep_source
 ) effective_rep ON true
