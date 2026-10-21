@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Info } from "lucide-react";
@@ -138,6 +139,18 @@ interface MetricsData {
       afterHoursSampleSize: number;
     };
   };
+  salesSummary: {
+    estimateRate: Rate;
+    staleEstimates14: number;
+    staleEstimates90: number;
+    soldValue: number;
+    billedRevenue: number;
+    dataQuality: {
+      missingRep: number;
+      missingStatus: number;
+      sampleSize: number;
+    };
+  };
   caveats: { missedCalls: string };
 }
 
@@ -170,6 +183,14 @@ function formatRate(value: number | null): string {
 
 function formatDecimal(value: number | null): string {
   return value === null ? "N/A" : value.toFixed(1);
+}
+
+function formatCurrency(value: number): string {
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
 }
 
 function MetricCard({
@@ -337,6 +358,48 @@ export default function MetricsPage() {
                 detail={data.definitions.insuranceSold}
               />
             </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <MetricCard
+                label="Estimate rate"
+                value={formatRate(data.salesSummary.estimateRate.percent)}
+                sampleSize={data.salesSummary.estimateRate.sampleSize}
+                detail={`${data.salesSummary.estimateRate.count} leads reached Estimate Sent`}
+              />
+              <MetricCard
+                label="Stale estimates"
+                value={data.salesSummary.staleEstimates14.toLocaleString("en-US")}
+                detail={`${data.salesSummary.staleEstimates90} are 90+ days old`}
+                warning={data.salesSummary.staleEstimates14 > 0}
+              />
+              <MetricCard
+                label="Sold value"
+                value={formatCurrency(data.salesSummary.soldValue)}
+                detail={`Clean billed revenue: ${formatCurrency(data.salesSummary.billedRevenue)}`}
+              />
+              <MetricCard
+                label="Data quality"
+                value={
+                  data.salesSummary.dataQuality.missingRep +
+                    data.salesSummary.dataQuality.missingStatus ===
+                  0
+                    ? "Clean"
+                    : `${data.salesSummary.dataQuality.missingRep + data.salesSummary.dataQuality.missingStatus} flags`
+                }
+                sampleSize={data.salesSummary.dataQuality.sampleSize}
+                detail={`${data.salesSummary.dataQuality.missingRep} no sales rep on job · ${data.salesSummary.dataQuality.missingStatus} missing status`}
+                warning={
+                  data.salesSummary.dataQuality.missingRep +
+                    data.salesSummary.dataQuality.missingStatus >
+                  0
+                }
+              />
+            </div>
+            <Link
+              href="/metrics/stale-estimates"
+              className="mt-4 inline-flex text-xs font-medium text-[#58a6ff] hover:underline"
+            >
+              Review stale estimate jobs →
+            </Link>
           </Section>
 
           <Section

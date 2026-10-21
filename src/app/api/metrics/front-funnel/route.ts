@@ -43,9 +43,10 @@ interface MetricsRow {
   missed_calls: Record<string, unknown>[];
   appointment_to_estimate: Record<string, unknown>;
   coverage: Record<string, unknown>;
+  sales_summary: Record<string, unknown>;
 }
 
-const SQL = `
+export const SQL = `
 WITH funnel_jobs AS (
   SELECT funnel_job.*
   FROM ${salesFunnelJobsSql("funnel_job")}
@@ -58,6 +59,9 @@ clean_jobs AS (
     funnel_job.created_at AS lead_created_at,
     source_job.primary_contact_jnid,
     source_job.jn_date_created,
+    source_job.jn_date_status_change,
+    source_job.approved_estimate_total,
+    source_job.last_estimate,
     ARRAY_REMOVE(ARRAY[
       right(regexp_replace(COALESCE(source_job.primary_contact_number, ''), '\\D', '', 'g'), 10),
       right(regexp_replace(COALESCE(source_job.parent_mobile_phone, ''), '\\D', '', 'g'), 10),
@@ -735,6 +739,65 @@ coverage_metrics AS (
     )
   ) AS data
   FROM cohort
+),
+sales_summary AS (
+  SELECT jsonb_build_object(
+    'estimateRate', jsonb_build_object(
+      'count', COUNT(*) FILTER (
+        WHERE status_name = '${ESTIMATE_SENT_STATUS}'
+          OR EXISTS (
+            SELECT 1
+            FROM job_stage_history estimate_history
+            WHERE estimate_history.job_jnid = cohort.jnid
+              AND estimate_history.to_stage_name = '${ESTIMATE_SENT_STATUS}'
+          )
+      )::int,
+      'sampleSize', COUNT(*)::int,
+      'percent', ROUND(
+        100.0 * COUNT(*) FILTER (
+          WHERE status_name = '${ESTIMATE_SENT_STATUS}'
+            OR EXISTS (
+              SELECT 1
+              FROM job_stage_history estimate_history
+              WHERE estimate_history.job_jnid = cohort.jnid
+                AND estimate_history.to_stage_name = '${ESTIMATE_SENT_STATUS}'
+            )
+        ) / NULLIF(COUNT(*), 0),
+        1
+      )
+    ),
+    'staleEstimates14', (
+      SELECT COUNT(*)::int
+      FROM metrics.v_stale_estimates stale
+      WHERE stale.stale_14
+    ),
+    'staleEstimates90', (
+      SELECT COUNT(*)::int
+      FROM metrics.v_stale_estimates stale
+      WHERE stale.stale_90
+    ),
+    'soldValue', COALESCE(SUM(
+      CASE WHEN sold_flag
+        THEN COALESCE(NULLIF(approved_estimate_total, 0), last_estimate, 0)
+        ELSE 0
+      END
+    ), 0),
+    'billedRevenue', COALESCE((
+      SELECT SUM(clean_invoice.total)
+      FROM metrics.v_billed_invoices clean_invoice
+      JOIN cohort billed_job ON billed_job.jnid = clean_invoice.job_jnid
+    ), 0),
+    'dataQuality', jsonb_build_object(
+      'missingRep', COUNT(*) FILTER (
+        WHERE NULLIF(btrim(sales_rep_name), '') IS NULL
+      )::int,
+      'missingStatus', COUNT(*) FILTER (
+        WHERE NULLIF(btrim(status_name), '') IS NULL
+      )::int,
+      'sampleSize', COUNT(*)::int
+    )
+  ) AS data
+  FROM cohort
 )
 SELECT
   (SELECT data FROM funnel_summary) AS funnel,
@@ -743,7 +806,8 @@ SELECT
   COALESCE((SELECT data FROM source_metrics), '[]'::jsonb) AS sources,
   COALESCE((SELECT data FROM missed_call_metrics), '[]'::jsonb) AS missed_calls,
   (SELECT data FROM appointment_metrics) AS appointment_to_estimate,
-  (SELECT data FROM coverage_metrics) AS coverage
+  (SELECT data FROM coverage_metrics) AS coverage,
+  (SELECT data FROM sales_summary) AS sales_summary
 `;
 
 export async function GET(request: NextRequest) {
@@ -793,13 +857,14 @@ export async function GET(request: NextRequest) {
       missedCalls: row.missed_calls,
       appointmentToEstimate: row.appointment_to_estimate,
       coverage: row.coverage,
+      salesSummary: row.sales_summary,
       caveats: {
         missedCalls:
           "Minimums only. The Supabase Quo copy undercounts missed calls: Quo showed 49 on Main for Sep 29–Oct 6, while Supabase contained 16.",
       },
     }, {
       headers: {
-        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=900",
+        "Cache-Control": "private, no-store",
       },
     });
   } catch (error) {

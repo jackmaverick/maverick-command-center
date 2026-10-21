@@ -4,6 +4,12 @@ import type { Segment, Stage } from "@/lib/constants";
 export interface DashboardMetrics {
   revenue: number;
   pipelineValue: number;
+  pipelineJobCount: number;
+  pipelineAgedValue: number;
+  pipelineAgedCount: number;
+  appointmentsNotQuoted: number;
+  approvedClaimValue: number;
+  approvedClaimCount: number;
   newLeads: number;
   conversionRate: number;
   avgTicket: number;
@@ -344,9 +350,13 @@ export interface ExpenseCategory {
 
 // Cash Flow
 export interface CashFlowMetrics {
-  currentCash: number;
-  burnRate: number;
-  runwayWeeks: number;
+  qboConnected: boolean;
+  currentCash: number | null;
+  burnRate: number | null;
+  runwayWeeks: number | null;
+  accountsReceivable: AccountsReceivableSummary;
+  supplierPayables: SupplierPayablesSummary;
+  daysToPaid: DaysToPaidMetric[];
   revenueForecast: CashFlowRevenueForecast;
   weeklyProjections: CashFlowWeek[];
   scenarios: {
@@ -355,6 +365,36 @@ export interface CashFlowMetrics {
     conservative: CashFlowScenario;
   };
   expectedCollections: ExpectedCollection[];
+}
+
+export interface AccountsReceivableSummary {
+  asOfDateCt: string;
+  dueThroughYesterday: { count: number; amount: number };
+  notYetDue: { count: number; amount: number };
+}
+
+export interface SupplierPayableSnapshot {
+  supplier: string;
+  openCount: number;
+  amountOwed: number;
+  oldestDueDate: string | null;
+  asOf: string;
+  source: string;
+  isLive: boolean;
+}
+
+export interface SupplierPayablesSummary {
+  total: number;
+  suppliers: SupplierPayableSnapshot[];
+}
+
+export interface DaysToPaidMetric {
+  recordType: "Insurance" | "Retail" | "Repairs";
+  sampleSize: number;
+  medianDays: number | null;
+  p75Days: number | null;
+  p90Days: number | null;
+  provisionalSampleSize: number;
 }
 
 export interface CashFlowRevenueForecast {

@@ -9,7 +9,6 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  Cell,
   Legend,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,7 +22,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -145,7 +143,7 @@ function conversionColor(rate: number): string {
 /* -- Main Component ------------------------------------------------------- */
 
 export default function SalesPage() {
-  const [period, setPeriod] = useState("month");
+  const [period, setPeriod] = useState("reference");
   const [segment, setSegment] = useState<string>("all");
   const [selectedRepId, setSelectedRepId] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("revenue");
@@ -179,14 +177,14 @@ export default function SalesPage() {
         : (bVal as number) - (aVal as number);
     });
     return reps;
-  }, [data?.reps, sortField, sortAsc]);
+  }, [data, sortField, sortAsc]);
 
   // Selected rep
   const selectedRep = useMemo(() => {
     if (!data?.reps) return null;
     if (selectedRepId) return data.reps.find((r) => r.repId === selectedRepId) ?? null;
     return sortedReps[0] ?? null;
-  }, [data?.reps, selectedRepId, sortedReps]);
+  }, [data, selectedRepId, sortedReps]);
 
   // Chart data for segment close rates
   const segmentChartData = useMemo(() => {
@@ -201,7 +199,7 @@ export default function SalesPage() {
       });
       return entry;
     });
-  }, [data?.reps]);
+  }, [data]);
 
   function handleSort(field: SortField) {
     if (sortField === field) {
@@ -271,7 +269,7 @@ export default function SalesPage() {
           },
           {
             label: "Avg Close Rate",
-            explanation: "Average close rate across all active reps. Close rate = jobs reaching Sold Job or beyond / total jobs assigned to rep",
+            explanation: "Average close rate across all active reps using the canonical clean sold mapping. Insurance begins at Deductible Collected; pre-sold statuses are excluded.",
             value: data ? formatPercent(data.summary.avgCloseRate) : null,
           },
           {

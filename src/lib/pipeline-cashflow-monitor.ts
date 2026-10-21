@@ -8,13 +8,17 @@ export const POST_SOLD_CASH_STAGES = "'sold','approval','production_ready','sche
 
 export const STAGE_CASE = `
   CASE
-    WHEN j.status_name IN ('Lead', 'New', 'Storm Alert', 'Waiting on Claim', 'Claim Review') THEN 'lead'
+    WHEN j.status_name IN ('Lead', 'New', 'Storm Alert', 'Waiting on Claim', 'Claim Review', 'Future Work') THEN 'lead'
     WHEN j.status_name IN ('Appointment Scheduled', 'Adjuster Appt Scheduled', 'Needs Rescheduling') THEN 'appointment'
     WHEN j.status_name IN ('Appt Ran', 'Adjuster Appt Ran') THEN 'appt_ran'
     WHEN j.status_name IN ('Estimating') THEN 'estimating'
     WHEN j.status_name IN ('Estimate Sent') THEN 'estimate_sent'
-    WHEN j.status_name IN ('Sold Job', 'Fully Approved', 'Future Work') THEN 'sold'
-    WHEN j.status_name IN ('Scope Approval', 'City / HOA Approval', 'Waiting on Homeowner', 'Deductible Invoice Sent', 'Deductible Collected', 'Pre Production Supplementing', 'Waiting on Supplements', 'Insurance Pending/Cont Skipped', 'Project Review In Progress') THEN 'approval'
+    WHEN j.status_name IN ('Fully Approved', 'Deductible Invoice Sent', 'Deductible Requested', 'FEF/Deductible Sent') THEN 'pre_sold_approval'
+    WHEN (
+      (j.record_type_name = 'Insurance' AND j.status_name = 'Deductible Collected')
+      OR (j.record_type_name IS DISTINCT FROM 'Insurance' AND j.status_name IN ('Sold Job', 'Signed Contract'))
+    ) THEN 'sold'
+    WHEN j.status_name IN ('Scope', 'Scope Approval', 'Colors & Scope Approval', 'Colors & Scope Confirmation', 'City / HOA Approval', 'Waiting on Homeowner', 'Pre Production Supplementing', 'Waiting on Supplements', 'Insurance Pending/Cont Skipped', 'Project Review In Progress') THEN 'approval'
     WHEN j.status_name IN ('Production Ready') THEN 'production_ready'
     WHEN j.status_name IN ('Job Scheduled') THEN 'scheduled'
     WHEN j.status_name IN ('In Production', 'In Progress') THEN 'production'

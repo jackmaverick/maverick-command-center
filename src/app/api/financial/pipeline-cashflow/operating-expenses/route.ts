@@ -166,7 +166,7 @@ export async function GET() {
         sheetId: CASHFLOW_SHEET_ID,
         tab: "Recurring Expenses",
         range: body.range ?? RECURRING_EXPENSES_RANGE,
-        url: `https://docs.google.com/spreadsheets/d/${CASHFLOW_SHEET_ID}/edit?gid=789005809#gid=789005809`,
+        url: `https://docs.google.com/spreadsheets/d/${CASHFLOW_SHEET_ID}/edit?gid=1877086103#gid=1877086103`,
       },
       summary: {
         totalMonthly: Math.round(totalMonthly),

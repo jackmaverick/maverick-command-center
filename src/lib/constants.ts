@@ -190,6 +190,7 @@ export const PRIORITY_COLORS = {
 
 // Period options
 export const PERIOD_OPTIONS = [
+  { value: "reference", label: "Apr 6 – Oct 6, 2026" },
   { value: "week", label: "This Week" },
   { value: "last_week", label: "Last Week" },
   { value: "month", label: "This Month" },

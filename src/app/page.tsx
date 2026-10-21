@@ -53,6 +53,12 @@ interface DashboardData {
   qboBalance: number;
   qboRevenueVariance: number;
   pipelineValue: number;
+  pipelineJobCount: number;
+  pipelineAgedValue: number;
+  pipelineAgedCount: number;
+  appointmentsNotQuoted: number;
+  approvedClaimValue: number;
+  approvedClaimCount: number;
   newLeads: number;
   conversionRate: number;
   avgTicket: number;
@@ -218,7 +224,7 @@ function CustomTooltip({
 /* ── Main Component ──────────────────────────────────────────────────── */
 
 export default function DashboardPage() {
-  const [period, setPeriod] = useState("month");
+  const [period, setPeriod] = useState("reference");
 
   const { data, isLoading, isError, refetch } = useQuery<DashboardData>({
     queryKey: ["dashboard", period],
@@ -277,8 +283,86 @@ export default function DashboardPage() {
         <PeriodSelector value={period} onChange={setPeriod} />
       </div>
 
+      {/* ── Headline Pipeline ────────────────────────────────────────── */}
+      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card className="border-[#58a6ff]/30 bg-[#161b22]">
+          <CardHeader className="pb-2">
+            <InfoTooltip
+              label="Headline Pipeline"
+              explanation="Open Insurance, Retail, and Repairs jobs in Appointment or Approved Claim, with value above zero and a JobNimbus status change in the last 90 CT calendar days. Value uses approved estimate, otherwise latest estimate."
+            >
+              <CardTitle className="text-xs font-medium text-[#8b949e]">
+                Headline Pipeline
+              </CardTitle>
+            </InfoTooltip>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-12 w-36 bg-[#21262d]" />
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-[#58a6ff]">
+                  {formatFullCurrency(data?.pipelineValue ?? 0)}
+                </p>
+                <p className="mt-1 text-xs text-[#8b949e]">
+                  {data?.pipelineJobCount ?? 0} jobs · changed within 90 days
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Link href="/metrics/stale-estimates" className="group block">
+          <Card className="h-full border-[#d29922]/30 bg-[#161b22] transition-colors group-hover:border-[#d29922]">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-medium text-[#8b949e]">
+                Aged 90+
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-[#d29922]">
+                {formatFullCurrency(data?.pipelineAgedValue ?? 0)}
+              </p>
+              <p className="mt-1 text-xs text-[#8b949e]">
+                {data?.pipelineAgedCount ?? 0} jobs · review list →
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Card className="border-[#30363d] bg-[#161b22]">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-[#8b949e]">
+              Appointments not yet quoted
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-[#e6edf3]">
+              {data?.appointmentsNotQuoted ?? 0}
+            </p>
+            <p className="mt-1 text-xs text-[#8b949e]">count only</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-[#30363d] bg-[#161b22]">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-[#8b949e]">
+              Approved Claim
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-[#3fb950]">
+              {formatFullCurrency(data?.approvedClaimValue ?? 0)}
+            </p>
+            <p className="mt-1 text-xs text-[#8b949e]">
+              {data?.approvedClaimCount ?? 0} jobs
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* ── KPI Cards ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {/* Revenue */}
         <Link href={`/revenue?period=${period}`} className="block group">
           <Card className="h-full bg-[#161b22] border-[#30363d] group-hover:border-[#58a6ff] transition-colors">
@@ -317,28 +401,10 @@ export default function DashboardPage() {
           </Card>
         </Link>
 
-        {/* Pipeline */}
-        <Card className="bg-[#161b22] border-[#30363d]">
-          <CardHeader className="pb-2">
-            <InfoTooltip label="Pipeline Value" explanation="Total estimate value of all active jobs currently in Estimating through Invoiced stages (live snapshot, not period-filtered)">
-              <CardTitle className="text-xs font-medium text-[#8b949e]">Pipeline Value</CardTitle>
-            </InfoTooltip>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-8 w-24 bg-[#21262d]" />
-            ) : (
-              <p className="text-2xl font-bold text-[#e6edf3]">
-                {formatCurrency(data?.pipelineValue ?? 0)}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
         {/* New Leads */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <InfoTooltip label="New Leads" explanation="Jobs created in JobNimbus during the selected period. Includes archived/test leads — archive them in JobNimbus then sync to remove">
+            <InfoTooltip label="New Leads" explanation="Jobs in the shared clean sales-funnel cohort created during the selected CT period.">
               <CardTitle className="text-xs font-medium text-[#8b949e]">New Leads</CardTitle>
             </InfoTooltip>
           </CardHeader>
@@ -359,7 +425,7 @@ export default function DashboardPage() {
         {/* Conversion Rate */}
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader className="pb-2">
-            <InfoTooltip label="Conv Rate" explanation="Percentage of jobs created in this period that have reached &quot;Sold Job&quot; status or beyond. This tracks cohort close rate (jobs created in the period that closed).">
+            <InfoTooltip label="Conv Rate" explanation="Percentage of clean jobs created in this period that meet the canonical sold mapping. Insurance starts at Deductible Collected; pre-sold statuses do not count.">
               <CardTitle className="text-xs font-medium text-[#8b949e]">Conv Rate</CardTitle>
             </InfoTooltip>
           </CardHeader>
@@ -398,7 +464,7 @@ export default function DashboardPage() {
         <h2 className="text-sm font-semibold text-[#e6edf3] mb-4">
           <InfoTooltip 
             label={`Sold ${data?.period.label ?? "This Period"}`}
-            explanation="Jobs that FIRST entered the Sold stage during this period, regardless of when the lead was created. Insurance workflow uses Deductible Collected, Retail uses Sold Job, etc. — whichever status under the Sold stage came first. Estimate value = COALESCE(approved_estimate_total, last_estimate, 0). Trades can overlap; total is distinct jobs. This is the second clock — different from cohort close rate above."
+            explanation="Jobs that first entered a canonically mapped sold status during this period, regardless of lead date. Insurance starts at Deductible Collected. Estimate value is counted once per clean job."
           />
         </h2>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -466,7 +532,7 @@ export default function DashboardPage() {
                 <div className="space-y-3">
                   {(Object.entries(SEGMENTS) as [Segment, (typeof SEGMENTS)[Segment]][])
                     .filter(([key]) => (data?.soldThisPeriod?.bySegment[key]?.jobs ?? 0) > 0)
-                    .map(([key, segment], i) => {
+                    .map(([key, segment]) => {
                       const segData = data?.soldThisPeriod?.bySegment[key];
                       return (
                         <div key={key}>
@@ -1018,7 +1084,7 @@ export default function DashboardPage() {
         <h2 className="text-sm font-semibold text-[#e6edf3] mb-4">
           <InfoTooltip
             label="Cohort Close by Segment"
-            explanation="Jobs CREATED in this period that have CURRENTLY reached Sold Job or beyond. This tracks the cohort close rate — different from 'Sold This Period' above which counts first-sold date."
+            explanation="Clean jobs created in this period that currently meet the canonical sold mapping. Insurance starts at Deductible Collected; Future Work and other pre-sold statuses are excluded."
           />
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">

@@ -411,7 +411,7 @@ export default function PipelineCashflowPage() {
             )}
           </div>
           <p className="text-sm text-[#8b949e] max-w-3xl">
-            Post-sold JobNimbus cash model: Sold/Fully Approved/Future Work, deductible/supplement/approval blockers, Production Ready, Scheduled, In Production, and AR.
+            Canonical post-sold JobNimbus cash model. Insurance starts at Deductible Collected; Future Work, Fully Approved, and Deductible Invoice Sent remain pre-sold.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
