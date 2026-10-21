@@ -99,21 +99,10 @@ job_events AS (
     event.entered_at,
     mapping.funnel_stage,
     mapping.is_sold,
-    mapping.is_insurance_sold,
-    COALESCE(
-      to_timestamp(NULLIF(job.jn_date_status_change, 0)),
-      to_timestamp(job.jn_date_created)
-    ) AS current_status_changed_at,
-    CASE
-      WHEN job.record_type_name = 'Insurance'
-        THEN COALESCE(current_mapping.is_insurance_sold, false)
-      ELSE COALESCE(current_mapping.is_sold, false)
-    END AS current_status_is_sold
+    mapping.is_insurance_sold
   FROM metrics.v_jobs_clean job
   LEFT JOIN deduplicated_events event ON event.job_jnid = job.jnid::text
   LEFT JOIN metrics.status_funnel_stage mapping ON mapping.status_name = event.status_name
-  LEFT JOIN metrics.status_funnel_stage current_mapping
-    ON current_mapping.status_name = job.status_name
   WHERE NOT job.excluded_sales
     AND NOT COALESCE(job.storm_alert_prospect, false)
 )
@@ -123,14 +112,11 @@ SELECT
   min(entered_at) FILTER (WHERE funnel_stage = 'lead') AS lead_at,
   min(entered_at) FILTER (WHERE funnel_stage = 'appointment') AS appointment_at,
   min(entered_at) FILTER (WHERE status_name = 'Estimate Sent') AS estimate_sent_at,
-  COALESCE(
-    min(entered_at) FILTER (
-      WHERE CASE
-        WHEN record_type_name = 'Insurance' THEN is_insurance_sold
-        ELSE is_sold
-      END
-    ),
-    max(current_status_changed_at) FILTER (WHERE current_status_is_sold)
+  min(entered_at) FILTER (
+    WHERE CASE
+      WHEN record_type_name = 'Insurance' THEN is_insurance_sold
+      ELSE is_sold
+    END
   ) AS sold_at,
   min(entered_at) FILTER (WHERE funnel_stage = 'closed_lost') AS closed_lost_at
 FROM (
@@ -163,21 +149,49 @@ SELECT
   job.jnid::text AS job_jnid,
   job.number AS job_number,
   job.name AS job_name,
-  COALESCE(
-    job.sales_rep_jnid,
-    latest_estimate.sales_rep_jnid,
-    job.created_by_jnid
-  ) AS sales_rep_jnid,
-  COALESCE(
-    NULLIF(btrim(job.sales_rep_name), ''),
-    NULLIF(btrim(latest_estimate.sales_rep_name), ''),
-    NULLIF(btrim(job.created_by_name), ''),
-    'Unassigned'
-  ) AS sales_rep_name,
   CASE
-    WHEN NULLIF(btrim(job.sales_rep_name), '') IS NOT NULL THEN 'sales_rep'
-    WHEN NULLIF(btrim(latest_estimate.sales_rep_name), '') IS NOT NULL THEN 'estimate_rep'
-    WHEN NULLIF(btrim(job.created_by_name), '') IS NOT NULL THEN 'job_owner'
+    WHEN job.sales_rep_jnid IS NOT NULL
+      OR NULLIF(btrim(job.sales_rep_name), '') IS NOT NULL
+      THEN job.sales_rep_jnid
+    WHEN latest_estimate.sales_rep_jnid IS NOT NULL
+      OR NULLIF(btrim(latest_estimate.sales_rep_name), '') IS NOT NULL
+      THEN latest_estimate.sales_rep_jnid
+    WHEN job.created_by_jnid IS NOT NULL
+      OR NULLIF(btrim(job.created_by_name), '') IS NOT NULL
+      THEN job.created_by_jnid
+    ELSE NULL
+  END AS sales_rep_jnid,
+  CASE
+    WHEN job.sales_rep_jnid IS NOT NULL
+      OR NULLIF(btrim(job.sales_rep_name), '') IS NOT NULL
+      THEN COALESCE(
+        NULLIF(btrim(job.sales_rep_name), ''),
+        job_rep_user.name,
+        'Unassigned'
+      )
+    WHEN latest_estimate.sales_rep_jnid IS NOT NULL
+      OR NULLIF(btrim(latest_estimate.sales_rep_name), '') IS NOT NULL
+      THEN COALESCE(
+        NULLIF(btrim(latest_estimate.sales_rep_name), ''),
+        estimate_rep_user.name,
+        'Unassigned'
+      )
+    WHEN job.created_by_jnid IS NOT NULL
+      OR NULLIF(btrim(job.created_by_name), '') IS NOT NULL
+      THEN COALESCE(
+        NULLIF(btrim(job.created_by_name), ''),
+        owner_user.name,
+        'Unassigned'
+      )
+    ELSE 'Unassigned'
+  END AS sales_rep_name,
+  CASE
+    WHEN job.sales_rep_jnid IS NOT NULL
+      OR NULLIF(btrim(job.sales_rep_name), '') IS NOT NULL THEN 'sales_rep'
+    WHEN latest_estimate.sales_rep_jnid IS NOT NULL
+      OR NULLIF(btrim(latest_estimate.sales_rep_name), '') IS NOT NULL THEN 'estimate_rep'
+    WHEN job.created_by_jnid IS NOT NULL
+      OR NULLIF(btrim(job.created_by_name), '') IS NOT NULL THEN 'job_owner'
     ELSE 'unassigned'
   END AS rep_source,
   job.record_type_name,
@@ -207,6 +221,12 @@ SELECT
   )::numeric AS estimate_value
 FROM metrics.v_jobs_clean job
 LEFT JOIN latest_estimate ON latest_estimate.job_jnid = job.jnid::text
+LEFT JOIN public.jobnimbus_users job_rep_user
+  ON job_rep_user.jnid = job.sales_rep_jnid
+LEFT JOIN public.jobnimbus_users estimate_rep_user
+  ON estimate_rep_user.jnid = latest_estimate.sales_rep_jnid
+LEFT JOIN public.jobnimbus_users owner_user
+  ON owner_user.jnid = job.created_by_jnid
 WHERE job.status_name = 'Estimate Sent'
   AND NOT job.excluded_sales
   AND NOT COALESCE(job.storm_alert_prospect, false);
@@ -290,44 +310,14 @@ SELECT
   funnel.created_at,
   funnel.created_ct,
   funnel.record_type_name,
-  COALESCE(
-    job.sales_rep_jnid,
-    latest_estimate.sales_rep_jnid,
-    job.created_by_jnid
-  ) AS sales_rep_jnid,
-  COALESCE(
-    NULLIF(btrim(job.sales_rep_name), ''),
-    NULLIF(btrim(latest_estimate.sales_rep_name), ''),
-    NULLIF(btrim(job.created_by_name), ''),
-    'Unassigned'
-  ) AS sales_rep_name,
+  effective_rep.sales_rep_jnid,
+  effective_rep.sales_rep_name,
+  effective_rep.rep_source,
   CASE
-    WHEN NULLIF(btrim(job.sales_rep_name), '') IS NOT NULL THEN 'sales_rep'
-    WHEN NULLIF(btrim(latest_estimate.sales_rep_name), '') IS NOT NULL THEN 'estimate_rep'
-    WHEN NULLIF(btrim(job.created_by_name), '') IS NOT NULL THEN 'job_owner'
-    ELSE 'unassigned'
-  END AS rep_source,
-  CASE
-    WHEN COALESCE(
-      NULLIF(btrim(job.sales_rep_name), ''),
-      NULLIF(btrim(latest_estimate.sales_rep_name), ''),
-      NULLIF(btrim(job.created_by_name), '')
-    ) IS NULL THEN 'Unassigned'
-    WHEN COALESCE(
-      NULLIF(btrim(job.sales_rep_name), ''),
-      NULLIF(btrim(latest_estimate.sales_rep_name), ''),
-      NULLIF(btrim(job.created_by_name), '')
-    ) = 'Michael Blake' THEN 'Michael'
-    WHEN COALESCE(
-      NULLIF(btrim(job.sales_rep_name), ''),
-      NULLIF(btrim(latest_estimate.sales_rep_name), ''),
-      NULLIF(btrim(job.created_by_name), '')
-    ) = 'Bob Blake' THEN 'Bob'
-    WHEN COALESCE(
-      NULLIF(btrim(job.sales_rep_name), ''),
-      NULLIF(btrim(latest_estimate.sales_rep_name), ''),
-      NULLIF(btrim(job.created_by_name), '')
-    ) = 'Jack Blake' THEN 'Jack'
+    WHEN effective_rep.rep_source = 'unassigned' THEN 'Unassigned'
+    WHEN effective_rep.sales_rep_name = 'Michael Blake' THEN 'Michael'
+    WHEN effective_rep.sales_rep_name = 'Bob Blake' THEN 'Bob'
+    WHEN effective_rep.sales_rep_name = 'Jack Blake' THEN 'Jack'
     ELSE 'Other'
   END AS rep_bucket,
   funnel.sold,
@@ -343,10 +333,65 @@ SELECT
   COALESCE(stale.stale_14, false) AS stale_estimate_14,
   COALESCE(stale.stale_90, false) AS stale_estimate_90,
   funnel.status_name IS NULL AS missing_status,
-  funnel.sales_rep_name IS NULL OR btrim(funnel.sales_rep_name) = '' AS missing_rep
+  effective_rep.rep_source = 'unassigned' AS missing_rep,
+  effective_rep.rep_source IN ('estimate_rep', 'job_owner') AS rep_fallback
 FROM metrics.v_sales_funnel_jobs funnel
 JOIN metrics.v_jobs_clean job ON job.jnid::text = funnel.jnid::text
 LEFT JOIN latest_estimate ON latest_estimate.job_jnid = funnel.jnid::text
+LEFT JOIN public.jobnimbus_users job_rep_user
+  ON job_rep_user.jnid = job.sales_rep_jnid
+LEFT JOIN public.jobnimbus_users estimate_rep_user
+  ON estimate_rep_user.jnid = latest_estimate.sales_rep_jnid
+LEFT JOIN public.jobnimbus_users owner_user
+  ON owner_user.jnid = job.created_by_jnid
+LEFT JOIN LATERAL (
+  SELECT
+    CASE
+      WHEN job.sales_rep_jnid IS NOT NULL
+        OR NULLIF(btrim(job.sales_rep_name), '') IS NOT NULL
+        THEN job.sales_rep_jnid
+      WHEN latest_estimate.sales_rep_jnid IS NOT NULL
+        OR NULLIF(btrim(latest_estimate.sales_rep_name), '') IS NOT NULL
+        THEN latest_estimate.sales_rep_jnid
+      WHEN job.created_by_jnid IS NOT NULL
+        OR NULLIF(btrim(job.created_by_name), '') IS NOT NULL
+        THEN job.created_by_jnid
+      ELSE NULL
+    END AS sales_rep_jnid,
+    CASE
+      WHEN job.sales_rep_jnid IS NOT NULL
+        OR NULLIF(btrim(job.sales_rep_name), '') IS NOT NULL
+        THEN COALESCE(
+          NULLIF(btrim(job.sales_rep_name), ''),
+          job_rep_user.name,
+          'Unassigned'
+        )
+      WHEN latest_estimate.sales_rep_jnid IS NOT NULL
+        OR NULLIF(btrim(latest_estimate.sales_rep_name), '') IS NOT NULL
+        THEN COALESCE(
+          NULLIF(btrim(latest_estimate.sales_rep_name), ''),
+          estimate_rep_user.name,
+          'Unassigned'
+        )
+      WHEN job.created_by_jnid IS NOT NULL
+        OR NULLIF(btrim(job.created_by_name), '') IS NOT NULL
+        THEN COALESCE(
+          NULLIF(btrim(job.created_by_name), ''),
+          owner_user.name,
+          'Unassigned'
+        )
+      ELSE 'Unassigned'
+    END AS sales_rep_name,
+    CASE
+      WHEN job.sales_rep_jnid IS NOT NULL
+        OR NULLIF(btrim(job.sales_rep_name), '') IS NOT NULL THEN 'sales_rep'
+      WHEN latest_estimate.sales_rep_jnid IS NOT NULL
+        OR NULLIF(btrim(latest_estimate.sales_rep_name), '') IS NOT NULL THEN 'estimate_rep'
+      WHEN job.created_by_jnid IS NOT NULL
+        OR NULLIF(btrim(job.created_by_name), '') IS NOT NULL THEN 'job_owner'
+      ELSE 'unassigned'
+    END AS rep_source
+) effective_rep ON true
 LEFT JOIN metrics.status_funnel_stage mapping ON mapping.status_name = funnel.status_name
 LEFT JOIN metrics.v_stage_dates stage ON stage.job_jnid = funnel.jnid::text
 LEFT JOIN invoice_totals ON invoice_totals.job_jnid = funnel.jnid::text
