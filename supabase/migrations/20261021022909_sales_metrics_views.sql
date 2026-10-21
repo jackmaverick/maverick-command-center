@@ -233,7 +233,7 @@ LEFT JOIN LATERAL (
     AND COALESCE(owner_user.is_active, true)
     AND owner_user.deleted_at IS NULL
     AND lower(COALESCE(owner_user.name, '')) !~
-      '(claude|supabase|roof ignite|bot|integration|automation|zapier|api)'
+      '(claude|supabase|roof ignite|bot|integration|automation|zapier|(^|[^a-z])api([^a-z]|$))'
   ORDER BY owner.created_at DESC, owner_user.name
   LIMIT 1
 ) human_owner ON true
@@ -367,7 +367,7 @@ LEFT JOIN LATERAL (
     AND COALESCE(owner_user.is_active, true)
     AND owner_user.deleted_at IS NULL
     AND lower(COALESCE(owner_user.name, '')) !~
-      '(claude|supabase|roof ignite|bot|integration|automation|zapier|api)'
+      '(claude|supabase|roof ignite|bot|integration|automation|zapier|(^|[^a-z])api([^a-z]|$))'
   ORDER BY owner.created_at DESC, owner_user.name
   LIMIT 1
 ) human_owner ON true
