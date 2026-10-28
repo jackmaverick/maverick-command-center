@@ -8,6 +8,8 @@ import {
   logMissingAuthConfiguration,
 } from "@/lib/auth-policy";
 
+const authenticatedProxy = auth(() => NextResponse.next());
+
 export function proxy(request: NextRequest, event: NextFetchEvent) {
   const accessConfig = getAuthAccessConfig();
   if (!accessConfig.configured) {
@@ -28,7 +30,7 @@ export function proxy(request: NextRequest, event: NextFetchEvent) {
     return NextResponse.redirect(new URL("/configuration-error", request.url));
   }
 
-  return auth(request, event);
+  return authenticatedProxy(request, event);
 }
 
 export const config = {
