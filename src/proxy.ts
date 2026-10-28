@@ -5,7 +5,6 @@ import type {
 } from "next/server";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import type { NextAuthRequest } from "next-auth";
 import {
   getAuthAccessConfig,
   getMissingAuthEnvironmentVariables,
@@ -13,9 +12,10 @@ import {
   logMissingAuthConfiguration,
 } from "@/lib/auth-policy";
 
-const authenticatedProxy: NextMiddleware = auth(
-  (_request: NextAuthRequest, _event: NextFetchEvent) => NextResponse.next()
-);
+// Auth.js exposes an overloaded universal helper. At runtime this is its
+// NextMiddleware signature; invoking it directly is what enforces the
+// callbacks.authorized policy. Wrapping auth(callback) would bypass that policy.
+const authenticatedProxy = auth as unknown as NextMiddleware;
 
 export function proxy(request: NextRequest, event: NextFetchEvent) {
   const accessConfig = getAuthAccessConfig();
