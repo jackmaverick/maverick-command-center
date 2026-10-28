@@ -120,8 +120,8 @@ async function loadJobWorkspaceRows(
          COALESCE(NULLIF(c.email, ''), NULLIF(j.primary_contact_email, '')) AS email,
          j.status_name AS status,
          COALESCE(
-           stage.stage_order,
            ARRAY_POSITION($1::text[], j.status_name),
+           stage.stage_order,
            999
          ) AS status_order,
          j.sales_rep_name AS sales_rep
@@ -504,6 +504,147 @@ async function loadWorkspaceCounts(): Promise<Record<WorkspaceKey, number>> {
   };
 }
 
+async function loadWorkspaceAttentionCounts(): Promise<
+  Record<WorkspaceKey, number>
+> {
+  const rows = await query<{ workspace: WorkspaceKey; count: string }>(
+    `WITH eligible AS (
+       SELECT
+         j.jnid AS job_jnid,
+         COALESCE(j.primary_contact_jnid, j.jnid) AS contact_jnid,
+         j.record_type_name,
+         j.status_name
+       FROM jobs j
+       LEFT JOIN contacts c
+         ON c.jnid = j.primary_contact_jnid
+        AND c.deleted_at IS NULL
+       WHERE j.deleted_at IS NULL
+         AND COALESCE(j.is_active, true) = true
+         AND COALESCE(j.is_archived, false) = false
+         AND ${NOT_TEST_JOB_SQL}
+     ),
+     assignments AS (
+       SELECT 'speed_to_lead'::text workspace, *
+       FROM eligible
+       WHERE record_type_name IN ('Retail', 'Repairs')
+         AND status_name = ANY($1::text[])
+       UNION ALL
+       SELECT 'sales_follow_up', *
+       FROM eligible
+       WHERE record_type_name IN ('Retail', 'Repairs')
+         AND status_name = ANY($2::text[])
+       UNION ALL
+       SELECT 'insurance', *
+       FROM eligible
+       WHERE record_type_name = 'Insurance'
+         AND status_name = ANY($3::text[])
+     ),
+     cohort AS (
+       SELECT DISTINCT ON (workspace, contact_jnid)
+         workspace, contact_jnid, job_jnid
+       FROM assignments
+       ORDER BY workspace, contact_jnid, job_jnid
+     ),
+     attention AS (
+       SELECT cohort.workspace, cohort.contact_jnid,
+         latest.direction, latest.automated
+       FROM cohort
+       LEFT JOIN LATERAL (
+         SELECT event.direction, event.automated
+         FROM (
+           (SELECT s.direction::text AS direction, false AS automated, s.sent_at AS occurred_at
+            FROM sms_messages s
+            WHERE s.deleted_at IS NULL
+              AND (s.contact_jnid = cohort.contact_jnid OR s.job_jnid = cohort.job_jnid)
+            ORDER BY s.sent_at DESC LIMIT 1)
+           UNION ALL
+           (SELECT call.direction, false, call.started_at
+            FROM calls call
+            WHERE call.deleted_at IS NULL
+              AND (call.contact_jnid = cohort.contact_jnid OR call.job_jnid = cohort.job_jnid)
+            ORDER BY call.started_at DESC LIMIT 1)
+           UNION ALL
+           (SELECT email.direction, false, COALESCE(email.sent_at, email.received_at, email.created_at)
+            FROM emails email
+            WHERE email.contact_jnid = cohort.contact_jnid OR email.job_jnid = cohort.job_jnid
+            ORDER BY COALESCE(email.sent_at, email.received_at, email.created_at) DESC LIMIT 1)
+           UNION ALL
+           (SELECT 'outgoing', true, COALESCE(outbound.sent_at, outbound.created_at)
+            FROM campaign_outbound_messages outbound
+            WHERE outbound.contact_jnid = cohort.contact_jnid OR outbound.job_jnid = cohort.job_jnid
+            ORDER BY COALESCE(outbound.sent_at, outbound.created_at) DESC LIMIT 1)
+           UNION ALL
+           (SELECT 'incoming', false, inbound.created_at
+            FROM campaign_inbound_messages inbound
+            WHERE inbound.contact_jnid = cohort.contact_jnid OR inbound.job_jnid = cohort.job_jnid
+            ORDER BY inbound.created_at DESC LIMIT 1)
+         ) event
+         ORDER BY event.occurred_at DESC NULLS LAST
+         LIMIT 1
+       ) latest ON true
+     )
+     SELECT workspace, COUNT(*) FILTER (
+       WHERE direction IN ('incoming', 'inbound') OR automated
+     )::text AS count
+     FROM attention
+     GROUP BY workspace
+     UNION ALL
+     SELECT 'general', COUNT(DISTINCT recent.contact_jnid)::text
+     FROM (
+       SELECT contact_jnid FROM sms_messages
+       WHERE sent_at >= NOW() - INTERVAL '90 days'
+         AND direction = 'incoming' AND contact_jnid IS NOT NULL
+       UNION
+       SELECT contact_jnid FROM calls
+       WHERE started_at >= NOW() - INTERVAL '90 days'
+         AND direction IN ('incoming', 'inbound') AND contact_jnid IS NOT NULL
+       UNION
+       SELECT contact_jnid FROM emails
+       WHERE COALESCE(sent_at, received_at, created_at) >= NOW() - INTERVAL '90 days'
+         AND direction = 'inbound' AND contact_jnid IS NOT NULL
+     ) recent
+     JOIN contacts recent_contact
+       ON recent_contact.jnid = recent.contact_jnid
+      AND recent_contact.deleted_at IS NULL
+     WHERE COALESCE(recent_contact.display_name, '') !~* '\\mtest\\M'
+       AND NOT EXISTS (
+         SELECT 1
+         FROM jobs active_job
+         WHERE active_job.primary_contact_jnid = recent.contact_jnid
+           AND active_job.deleted_at IS NULL
+           AND COALESCE(active_job.is_active, true) = true
+           AND COALESCE(active_job.is_archived, false) = false
+           AND (
+             (active_job.record_type_name = 'Insurance' AND active_job.status_name = ANY($3::text[]))
+             OR (
+               active_job.record_type_name IN ('Retail', 'Repairs')
+               AND active_job.status_name = ANY($4::text[])
+             )
+           )
+       )`,
+    [
+      [...SPEED_TO_LEAD_STATUSES],
+      [...SALES_FOLLOW_UP_STATUSES],
+      [...INSURANCE_STATUSES],
+      [...SPEED_TO_LEAD_STATUSES, ...SALES_FOLLOW_UP_STATUSES],
+    ]
+  );
+  return {
+    speed_to_lead: Number(
+      rows.find((row) => row.workspace === "speed_to_lead")?.count ?? 0
+    ),
+    insurance: Number(
+      rows.find((row) => row.workspace === "insurance")?.count ?? 0
+    ),
+    sales_follow_up: Number(
+      rows.find((row) => row.workspace === "sales_follow_up")?.count ?? 0
+    ),
+    general: Number(
+      rows.find((row) => row.workspace === "general")?.count ?? 0
+    ),
+  };
+}
+
 export async function getInbox(
   workspace: WorkspaceKey,
   options: {
@@ -526,12 +667,19 @@ export async function getInbox(
     sales_follow_up: 0,
     general: 0,
   };
+  let attentionCounts: Record<WorkspaceKey, number> = {
+    speed_to_lead: 0,
+    insurance: 0,
+    sales_follow_up: 0,
+    general: 0,
+  };
 
-  const [rowResult, countResult] = await Promise.allSettled([
+  const [rowResult, countResult, attentionResult] = await Promise.allSettled([
     workspace === "general"
       ? loadGeneralRows(options.search, limit + 1, offset)
       : loadJobWorkspaceRows(workspace, options.search, limit + 1, offset),
     loadWorkspaceCounts(),
+    loadWorkspaceAttentionCounts(),
   ]);
 
   if (rowResult.status === "fulfilled") {
@@ -552,9 +700,20 @@ export async function getInbox(
       message: "Workspace counts are temporarily unavailable.",
     });
   }
+  if (attentionResult.status === "fulfilled") {
+    attentionCounts = attentionResult.value;
+  } else {
+    logServerError(
+      "[Inbox] workspace attention counts failed",
+      attentionResult.reason
+    );
+    warnings.push({
+      source: "attention_counts",
+      message: "Attention counts are temporarily unavailable.",
+    });
+  }
 
   let rows = databaseRows.map(mapRow);
-  const attentionCount = rows.filter((row) => row.unresponded).length;
   if (options.open === "open") rows = rows.filter((row) => row.unresponded);
   if (options.open === "done") rows = rows.filter((row) => !row.unresponded);
   if (options.unread) rows = rows.filter((row) => row.unread);
@@ -591,7 +750,7 @@ export async function getInbox(
     key,
     label: WORKSPACE_LABELS[key],
     count: counts[key],
-    attentionCount: key === workspace ? attentionCount : 0,
+    attentionCount: attentionCounts[key],
   }));
 
   return {

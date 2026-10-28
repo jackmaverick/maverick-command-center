@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThreadPanel } from "@/components/inbox/thread-panel";
+import { cleanDisplayText } from "@/lib/display-text";
 import type {
   InboxResponse,
   InboxRow,
@@ -59,6 +60,14 @@ function initials(name: string): string {
     .map((part) => part[0])
     .join("")
     .toUpperCase();
+}
+
+function campaignLabel(campaign: string): string {
+  if (campaign.toLowerCase() === "estimate sent") return "Estimate Follow-Up";
+  if (campaign.toLowerCase().includes("undecided")) {
+    return "Undecided homeowner";
+  }
+  return campaign;
 }
 
 function ChannelIcon({ row }: { row: InboxRow }) {
@@ -116,13 +125,13 @@ function ConversationRow({
             <ChannelIcon row={row} />
             <span className="truncate">
               {outbound ? `${row.sender ?? "You"}: ` : ""}
-              {row.preview}
+              {cleanDisplayText(row.preview)}
             </span>
           </div>
           <div className="mt-2 flex flex-wrap gap-1">
             {row.campaign && (
               <Badge className="bg-[#a371f7]/10 text-[10px] text-[#d2a8ff]">
-                {row.campaign}
+                {campaignLabel(row.campaign)}
               </Badge>
             )}
             {row.status && (
@@ -306,10 +315,16 @@ function CampaignBoardContent() {
               <Users className="h-3.5 w-3.5" />
               <span className="min-w-0 flex-1 truncate">{item.label}</span>
               <span
-                title="Needs attention / workspace count"
+                title="Conversations needing attention"
                 className="rounded-full bg-[#30363d] px-1.5 py-0.5 text-[10px] text-[#c9d1d9]"
               >
-                {item.attentionCount || item.count}
+                {item.attentionCount}
+              </span>
+              <span
+                title="Total eligible jobs"
+                className="text-[10px] text-[#6e7681]"
+              >
+                / {item.count}
               </span>
             </button>
           ))}
@@ -464,7 +479,7 @@ function CampaignBoardContent() {
                           <span>{timeAgo(row.lastAt, now)}</span>
                         </div>
                         <p className="mt-1 line-clamp-2 text-xs text-[#c9d1d9]">
-                          {row.preview}
+                          {cleanDisplayText(row.preview)}
                         </p>
                         <p className="mt-2 truncate text-[10px] text-[#6e7681]">
                           {row.salesRep ?? "Unassigned"}
