@@ -59,6 +59,29 @@ contacts/jobs whose names contain the whole word `test`, plus jobs with a
 `seq_job_exclusions` reason containing `test`. Jack should confirm that rule
 before production rollout.
 
+## Replies rollout (v2b)
+
+Replies are fail-closed behind `REPLIES_ENABLED=true` and
+`REPLIES_ALLOWED_EMAILS`. Keep the flag false until Jack approves the first
+send to his test contact.
+
+Provider setup:
+
+- OpenPhone: set `OPENPHONE_API_KEY`; reserve
+  `OPENPHONE_WEBHOOK_SECRET` for signed delivery/inbound webhooks.
+- Gmail: authorize the service account OAuth client ID in Google Admin domain-wide
+  delegation for:
+  - `https://www.googleapis.com/auth/gmail.send`
+  - `https://www.googleapis.com/auth/gmail.readonly`
+- JobNimbus: set `JOBNIMBUS_API_KEY` for internal-note creation.
+- Cron: keep `CRON_SECRET` configured. `/api/replies/queue` checks every five
+  minutes and releases due messages only while replies remain enabled and the
+  original sender remains allowlisted.
+
+The app writes only its own `cc_*` tables for queued messages, drafts, audit,
+and detected SMS opt-outs. JobNimbus notes are created through the JobNimbus
+API; synced mirror tables remain read-only.
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More
