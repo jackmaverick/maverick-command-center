@@ -1,5 +1,7 @@
+import { unstable_cache } from "next/cache";
 import { query } from "@/lib/db";
 import { getHomeownerDetail } from "@/lib/homeowners/repository";
+import type { TimelineCursor } from "@/lib/homeowners/timeline";
 import { logServerError } from "@/lib/server-error";
 import type {
   ConversationItem,
@@ -33,17 +35,21 @@ function itemType(channel: string, source: string): ConversationItemType {
   return "activity";
 }
 
-export async function getConversationThread(
+async function buildConversationThread(
   contactJnid: string,
-  workspace: WorkspaceKey
+  workspace: WorkspaceKey,
+  before: TimelineCursor | null
 ) {
-  const detail = await getHomeownerDetail(contactJnid, null, 100);
+  const detail = await getHomeownerDetail(contactJnid, before, 40);
   if (!detail) return null;
   const jobJnids = detail.jobs.map((job) => job.jobJnid);
 
   let campaignEvents: CampaignSystemRow[] = [];
   const warnings: Array<{ source: string; message: string }> = [];
   try {
+    if (before) {
+      campaignEvents = [];
+    } else {
     campaignEvents = await query<CampaignSystemRow>(
     `SELECT
        enrollment.id::text || ':entered' AS id,
@@ -101,6 +107,7 @@ export async function getConversationThread(
      ORDER BY occurred_at`,
       [detail.contact.contactJnid, jobJnids]
     );
+    }
   } catch (error) {
     logServerError("[Campaign Thread] campaign events failed", error);
     warnings.push({
@@ -181,5 +188,22 @@ export async function getConversationThread(
     notes: items.filter((item) => item.type === "note"),
     primaryJob: detail.jobs[0] ?? null,
     warnings: [...detail.sourceWarnings, ...warnings],
+    nextCursor: detail.timeline.nextCursor,
   };
+}
+
+const getCachedInitialThread = unstable_cache(
+  (contactJnid: string, workspace: WorkspaceKey) =>
+    buildConversationThread(contactJnid, workspace, null),
+  ["campaign-thread-v2a"],
+  { revalidate: 30 }
+);
+
+export function getConversationThread(
+  contactJnid: string,
+  workspace: WorkspaceKey,
+  before: TimelineCursor | null = null
+) {
+  if (before) return buildConversationThread(contactJnid, workspace, before);
+  return getCachedInitialThread(contactJnid, workspace);
 }

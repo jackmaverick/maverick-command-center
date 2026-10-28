@@ -483,18 +483,19 @@ export async function getHomeownerDetail(
   if (!contact) return null;
   const resolvedContactJnid = contact.contact_jnid;
 
-  const jobRows = await query<{
-    job_jnid: string;
-    number: string | null;
-    name: string;
-    address: string | null;
-    status: string | null;
-    sales_rep: string | null;
-    claim_number: string | null;
-    carrier: string | null;
-    date_of_loss: string | number | null;
-  }>(
-    `SELECT DISTINCT
+  const [jobRows, identity] = await Promise.all([
+    query<{
+      job_jnid: string;
+      number: string | null;
+      name: string;
+      address: string | null;
+      status: string | null;
+      sales_rep: string | null;
+      claim_number: string | null;
+      carrier: string | null;
+      date_of_loss: string | number | null;
+    }>(
+      `SELECT DISTINCT
        j.jnid AS job_jnid,
        j.number,
        COALESCE(NULLIF(j.name, ''), j.number, 'Unnamed job') AS name,
@@ -511,8 +512,10 @@ export async function getHomeownerDetail(
        AND j.deleted_at IS NULL
        AND ${jobNotTestSql("j")}
      ORDER BY name`,
-    [resolvedContactJnid]
-  );
+      [resolvedContactJnid]
+    ),
+    loadIdentity(resolvedContactJnid),
+  ]);
   const jobs: HomeownerJob[] = jobRows.map((job) => ({
     jobJnid: job.job_jnid,
     number: job.number,
@@ -525,7 +528,6 @@ export async function getHomeownerDetail(
     dateOfLoss: unixDate(job.date_of_loss),
   }));
   const jobJnids = jobs.map((job) => job.jobJnid);
-  const identity = await loadIdentity(resolvedContactJnid);
 
   const sourceResults = await Promise.allSettled([
       query<CampaignEnrollment>(

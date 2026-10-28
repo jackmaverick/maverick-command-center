@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import {
   ExternalLink,
   Mail,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cleanDisplayText } from "@/lib/display-text";
 import type {
   ConversationItem,
   WorkspaceKey,
@@ -46,6 +47,7 @@ interface ThreadData {
     salesRep: string | null;
   } | null;
   warnings: Array<{ source: string; message: string }>;
+  nextCursor: string | null;
 }
 
 const centralDate = new Intl.DateTimeFormat("en-US", {
@@ -82,7 +84,7 @@ function SystemLine({ item }: { item: ConversationItem }) {
     <div className="my-4 flex items-center gap-3 text-[11px] text-[#6e7681]">
       <div className="h-px flex-1 bg-[#30363d]" />
       <span className="max-w-[75%] text-center">
-        {item.preview}
+        {cleanDisplayText(item.preview)}
         {item.systemEvent?.actor ? ` by ${item.systemEvent.actor}` : ""}
         {item.systemEvent?.disposition
           ? ` · Disposition: ${item.systemEvent.disposition}`
@@ -100,11 +102,21 @@ export function ThreadPanel({
   contactJnid: string;
   workspace: WorkspaceKey;
 }) {
-  const { data, isLoading, isError } = useQuery<ThreadData>({
+  const {
+    data: queryData,
+    isLoading,
+    isError,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<ThreadData>({
     queryKey: ["campaign-thread", contactJnid, workspace],
-    queryFn: async () => {
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) => {
+      const params = new URLSearchParams({ workspace });
+      if (pageParam) params.set("before", String(pageParam));
       const response = await fetch(
-        `/api/campaign-thread/${encodeURIComponent(contactJnid)}?workspace=${workspace}`
+        `/api/campaign-thread/${encodeURIComponent(contactJnid)}?${params}`
       );
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
@@ -116,8 +128,22 @@ export function ThreadPanel({
       }
       return payload;
     },
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     refetchInterval: 45_000,
   });
+  const data = queryData?.pages[0];
+  const items = [
+    ...new Map(
+      (queryData?.pages.flatMap((page) => page.items) ?? []).map((item) => [
+        item.id,
+        item,
+      ])
+    ).values(),
+  ].sort(
+    (left, right) =>
+      new Date(left.occurredAt).getTime() -
+      new Date(right.occurredAt).getTime()
+  );
 
   if (isLoading) {
     return (
@@ -159,9 +185,21 @@ export function ThreadPanel({
               {warning.message}
             </div>
           ))}
-          {data.items.map((item, index) => {
+          {hasNextPage && (
+            <div className="mb-4 text-center">
+              <button
+                type="button"
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
+                className="rounded-full border border-[#30363d] px-3 py-1.5 text-xs text-[#8b949e] hover:text-[#e6edf3] disabled:opacity-50"
+              >
+                {isFetchingNextPage ? "Loading…" : "Load earlier"}
+              </button>
+            </div>
+          )}
+          {items.map((item, index) => {
             const currentDate = dateKey(item.occurredAt);
-            const previousItem = data.items[index - 1];
+            const previousItem = items[index - 1];
             const showDate =
               !previousItem || dateKey(previousItem.occurredAt) !== currentDate;
             return (
@@ -198,7 +236,7 @@ export function ThreadPanel({
                         <span>{centralTime.format(new Date(item.occurredAt))}</span>
                       </div>
                       <p className="whitespace-pre-wrap text-sm">
-                        {item.body ?? item.preview}
+                        {cleanDisplayText(item.body ?? item.preview)}
                       </p>
                       {item.deliveryStatus && (
                         <p className="mt-1 text-right text-[10px] opacity-60">
@@ -313,7 +351,7 @@ export function ThreadPanel({
                 key={note.id}
                 className="mb-2 rounded border border-[#30363d] bg-[#0d1117] p-2 text-xs text-[#c9d1d9]"
               >
-                {note.preview}
+                {cleanDisplayText(note.preview)}
               </div>
             ))}
           </>

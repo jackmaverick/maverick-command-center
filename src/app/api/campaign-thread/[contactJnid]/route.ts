@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConversationThread } from "@/lib/inbox/thread";
 import type { WorkspaceKey } from "@/lib/inbox/types";
+import { decodeTimelineCursor } from "@/lib/homeowners/timeline";
 import { hasAuthorizedSession } from "@/lib/require-auth";
 import { logServerError } from "@/lib/server-error";
 
@@ -27,11 +28,20 @@ export async function GET(
     return NextResponse.json({ error: "Invalid workspace" }, { status: 400 });
   }
   const { contactJnid } = await context.params;
+  const beforeParam = request.nextUrl.searchParams.get("before");
+  const before = beforeParam ? decodeTimelineCursor(beforeParam) : null;
+  if (beforeParam && !before) {
+    return NextResponse.json(
+      { error: "Invalid timeline cursor" },
+      { status: 400 }
+    );
+  }
 
   try {
     const thread = await getConversationThread(
       contactJnid,
-      workspaceParam as WorkspaceKey
+      workspaceParam as WorkspaceKey,
+      before
     );
     if (!thread) {
       return NextResponse.json(
