@@ -14,6 +14,7 @@ const serviceRoutes = new Set([
   "/api/qbo/sheet-sync",
   "/api/qbo/webhook",
   "/api/snapshots/generate",
+  "/api/replies/queue",
 ]);
 
 function collectFiles(directory, filename) {
@@ -141,6 +142,7 @@ try {
     "/api/qbo/cron",
     "/api/qbo/sheet-sync",
     "/api/snapshots/generate",
+    "/api/replies/queue",
   ]) {
     assert.equal(
       (await request(path)).status,

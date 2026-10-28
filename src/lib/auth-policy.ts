@@ -13,6 +13,7 @@ const SERVICE_PATHS = [
   "/api/qbo/sheet-sync",
   "/api/qbo/webhook",
   "/api/snapshots/generate",
+  "/api/replies/queue",
 ];
 
 export interface AuthAccessConfig {
