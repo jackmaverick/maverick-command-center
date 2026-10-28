@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import {
   ExternalLink,
@@ -8,6 +9,7 @@ import {
   MapPin,
   MessageSquare,
   Phone,
+  Send,
   StickyNote,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +69,7 @@ function dateKey(value: string): string {
 }
 
 function channelLabel(item: ConversationItem): string {
+  if (item.channel === "JobNimbus") return "JobNimbus";
   if (item.type === "call") {
     const duration = item.durationSeconds
       ? ` · ${Math.max(1, Math.round(item.durationSeconds / 60))}m`
@@ -77,6 +80,26 @@ function channelLabel(item: ConversationItem): string {
   if (item.type === "text") return `Text · ${item.line ?? "OpenPhone"}`;
   if (item.type === "note") return "JobNimbus note";
   return item.channel;
+}
+
+function ChannelLabel({ item }: { item: ConversationItem }) {
+  const label = channelLabel(item);
+  const icon =
+    item.channel === "JobNimbus" || item.type === "note" ? (
+      <StickyNote className="h-3 w-3" />
+    ) : item.type === "call" ? (
+      <Phone className="h-3 w-3" />
+    ) : item.type === "email" ? (
+      <Mail className="h-3 w-3" />
+    ) : (
+      <MessageSquare className="h-3 w-3" />
+    );
+  return (
+    <span className="inline-flex items-center gap-1">
+      {icon}
+      {label}
+    </span>
+  );
 }
 
 function SystemLine({ item }: { item: ConversationItem }) {
@@ -98,10 +121,13 @@ function SystemLine({ item }: { item: ConversationItem }) {
 export function ThreadPanel({
   contactJnid,
   workspace,
+  allowSystemEvents = false,
 }: {
   contactJnid: string;
   workspace: WorkspaceKey;
+  allowSystemEvents?: boolean;
 }) {
+  const [showSystemEvents, setShowSystemEvents] = useState(false);
   const {
     data: queryData,
     isLoading,
@@ -144,6 +170,15 @@ export function ThreadPanel({
       new Date(left.occurredAt).getTime() -
       new Date(right.occurredAt).getTime()
   );
+  const visibleItems = items.filter(
+    (item) => item.type !== "system" || (allowSystemEvents && showSystemEvents)
+  );
+  const latestTextLine = [...items]
+    .reverse()
+    .find((item) => item.type === "text" && item.channel !== "JobNimbus")?.line;
+  const latestEmailInbox = [...items]
+    .reverse()
+    .find((item) => item.type === "email" && item.channel !== "JobNimbus")?.line;
 
   if (isLoading) {
     return (
@@ -171,10 +206,27 @@ export function ThreadPanel({
     <div className="grid h-full min-w-0 flex-1 grid-cols-[minmax(0,1fr)_280px]">
       <section className="flex min-w-0 flex-col bg-[#0d1117]">
         <header className="border-b border-[#30363d] px-5 py-3">
-          <h2 className="font-semibold text-[#e6edf3]">{data.homeowner.name}</h2>
-          <p className="truncate text-xs text-[#8b949e]">
-            {data.homeowner.address ?? "No address"}
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="font-semibold text-[#e6edf3]">{data.homeowner.name}</h2>
+              <p className="truncate text-xs text-[#8b949e]">
+                {data.homeowner.address ?? "No address"}
+              </p>
+            </div>
+            {allowSystemEvents && (
+              <button
+                type="button"
+                onClick={() => setShowSystemEvents((value) => !value)}
+                className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] ${
+                  showSystemEvents
+                    ? "bg-[#1f6feb] text-white"
+                    : "bg-[#21262d] text-[#8b949e]"
+                }`}
+              >
+                System events
+              </button>
+            )}
+          </div>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {data.warnings.map((warning) => (
@@ -197,9 +249,9 @@ export function ThreadPanel({
               </button>
             </div>
           )}
-          {items.map((item, index) => {
+          {visibleItems.map((item, index) => {
             const currentDate = dateKey(item.occurredAt);
-            const previousItem = items[index - 1];
+            const previousItem = visibleItems[index - 1];
             const showDate =
               !previousItem || dateKey(previousItem.occurredAt) !== currentDate;
             return (
@@ -231,7 +283,7 @@ export function ThreadPanel({
                       }`}
                     >
                       <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px] opacity-75">
-                        <span>{channelLabel(item)}</span>
+                        <ChannelLabel item={item} />
                         {item.sender && <span>· {item.sender}</span>}
                         <span>{centralTime.format(new Date(item.occurredAt))}</span>
                       </div>
@@ -251,8 +303,31 @@ export function ThreadPanel({
           })}
         </div>
         <div className="border-t border-[#30363d] bg-[#161b22] p-3">
-          <div className="rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-3 text-sm text-[#6e7681]">
-            Replies coming soon
+          <div className="flex gap-2">
+            <select
+              disabled
+              aria-label="Reply channel"
+              className="max-w-56 rounded-md border border-[#30363d] bg-[#0d1117] px-2 text-xs text-[#6e7681]"
+              defaultValue={latestTextLine ? "text" : "email"}
+            >
+              <option value="text">
+                Text · {latestTextLine ?? "last OpenPhone line"}
+              </option>
+              <option value="email">
+                Email reply · {latestEmailInbox ?? "latest Gmail inbox"}
+              </option>
+            </select>
+            <div className="flex flex-1 items-center rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2 text-sm text-[#6e7681]">
+              Replies coming soon
+            </div>
+            <button
+              type="button"
+              disabled
+              aria-label="Send reply"
+              className="rounded-md bg-[#21262d] px-3 text-[#6e7681]"
+            >
+              <Send className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </section>

@@ -509,7 +509,11 @@ function CampaignBoardContent() {
             Read-only homeowner conversation and job context
           </SheetDescription>
           {selectedContact && (
-            <ThreadPanel contactJnid={selectedContact} workspace={workspace} />
+            <ThreadPanel
+              contactJnid={selectedContact}
+              workspace={workspace}
+              allowSystemEvents
+            />
           )}
         </SheetContent>
       </Sheet>

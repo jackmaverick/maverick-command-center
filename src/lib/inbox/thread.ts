@@ -28,11 +28,40 @@ function normalizeDirection(
 
 function itemType(channel: string, source: string): ConversationItemType {
   const normalized = channel.toLowerCase();
-  if (normalized === "sms" || normalized === "text") return "text";
+  if (
+    normalized === "sms" ||
+    normalized === "text" ||
+    normalized === "text_message"
+  ) {
+    return "text";
+  }
   if (normalized === "call") return "call";
   if (normalized === "email") return "email";
   if (source === "activities" && normalized === "note") return "note";
   return "activity";
+}
+
+const COMMUNICATION_ACTIVITY_TYPES = new Set([
+  "note",
+  "email",
+  "text_message",
+  "sms",
+]);
+const SYSTEM_ACTIVITY_TYPES = new Set([
+  "status_changed",
+  "status_change",
+  "job_status_changed",
+]);
+
+export function includeThreadTimelineEvent(event: {
+  source: string;
+  channel: string;
+}): boolean {
+  if (event.source !== "activities") return true;
+  return (
+    COMMUNICATION_ACTIVITY_TYPES.has(event.channel) ||
+    SYSTEM_ACTIVITY_TYPES.has(event.channel)
+  );
 }
 
 async function buildConversationThread(
@@ -116,13 +145,13 @@ async function buildConversationThread(
     });
   }
 
-  const activityItems: ConversationItem[] = detail.timeline.events.map(
+  const activityItems: ConversationItem[] = detail.timeline.events
+    .filter(includeThreadTimelineEvent)
+    .map(
     (event) => {
       const statusEvent =
         event.source === "activities" &&
-        ["status_changed", "status_change", "job_status_changed"].includes(
-          event.channel
-        );
+        SYSTEM_ACTIVITY_TYPES.has(event.channel);
       return {
         id: `${event.source}:${event.id}`,
         type: statusEvent ? "system" : itemType(event.channel, event.source),
@@ -131,7 +160,10 @@ async function buildConversationThread(
           : normalizeDirection(event.direction),
         deliveryStatus: event.deliveryStatus,
         occurredAt: event.occurredAt,
-        channel: event.channel,
+        channel:
+          event.source === "activities" && !statusEvent
+            ? "JobNimbus"
+            : event.channel,
         line: event.line,
         sender:
           normalizeDirection(event.direction) === "outbound"
@@ -195,7 +227,7 @@ async function buildConversationThread(
 const getCachedInitialThread = unstable_cache(
   (contactJnid: string, workspace: WorkspaceKey) =>
     buildConversationThread(contactJnid, workspace, null),
-  ["campaign-thread-v2a"],
+  ["campaign-thread-v2a-communication"],
   { revalidate: 30 }
 );
 
