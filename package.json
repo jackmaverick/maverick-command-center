@@ -7,6 +7,7 @@
     "build": "node scripts/assert-production-branch.mjs && next build",
     "start": "next start",
     "lint": "eslint",
+    "test:auth-e2e": "node scripts/verify-auth-gate.mjs",
     "loop-health:migrate": "node scripts/apply-loop-health-migration.mjs",
     "loop-health:publish": "tsx scripts/collect-and-publish-loop-health.ts",
     "loop-health:install-publisher": "bash scripts/install-loop-health-graph-publisher.sh",

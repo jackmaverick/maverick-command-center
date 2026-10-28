@@ -2,11 +2,12 @@
 
 import { Menu } from "lucide-react";
 import { useState } from "react";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { MobileNav } from "./mobile-nav";
 
 export function Header() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const { data: session, status } = useSession();
 
   return (
     <>
@@ -22,13 +23,20 @@ export function Header() {
             Maverick Exteriors — Sales & Ops
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => void signOut({ callbackUrl: "/login" })}
-          className="text-xs text-[#8b949e] transition-colors hover:text-[#e6edf3]"
-        >
-          Sign out
-        </button>
+        <div className="flex items-center gap-3">
+          <span className="hidden max-w-64 truncate text-xs text-[#8b949e] sm:block">
+            {status === "loading"
+              ? "Checking session…"
+              : session?.user?.email ?? "Signed in"}
+          </span>
+          <button
+            type="button"
+            onClick={() => void signOut({ callbackUrl: "/login" })}
+            className="text-xs text-[#8b949e] transition-colors hover:text-[#e6edf3]"
+          >
+            Sign out
+          </button>
+        </div>
       </header>
       <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
     </>
