@@ -368,13 +368,13 @@ export function ThreadPanel({
 
   if (isLoading) {
     return (
-      <div className="grid h-full flex-1 grid-cols-[minmax(0,1fr)_280px]">
+      <div className="grid h-full min-h-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden xl:grid-cols-[minmax(0,1fr)_280px]">
         <div className="space-y-3 p-5">
           {[1, 2, 3, 4].map((item) => (
             <Skeleton key={item} className="h-20 bg-[#21262d]" />
           ))}
         </div>
-        <div className="border-l border-[#30363d] p-4">
+        <div className="hidden border-l border-[#30363d] p-4 xl:block">
           <Skeleton className="h-56 bg-[#21262d]" />
         </div>
       </div>
@@ -389,9 +389,9 @@ export function ThreadPanel({
   }
 
   return (
-    <div className="grid h-full min-w-0 flex-1 grid-cols-[minmax(0,1fr)_280px]">
-      <section className="flex min-w-0 flex-col bg-[#0d1117]">
-        <header className="border-b border-[#30363d] px-5 py-3">
+    <div className="grid h-full min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden xl:grid-cols-[minmax(0,1fr)_280px]">
+      <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#0d1117]">
+        <header className="shrink-0 border-b border-[#30363d] px-5 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="font-semibold text-[#e6edf3]">{data.homeowner.name}</h2>
@@ -488,7 +488,7 @@ export function ThreadPanel({
             );
           })}
         </div>
-        <div className="border-t border-[#30363d] bg-[#161b22] p-3">
+        <div className="shrink-0 border-t border-[#30363d] bg-[#161b22] p-3">
           {replyContext?.outbound.slice(0, 3).map((outbound) => (
             <div
               key={outbound.id}
@@ -617,7 +617,7 @@ export function ThreadPanel({
                 "Write a reply…"
               }
               rows={2}
-              className="min-h-12 flex-1 resize-none rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2 text-sm text-[#e6edf3] placeholder:text-[#6e7681] disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-12 max-h-32 flex-1 resize-none overflow-y-auto rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2 text-sm text-[#e6edf3] [field-sizing:content] placeholder:text-[#6e7681] disabled:cursor-not-allowed disabled:opacity-60"
             />
             <button
               type="button"
@@ -647,7 +647,7 @@ export function ThreadPanel({
         </div>
       </section>
 
-      <aside className="min-h-0 overflow-y-auto border-l border-[#30363d] bg-[#161b22] p-4">
+      <aside className="hidden h-full min-h-0 overflow-y-auto border-l border-[#30363d] bg-[#161b22] p-4 xl:block">
         <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-[#8b949e]">
           Homeowner
         </h3>

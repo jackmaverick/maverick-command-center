@@ -225,3 +225,12 @@ export function getGoogleServiceAccountClientId(): string | null {
     return null;
   }
 }
+
+export function isGmailConfigured(): boolean {
+  try {
+    googleCredentials();
+    return true;
+  } catch {
+    return false;
+  }
+}

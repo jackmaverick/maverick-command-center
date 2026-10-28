@@ -225,6 +225,15 @@ function CampaignBoardContent() {
     },
     refetchInterval: 45_000,
   });
+  const { data: replyStatus } = useQuery<{ repliesOn: boolean }>({
+    queryKey: ["reply-status"],
+    queryFn: async () => {
+      const response = await fetch("/api/replies/status");
+      if (!response.ok) return { repliesOn: false };
+      return response.json();
+    },
+    staleTime: 30_000,
+  });
 
   const updateUrl = (changes: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -261,11 +270,17 @@ function CampaignBoardContent() {
   );
 
   return (
-    <div className="-m-4 flex h-[calc(100vh-4rem)] min-h-[680px] flex-col overflow-hidden bg-[#0d1117] lg:-m-6">
+    <div className="-m-4 flex h-[calc(100dvh-4rem)] max-h-[calc(100dvh-4rem)] min-h-0 flex-col overflow-hidden bg-[#0d1117] lg:-m-6">
       <header className="flex flex-wrap items-center gap-3 border-b border-[#30363d] bg-[#161b22] px-4 py-3">
         <div>
           <h1 className="text-lg font-semibold text-[#e6edf3]">Homeowner Inbox</h1>
-          <p className="text-xs text-[#8b949e]">View only · replies coming soon</p>
+          {!replyStatus?.repliesOn ? (
+            <p className="text-xs text-[#8b949e]">
+              View only · replies coming soon
+            </p>
+          ) : (
+            <p className="text-xs text-[#3fb950]">Replies on</p>
+          )}
         </div>
         <div className="ml-auto flex rounded-md border border-[#30363d] bg-[#0d1117] p-0.5">
           <button
@@ -502,7 +517,7 @@ function CampaignBoardContent() {
       >
         <SheetContent
           side="right"
-          className="w-[72vw] max-w-none gap-0 border-[#30363d] bg-[#0d1117] p-0 sm:max-w-none"
+          className="h-[100dvh] max-h-[100dvh] w-[72vw] max-w-none gap-0 overflow-hidden border-[#30363d] bg-[#0d1117] p-0 sm:max-w-none"
         >
           <SheetTitle className="sr-only">Homeowner conversation</SheetTitle>
           <SheetDescription className="sr-only">
@@ -525,7 +540,7 @@ export default function CampaignBoardPage() {
   return (
     <Suspense
       fallback={
-        <div className="-m-4 h-[calc(100vh-4rem)] bg-[#0d1117] p-6 lg:-m-6">
+        <div className="-m-4 h-[calc(100dvh-4rem)] min-h-0 bg-[#0d1117] p-6 lg:-m-6">
           <Skeleton className="h-full bg-[#161b22]" />
         </div>
       }

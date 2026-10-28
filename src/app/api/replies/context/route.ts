@@ -4,6 +4,7 @@ import { isAuthorizedSession } from "@/lib/auth-policy";
 import { resolveEmailContext, resolveTextContext } from "@/lib/replies/context";
 import { getDrafts, listContactOutbound } from "@/lib/replies/repository";
 import { replyPolicy } from "@/lib/replies/policy";
+import { isGmailConfigured } from "@/lib/replies/providers";
 import { logServerError } from "@/lib/server-error";
 
 export const runtime = "nodejs";
@@ -30,10 +31,20 @@ export async function GET(request: NextRequest) {
       getDrafts(contactJnid, actorEmail),
       listContactOutbound(contactJnid),
     ]);
+    const textPolicy = replyPolicy(actorEmail, "text");
+    const baseEmailPolicy = replyPolicy(actorEmail, "email");
+    const emailPolicy = isGmailConfigured()
+      ? baseEmailPolicy
+      : {
+          ...baseEmailPolicy,
+          canCompose: false,
+          sendNow: false,
+          reason: "Email sending not set up yet",
+        };
     return NextResponse.json({
       capabilities: {
-        text: replyPolicy(actorEmail, "text"),
-        email: replyPolicy(actorEmail, "email"),
+        text: textPolicy,
+        email: emailPolicy,
         note: replyPolicy(actorEmail, "note"),
       },
       text,
