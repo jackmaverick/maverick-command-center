@@ -26,7 +26,11 @@ vi.mock("./repository", () => ({
   claimDueMessages: mocks.claimDueMessages,
 }));
 
-import { createReply, ReplySafetyError } from "./service";
+import {
+  createReply,
+  releaseDueReplies,
+  ReplySafetyError,
+} from "./service";
 
 const request: ReplyRequest = {
   idempotencyKey: "test-idempotency-key-123",
@@ -75,6 +79,7 @@ const providers: ReplyProviders = {
 
 describe("reply service safety", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
     process.env.REPLIES_ENABLED = "true";
     process.env.REPLIES_ALLOWED_EMAILS =
@@ -171,5 +176,32 @@ describe("reply service safety", () => {
     );
     expect(providers.sendText).toHaveBeenCalledOnce();
     expect(result.status).toBe("pending");
+  });
+
+  it("does not claim or release the queue while replies are disabled", async () => {
+    process.env.REPLIES_ENABLED = "false";
+    expect(await releaseDueReplies(providers)).toEqual({
+      skipped: true,
+      processed: 0,
+      delivered: 0,
+      failed: 0,
+    });
+    expect(mocks.claimDueMessages).not.toHaveBeenCalled();
+    expect(providers.sendText).not.toHaveBeenCalled();
+  });
+
+  it("releases due queue entries only through injected providers", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-28T15:00:00Z"));
+    mocks.claimDueMessages.mockResolvedValue([message("pending")]);
+    const result = await releaseDueReplies(providers);
+    expect(result).toEqual({
+      skipped: false,
+      processed: 1,
+      delivered: 1,
+      failed: 0,
+    });
+    expect(providers.sendText).toHaveBeenCalledOnce();
+    vi.useRealTimers();
   });
 });
