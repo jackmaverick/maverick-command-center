@@ -141,8 +141,11 @@ function CampaignBoardContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const view = (searchParams.get("view") === "board" ? "board" : "inbox") as ViewMode;
   const workspace = (searchParams.get("workspace") ?? "insurance") as WorkspaceKey;
+  const view = (searchParams.get("view") === "board" &&
+  workspace !== "general"
+    ? "board"
+    : "inbox") as ViewMode;
   const selectedContact = searchParams.get("thread");
   const [openFilter, setOpenFilter] = useState<OpenFilter>("open");
   const [unread, setUnread] = useState(false);
