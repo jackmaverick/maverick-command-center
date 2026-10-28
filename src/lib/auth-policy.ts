@@ -19,7 +19,7 @@ function normalizeEmail(email: string): string {
 }
 
 export function getAuthAccessConfig(
-  env: NodeJS.ProcessEnv = process.env
+  env: Record<string, string | undefined> = process.env
 ): AuthAccessConfig {
   const domain = env.AUTH_ALLOWED_DOMAIN?.trim().toLowerCase() || null;
   const allowedEmails = new Set(

@@ -6,6 +6,7 @@ import {
   appendRows,
   updateRange,
 } from "@/lib/google-sheets";
+import { isCronAuthorized } from "@/lib/cron-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -29,15 +30,6 @@ const DEFAULT_SHEET_ID = "1iQyts1T__2meVDZu5vudiC4ceKnOb3d16BiewWSiCp4";
 const DEFAULT_HISTORY_TAB = "Daily Bank Balance";
 const HISTORY_HEADER = ["Date", "Account", "Balance", "Synced At (QBO)"];
 
-function isAuthorized(req: NextRequest): boolean {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return true;
-  return (
-    req.headers.get("x-cron-secret") === cronSecret ||
-    req.headers.get("authorization") === `Bearer ${cronSecret}`
-  );
-}
-
 /** Today's date as YYYY-MM-DD in Central Time (the business's timezone). */
 function todayCentral(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -55,7 +47,7 @@ interface BankAccount {
 }
 
 async function handleSync(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!isCronAuthorized(req.headers)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

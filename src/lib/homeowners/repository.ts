@@ -527,7 +527,37 @@ export async function getHomeownerDetail(
            OR LOWER(COALESCE(intake.payload->>'email', '')) = ANY($4::text[])
            OR regexp_replace(COALESCE(intake.payload->>'phoneNumber', ''), '\\D', '', 'g') = ANY($3::text[])
          )
-         ORDER BY intake.created_at DESC
+         
+         UNION ALL
+
+         SELECT
+           webhook.id::text,
+           'hatch',
+           COALESCE(
+             webhook.body->'data'->'payload'->>'campaign_name',
+             webhook.body->'data'->'payload'->'campaign'->>'name',
+             'Hatch webhook'
+           ),
+           COALESCE(
+             webhook.body->'data'->'payload'->>'status',
+             webhook.event_type
+           ),
+           webhook.event_type,
+           COALESCE(webhook.occurred_at, webhook.received_at)::text,
+           CASE
+             WHEN webhook.body->'data'->'payload'->>'external_contact_id' = $1
+               OR webhook.body->'data'->'payload'->>'external_opportunity_id' = ANY($2::text[]) THEN 'direct'
+             WHEN LOWER(COALESCE(webhook.body->'data'->'payload'->>'email', '')) = ANY($4::text[]) THEN 'email_fallback'
+             ELSE 'phone_fallback'
+           END
+         FROM hatch_webhook_events webhook
+         WHERE (
+           webhook.body->'data'->'payload'->>'external_contact_id' = $1
+           OR webhook.body->'data'->'payload'->>'external_opportunity_id' = ANY($2::text[])
+           OR LOWER(COALESCE(webhook.body->'data'->'payload'->>'email', '')) = ANY($4::text[])
+           OR regexp_replace(COALESCE(webhook.body->'data'->'payload'->>'phone', ''), '\\D', '', 'g') = ANY($3::text[])
+         )
+         ORDER BY "updatedAt" DESC
          LIMIT 25`,
         [contactJnid, jobJnids, identity.phoneDigits, identity.emails]
       ),
