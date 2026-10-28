@@ -36,7 +36,7 @@ export async function resolveTextContext(
   jobJnid: string | null,
   recordDetectedOptOut = false
 ) {
-  const [latest, incomingStop, existingOptOut, activeLines] = await Promise.all([
+  const [latest, incomingStop, existingOptOut, syncedConsent, activeLines] = await Promise.all([
     queryOne<SmsContextRow>(
       `SELECT
          sms.id, sms.contact_jnid, sms.job_jnid, sms.direction,
@@ -75,6 +75,15 @@ export async function resolveTextContext(
        FROM cc_sms_opt_outs
        WHERE contact_jnid = $1
        ORDER BY opted_out_at DESC
+       LIMIT 1`,
+      [contactJnid]
+    ),
+    queryOne<{ phone_number: string | null; opt_out_reason: string | null }>(
+      `SELECT phone_number, opt_out_reason
+       FROM sms_consent
+       WHERE contact_jnid = $1
+         AND (opt_out_at IS NOT NULL OR COALESCE(is_active, true) = false)
+       ORDER BY opt_out_at DESC NULLS LAST
        LIMIT 1`,
       [contactJnid]
     ),
@@ -134,7 +143,7 @@ export async function resolveTextContext(
       : latest?.to_numbers?.[0]
   );
   const selectedLine =
-    latest?.phone_number_id && fromNumber
+    latest?.phone_number_id && fromNumber && latest.line_active !== false
       ? {
           phoneNumberId: latest.phone_number_id,
           phoneNumber: fromNumber,
@@ -150,10 +159,10 @@ export async function resolveTextContext(
       phoneNumber: normalizePhone(line.phone_number) ?? line.phone_number,
       name: line.name,
     })),
-    optedOut: Boolean(recordedOptOut || incomingStop),
+    optedOut: Boolean(recordedOptOut || incomingStop || syncedConsent),
     blockedReason:
-      recordedOptOut || incomingStop
-        ? `Text blocked: homeowner opted out with ${recordedOptOut?.keyword ?? incomingStop?.message_text ?? "STOP"}`
+      recordedOptOut || incomingStop || syncedConsent
+        ? `Text blocked: homeowner opted out with ${recordedOptOut?.keyword ?? incomingStop?.message_text ?? syncedConsent?.opt_out_reason ?? "STOP"}`
         : !toNumber
           ? "Text blocked: no homeowner mobile number resolved"
           : null,
@@ -169,6 +178,7 @@ interface EmailContextRow {
   from_email: string | null;
   to_recipients: unknown;
   cc_recipients: unknown;
+  direction: string;
 }
 
 function recipientEmails(value: unknown): string[] {
@@ -191,29 +201,48 @@ export async function resolveEmailContext(
   contactJnid: string,
   jobJnid: string | null
 ) {
-  const latest = await queryOne<EmailContextRow>(
+  const [latest, contact] = await Promise.all([
+    queryOne<EmailContextRow>(
     `SELECT
        gmail_message_id, gmail_thread_id, internet_message_id,
-       monitored_mailbox, subject, from_email, to_recipients, cc_recipients
+       monitored_mailbox, subject, from_email, to_recipients, cc_recipients,
+       direction
      FROM emails
      WHERE contact_jnid = $1 OR ($2::text IS NOT NULL AND job_jnid = $2)
      ORDER BY COALESCE(sent_at, received_at, created_at) DESC
      LIMIT 1`,
-    [contactJnid, jobJnid]
-  );
+      [contactJnid, jobJnid]
+    ),
+    queryOne<{ email: string | null }>(
+      `SELECT email FROM contacts WHERE jnid = $1 AND deleted_at IS NULL`,
+      [contactJnid]
+    ),
+  ]);
   const mailbox = latest?.monitored_mailbox?.toLowerCase() ?? null;
   const allowedMailbox = mailbox
     ? ALLOWED_GMAIL_SENDERS.includes(
         mailbox as (typeof ALLOWED_GMAIL_SENDERS)[number]
       )
     : false;
-  const allRecipients = new Set([
-    ...(latest?.from_email ? [latest.from_email.toLowerCase()] : []),
-    ...recipientEmails(latest?.to_recipients),
-    ...recipientEmails(latest?.cc_recipients),
+  const originalTo = recipientEmails(latest?.to_recipients);
+  const originalCc = recipientEmails(latest?.cc_recipients);
+  const replyTo = new Set(
+    latest?.direction === "outbound"
+      ? originalTo
+      : latest?.from_email
+        ? [latest.from_email.toLowerCase()]
+        : []
+  );
+  const replyCc = new Set([
+    ...originalCc,
+    ...(latest?.direction === "inbound" ? originalTo : []),
   ]);
   for (const ownAddress of ALLOWED_GMAIL_SENDERS) {
-    allRecipients.delete(ownAddress);
+    replyTo.delete(ownAddress);
+    replyCc.delete(ownAddress);
+  }
+  for (const address of replyTo) {
+    replyCc.delete(address);
   }
 
   return {
@@ -226,13 +255,8 @@ export async function resolveEmailContext(
           subject: latest.subject?.match(/^re:/i)
             ? latest.subject
             : `Re: ${latest.subject ?? ""}`.trim(),
-          to: [...allRecipients],
-          cc: recipientEmails(latest.cc_recipients).filter(
-            (email) =>
-              !ALLOWED_GMAIL_SENDERS.includes(
-                email as (typeof ALLOWED_GMAIL_SENDERS)[number]
-              )
-          ),
+          to: [...replyTo],
+          cc: [...replyCc],
           blockedReason: allowedMailbox
             ? null
             : `Email reply blocked: ${mailbox ?? "no monitored mailbox"} is not an approved send inbox`,
@@ -241,6 +265,7 @@ export async function resolveEmailContext(
     newEmail: {
       defaultFrom: "info@maverickexteriorskc.com",
       fromOptions: [...ALLOWED_GMAIL_SENDERS],
+      to: contact?.email ? [contact.email.toLowerCase()] : [],
     },
   };
 }

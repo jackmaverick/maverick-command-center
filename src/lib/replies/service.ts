@@ -155,7 +155,8 @@ export async function dispatchOutbound(
         ? await recordProviderAccepted(
             message.id,
             result.providerMessageId,
-            result.providerThreadId ?? null
+            result.providerThreadId ?? null,
+            actorEmail
           )
         : await updateOutboundStatus(message.id, actorEmail, "delivered", {
             providerMessageId: result.providerMessageId,

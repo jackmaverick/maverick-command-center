@@ -218,7 +218,8 @@ export async function updateOutboundStatus(
 export async function recordProviderAccepted(
   id: string,
   providerMessageId: string,
-  providerThreadId: string | null
+  providerThreadId: string | null,
+  actorEmail: string
 ): Promise<OutboundMessage | null> {
   const row = await queryOne<OutboundRow>(
     `UPDATE cc_outbound_messages
@@ -233,7 +234,24 @@ export async function recordProviderAccepted(
      RETURNING *`,
     [id, providerMessageId, providerThreadId]
   );
-  return row ? mapOutbound(row) : null;
+  if (!row) return null;
+  const message = mapOutbound(row);
+  await query(
+    `INSERT INTO cc_send_audit (
+       outbound_message_id, event_type, actor_email, channel,
+       from_address, to_addresses, provider_message_id, detail
+     ) VALUES ($1, 'sending', $2, $3, $4, $5, $6, $7)`,
+    [
+      message.id,
+      actorEmail,
+      message.channel,
+      message.fromAddress,
+      message.toAddresses,
+      providerMessageId,
+      JSON.stringify({ providerStatus: "pending" }),
+    ]
+  );
+  return message;
 }
 
 export async function getOutboundMessage(

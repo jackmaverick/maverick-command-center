@@ -6,13 +6,15 @@ import {
   getDrafts,
   saveDraft,
 } from "@/lib/replies/repository";
+import { canUserReply } from "@/lib/replies/policy";
 import { replyRequestSchema } from "@/lib/replies/validation";
 import { logServerError } from "@/lib/server-error";
 
 async function actor() {
   const session = await auth();
   if (!isAuthorizedSession(session)) return null;
-  return session?.user?.email?.toLowerCase() ?? null;
+  const email = session?.user?.email?.toLowerCase() ?? null;
+  return canUserReply(email) ? email : null;
 }
 
 export async function GET(request: NextRequest) {
