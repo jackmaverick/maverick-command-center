@@ -1,8 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   ExternalLink,
   Mail,
@@ -50,6 +55,55 @@ interface ThreadData {
   } | null;
   warnings: Array<{ source: string; message: string }>;
   nextCursor: string | null;
+}
+
+interface ReplyContext {
+  capabilities: Record<
+    "text" | "email" | "note",
+    {
+      enabled: boolean;
+      allowed: boolean;
+      canCompose: boolean;
+      sendNow: boolean;
+      queueFor: string | null;
+      reason: string | null;
+    }
+  >;
+  text: {
+    selectedLine: {
+      phoneNumberId: string;
+      phoneNumber: string;
+      name: string | null;
+    } | null;
+    recipient: string | null;
+    lines: Array<{
+      phoneNumberId: string;
+      phoneNumber: string;
+      name: string | null;
+    }>;
+    optedOut: boolean;
+    blockedReason: string | null;
+  };
+  email: {
+    reply: {
+      mailbox: string | null;
+      subject: string;
+      blockedReason: string | null;
+    } | null;
+    newEmail: { defaultFrom: string; fromOptions: string[] };
+  };
+  outbound: Array<{
+    id: string;
+    channel: "text" | "email" | "note";
+    status: string;
+    body: string;
+    scheduledFor: string | null;
+    failureMessage: string | null;
+  }>;
+  drafts: Array<{
+    channel: "text" | "email" | "note";
+    body: string;
+  }>;
 }
 
 const centralDate = new Intl.DateTimeFormat("en-US", {
@@ -128,6 +182,14 @@ export function ThreadPanel({
   allowSystemEvents?: boolean;
 }) {
   const [showSystemEvents, setShowSystemEvents] = useState(false);
+  const [selectedChannel, setSelectedChannel] = useState<
+    "text" | "email" | "note" | null
+  >(null);
+  const [body, setBody] = useState("");
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [emailMode, setEmailMode] = useState<"reply" | "new">("reply");
+  const [emailFrom, setEmailFrom] = useState("info@maverickexteriorskc.com");
+  const queryClient = useQueryClient();
   const {
     data: queryData,
     isLoading,
@@ -179,6 +241,126 @@ export function ThreadPanel({
   const latestEmailInbox = [...items]
     .reverse()
     .find((item) => item.type === "email" && item.channel !== "JobNimbus")?.line;
+  const defaultChannel =
+    [...items].reverse().find((item) =>
+      ["text", "email"].includes(item.type)
+    )?.type === "email"
+      ? "email"
+      : "text";
+  const channel = selectedChannel ?? defaultChannel;
+  const jobJnid = data?.primaryJob?.jobJnid ?? null;
+  const { data: replyContext } = useQuery<ReplyContext>({
+    queryKey: ["reply-context", contactJnid, jobJnid],
+    enabled: Boolean(data),
+    queryFn: async () => {
+      const params = new URLSearchParams({ contactJnid });
+      if (jobJnid) params.set("jobJnid", jobJnid);
+      const response = await fetch(`/api/replies/context?${params}`);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error ?? "Reply context failed");
+      return payload;
+    },
+    refetchInterval: 45_000,
+  });
+  const sendReply = useMutation({
+    mutationFn: async () => {
+      const selectedLine =
+        replyContext?.text.lines.find(
+          (line) =>
+            line.phoneNumberId ===
+            (selectedLineId ?? replyContext.text.selectedLine?.phoneNumberId)
+        ) ?? null;
+      const response = await fetch("/api/replies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idempotencyKey: crypto.randomUUID(),
+          workspace,
+          contactJnid,
+          jobJnid,
+          channel,
+          messageMode: channel === "email" ? emailMode : "reply",
+          body,
+          fromAddress:
+            channel === "text"
+              ? selectedLine?.phoneNumber
+              : channel === "email" && emailMode === "new"
+                ? emailFrom
+                : null,
+          providerContext:
+            channel === "text" && selectedLine
+              ? { phoneNumberId: selectedLine.phoneNumberId }
+              : {},
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error ?? "Reply failed");
+      return payload;
+    },
+    onSuccess: () => {
+      setBody("");
+      void queryClient.invalidateQueries({
+        queryKey: ["reply-context", contactJnid],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["campaign-thread", contactJnid],
+      });
+    },
+  });
+  const capability = replyContext?.capabilities[channel];
+  const channelBlockedReason =
+    channel === "text"
+      ? replyContext?.text.blockedReason
+      : channel === "email" && emailMode === "reply"
+        ? replyContext?.email.reply?.blockedReason
+        : null;
+  const canSend = Boolean(
+    capability?.canCompose &&
+      body.trim() &&
+      !channelBlockedReason &&
+      !sendReply.isPending
+  );
+  const sendLabel =
+    channel !== "note" && capability && !capability.sendNow
+      ? "Queue for 8am"
+      : "Send";
+
+  useEffect(() => {
+    if (!replyContext?.capabilities[channel].canCompose) return;
+    const timer = window.setTimeout(() => {
+      if (!body.trim()) {
+        void fetch(
+          `/api/replies/drafts?contactJnid=${encodeURIComponent(contactJnid)}&channel=${channel}`,
+          { method: "DELETE" }
+        );
+        return;
+      }
+      void fetch("/api/replies/drafts", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idempotencyKey: `draft:${workspace}:${contactJnid}:${channel}`,
+          workspace,
+          contactJnid,
+          jobJnid,
+          channel,
+          messageMode: channel === "email" ? emailMode : "reply",
+          body,
+          fromAddress: channel === "email" ? emailFrom : null,
+        }),
+      });
+    }, 750);
+    return () => window.clearTimeout(timer);
+  }, [
+    body,
+    channel,
+    contactJnid,
+    emailFrom,
+    emailMode,
+    jobJnid,
+    replyContext,
+    workspace,
+  ]);
 
   if (isLoading) {
     return (
@@ -303,31 +485,160 @@ export function ThreadPanel({
           })}
         </div>
         <div className="border-t border-[#30363d] bg-[#161b22] p-3">
-          <div className="flex gap-2">
-            <select
-              disabled
-              aria-label="Reply channel"
-              className="max-w-56 rounded-md border border-[#30363d] bg-[#0d1117] px-2 text-xs text-[#6e7681]"
-              defaultValue={latestTextLine ? "text" : "email"}
+          {replyContext?.outbound.slice(0, 3).map((outbound) => (
+            <div
+              key={outbound.id}
+              className="mb-2 flex items-center gap-2 rounded-md bg-[#0d1117] px-2.5 py-1.5 text-[10px] text-[#8b949e]"
             >
-              <option value="text">
-                Text · {latestTextLine ?? "last OpenPhone line"}
-              </option>
-              <option value="email">
-                Email reply · {latestEmailInbox ?? "latest Gmail inbox"}
-              </option>
-            </select>
-            <div className="flex flex-1 items-center rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2 text-sm text-[#6e7681]">
-              Replies coming soon
+              <span className="capitalize">{outbound.channel}</span>
+              <span>·</span>
+              <span className="capitalize">{outbound.status}</span>
+              {outbound.scheduledFor && (
+                <span>· queued for {centralTime.format(new Date(outbound.scheduledFor))}</span>
+              )}
+              <span className="min-w-0 flex-1 truncate">{outbound.body}</span>
+              {outbound.status === "queued" && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await fetch(`/api/replies/${outbound.id}`, {
+                      method: "DELETE",
+                    });
+                    void queryClient.invalidateQueries({
+                      queryKey: ["reply-context", contactJnid],
+                    });
+                  }}
+                  className="text-red-300"
+                >
+                  Cancel
+                </button>
+              )}
+              {outbound.status === "failed" && (
+                <button
+                  type="button"
+                  disabled={!capability?.canCompose}
+                  onClick={async () => {
+                    await fetch(`/api/replies/${outbound.id}`, {
+                      method: "POST",
+                    });
+                    void queryClient.invalidateQueries({
+                      queryKey: ["reply-context", contactJnid],
+                    });
+                  }}
+                  className="text-[#58a6ff] disabled:opacity-40"
+                >
+                  Retry
+                </button>
+              )}
             </div>
+          ))}
+          <div className="mb-2 flex flex-wrap gap-1">
+            {(["text", "email", "note"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                disabled={!replyContext?.capabilities[option].canCompose}
+                onClick={() => {
+                  setSelectedChannel(option);
+                  setBody(
+                    replyContext?.drafts.find(
+                      (draft) => draft.channel === option
+                    )?.body ?? ""
+                  );
+                }}
+                className={`rounded-full px-2.5 py-1 text-[11px] capitalize ${
+                  channel === option
+                    ? "bg-[#1f6feb] text-white"
+                    : "bg-[#21262d] text-[#8b949e]"
+                } disabled:cursor-not-allowed disabled:opacity-40`}
+              >
+                {option === "note" ? "Internal note" : option}
+              </button>
+            ))}
+          </div>
+          {channel === "text" &&
+            replyContext &&
+            !replyContext.text.selectedLine && (
+              <select
+                value={selectedLineId ?? ""}
+                onChange={(event) => setSelectedLineId(event.target.value)}
+                disabled={!capability?.canCompose}
+                className="mb-2 w-full rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-2 text-xs text-[#c9d1d9]"
+              >
+                <option value="">Select an OpenPhone line</option>
+                {replyContext.text.lines.map((line) => (
+                  <option key={line.phoneNumberId} value={line.phoneNumberId}>
+                    {line.name ?? "OpenPhone"} · {line.phoneNumber}
+                  </option>
+                ))}
+              </select>
+            )}
+          {channel === "email" && replyContext && (
+            <div className="mb-2 flex gap-2">
+              <select
+                value={emailMode}
+                onChange={(event) =>
+                  setEmailMode(event.target.value as "reply" | "new")
+                }
+                disabled={!capability?.canCompose}
+                className="rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-2 text-xs text-[#c9d1d9]"
+              >
+                <option value="reply">Reply in thread</option>
+                <option value="new">New email</option>
+              </select>
+              {emailMode === "new" && (
+                <select
+                  value={emailFrom}
+                  onChange={(event) => setEmailFrom(event.target.value)}
+                  disabled={!capability?.canCompose}
+                  className="min-w-0 flex-1 rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-2 text-xs text-[#c9d1d9]"
+                >
+                  {replyContext.email.newEmail.fromOptions.map((mailbox) => (
+                    <option key={mailbox} value={mailbox}>
+                      From {mailbox}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <textarea
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              disabled={!capability?.canCompose}
+              placeholder={
+                capability?.reason ??
+                channelBlockedReason ??
+                "Write a reply…"
+              }
+              rows={2}
+              className="min-h-12 flex-1 resize-none rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2 text-sm text-[#e6edf3] placeholder:text-[#6e7681] disabled:cursor-not-allowed disabled:opacity-60"
+            />
             <button
               type="button"
-              disabled
+              disabled={!canSend}
+              onClick={() => sendReply.mutate()}
               aria-label="Send reply"
-              className="rounded-md bg-[#21262d] px-3 text-[#6e7681]"
+              title={sendLabel}
+              className="rounded-md bg-[#1f6feb] px-3 text-white disabled:bg-[#21262d] disabled:text-[#6e7681]"
             >
               <Send className="h-4 w-4" />
             </button>
+          </div>
+          <div className="mt-1.5 text-[10px] text-[#6e7681]">
+            {!replyContext?.capabilities[channel].enabled
+              ? "Replies are disabled by REPLIES_ENABLED."
+              : channelBlockedReason ??
+                (sendLabel === "Queue for 8am"
+                  ? "Outside 8am–7pm CT. This reply will be queued."
+                  : `${sendLabel} via ${
+                      channel === "text"
+                        ? latestTextLine ?? "selected OpenPhone line"
+                        : channel === "email"
+                          ? latestEmailInbox ?? emailFrom
+                          : "JobNimbus"
+                    }`)}
           </div>
         </div>
       </section>
