@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 interface BoardCard {
   id: string;
   state: string;
-  contact_jnid: string | null;
+  contactJnid: string | null;
   homeowner_name: string;
   job_status: string | null;
   sales_rep: string | null;
@@ -151,10 +151,10 @@ export default function CampaignBoardPage() {
                             </p>
                           </div>
                         );
-                        return card.contact_jnid ? (
+                        return card.contactJnid ? (
                           <Link
                             key={card.id}
-                            href={`/homeowners/${card.contact_jnid}`}
+                            href={`/homeowners/${encodeURIComponent(card.contactJnid)}`}
                           >
                             {content}
                           </Link>

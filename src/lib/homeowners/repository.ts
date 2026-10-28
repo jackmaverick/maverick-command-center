@@ -424,7 +424,7 @@ export async function getHomeownerDetail(
   before: TimelineCursor | null,
   limit = 100
 ) {
-  const contact = await queryOne<ContactRow>(
+  let contact = await queryOne<ContactRow>(
     `SELECT
        c.jnid AS contact_jnid,
        COALESCE(NULLIF(c.display_name, ''), NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''), 'Unnamed contact') AS display_name,
@@ -440,7 +440,32 @@ export async function getHomeownerDetail(
        AND ${CONTACT_NOT_TEST_SQL}`,
     [contactJnid]
   );
+
+  // Some automation enrollments retain a valid JobNimbus primary-contact ID
+  // before (or after) that contact is present in the contacts mirror. Keep the
+  // detail page usable from the job's synced primary-contact fields.
+  if (!contact) {
+    contact = await queryOne<ContactRow>(
+      `SELECT
+         COALESCE(j.primary_contact_jnid, $1) AS contact_jnid,
+         COALESCE(NULLIF(j.primary_contact_name, ''), NULLIF(j.name, ''), 'Unnamed contact') AS display_name,
+         j.primary_contact_email AS email,
+         j.primary_contact_number AS mobile_phone,
+         j.parent_home_phone AS home_phone,
+         j.parent_work_phone AS work_phone,
+         NULLIF(TRIM(CONCAT_WS(', ', j.address_line1, j.address_line2, j.city, j.state_text, j.zip)), '') AS address,
+         false AS disable_auto_text
+       FROM jobs j
+       WHERE (j.primary_contact_jnid = $1 OR j.jnid = $1)
+         AND j.deleted_at IS NULL
+         AND ${jobNotTestSql("j")}
+       ORDER BY j.updated_at DESC NULLS LAST
+       LIMIT 1`,
+      [contactJnid]
+    );
+  }
   if (!contact) return null;
+  const resolvedContactJnid = contact.contact_jnid;
 
   const jobRows = await query<{
     job_jnid: string;
@@ -470,7 +495,7 @@ export async function getHomeownerDetail(
        AND j.deleted_at IS NULL
        AND ${jobNotTestSql("j")}
      ORDER BY name`,
-    [contactJnid]
+    [resolvedContactJnid]
   );
   const jobs: HomeownerJob[] = jobRows.map((job) => ({
     jobJnid: job.job_jnid,
@@ -484,7 +509,7 @@ export async function getHomeownerDetail(
     dateOfLoss: unixDate(job.date_of_loss),
   }));
   const jobJnids = jobs.map((job) => job.jobJnid);
-  const identity = await loadIdentity(contactJnid);
+  const identity = await loadIdentity(resolvedContactJnid);
 
   const [sequenceRows, marketingRows, hatchRows, suppressions, exclusions, timeline] =
     await Promise.all([
@@ -516,7 +541,7 @@ export async function getHomeownerDetail(
                )
              )
            )`,
-        [contactJnid, jobJnids, identity.phoneDigits, identity.emails]
+        [resolvedContactJnid, jobJnids, identity.phoneDigits, identity.emails]
       ),
       query<CampaignEnrollment>(
         `SELECT
@@ -531,7 +556,7 @@ export async function getHomeownerDetail(
          JOIN marketing_automation_campaigns campaign ON campaign.id = member.campaign_id
          WHERE COALESCE(member.enrollment_state, member.status) NOT IN ('exited', 'discarded')
            AND (member.contact_jnid = $1 OR member.job_jnid = ANY($2::text[]))`,
-        [contactJnid, jobJnids]
+        [resolvedContactJnid, jobJnids]
       ),
       query<CampaignEnrollment>(
         `SELECT
@@ -586,7 +611,7 @@ export async function getHomeownerDetail(
          )
          ORDER BY "updatedAt" DESC
          LIMIT 25`,
-        [contactJnid, jobJnids, identity.phoneDigits, identity.emails]
+        [resolvedContactJnid, jobJnids, identity.phoneDigits, identity.emails]
       ),
       query<Suppression>(
         `SELECT
@@ -614,7 +639,7 @@ export async function getHomeownerDetail(
                )
              )
            )`,
-        [contactJnid, jobJnids, identity.phoneDigits, identity.emails]
+        [resolvedContactJnid, jobJnids, identity.phoneDigits, identity.emails]
       ),
       query<{ job_number: string; reason: string }>(
         `SELECT exclusion.job_number, exclusion.reason
@@ -624,7 +649,7 @@ export async function getHomeownerDetail(
         [jobJnids]
       ),
       loadTimeline(
-        contactJnid,
+        resolvedContactJnid,
         jobJnids,
         identity.phoneDigits,
         identity.emails,
@@ -671,7 +696,7 @@ interface BoardCardRow {
   engine: "sequence" | "marketing";
   state: string;
   needs_human: boolean;
-  contact_jnid: string | null;
+  contactJnid: string | null;
   homeowner_name: string;
   job_status: string | null;
   sales_rep: string | null;
@@ -692,7 +717,7 @@ async function loadSequenceBoardRows(): Promise<BoardCardRow[]> {
        'sequence'::text AS engine,
        COALESCE(enrollment.state, 'unknown') AS state,
        false AS needs_human,
-       COALESCE(enrollment.contact_jnid, job.primary_contact_jnid) AS contact_jnid,
+       COALESCE(enrollment.contact_jnid, job.primary_contact_jnid) AS "contactJnid",
        COALESCE(NULLIF(contact.display_name, ''), job.primary_contact_name, job.name, 'Unknown homeowner') AS homeowner_name,
        job.status_name AS job_status,
        COALESCE(enrollment.sales_rep_name, job.sales_rep_name) AS sales_rep,
@@ -717,7 +742,7 @@ async function loadMarketingBoardRows(): Promise<BoardCardRow[]> {
        'marketing'::text AS engine,
        COALESCE(member.enrollment_state, member.status, 'unknown') AS state,
        COALESCE(member.needs_human, false) AS needs_human,
-       COALESCE(member.contact_jnid, job.primary_contact_jnid) AS contact_jnid,
+       COALESCE(member.contact_jnid, job.primary_contact_jnid) AS "contactJnid",
        COALESCE(NULLIF(contact.display_name, ''), job.primary_contact_name, job.name, 'Unknown homeowner') AS homeowner_name,
        job.status_name AS job_status,
        job.sales_rep_name AS sales_rep,
