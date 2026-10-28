@@ -90,7 +90,7 @@ interface ReplyContext {
       subject: string;
       blockedReason: string | null;
     } | null;
-    newEmail: { defaultFrom: string; fromOptions: string[] };
+    newEmail: { defaultFrom: string; fromOptions: string[]; to: string[] };
   };
   outbound: Array<{
     id: string;
@@ -287,6 +287,10 @@ export function ThreadPanel({
               : channel === "email" && emailMode === "new"
                 ? emailFrom
                 : null,
+          toAddresses:
+            channel === "email" && emailMode === "new"
+              ? replyContext?.email.newEmail.to ?? []
+              : undefined,
           providerContext:
             channel === "text" && selectedLine
               ? { phoneNumberId: selectedLine.phoneNumberId }
