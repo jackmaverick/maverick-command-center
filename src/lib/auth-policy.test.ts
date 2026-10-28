@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Session } from "next-auth";
 import {
   getAuthAccessConfig,
+  getMissingAuthEnvironmentVariables,
   isAllowedEmail,
   isAllowedGoogleProfile,
   isAuthorizedSession,
@@ -24,14 +25,34 @@ function session(email: string): Session {
 }
 
 describe("auth access policy", () => {
-  it("fails closed when required configuration is missing", () => {
-    const missingConfig = getAuthAccessConfig({
+  it.each([
+    "AUTH_SECRET",
+    "AUTH_GOOGLE_ID",
+    "AUTH_GOOGLE_SECRET",
+    "AUTH_ALLOWED_DOMAIN",
+  ])("fails closed when %s is missing at runtime", (missingVariable) => {
+    const environment: Record<string, string> = {
+      AUTH_SECRET: "test-secret",
+      AUTH_GOOGLE_ID: "google-id",
+      AUTH_GOOGLE_SECRET: "google-secret",
       AUTH_ALLOWED_DOMAIN: "maverickexteriorskc.com",
-    });
+    };
+    delete environment[missingVariable];
+    const missingConfig = getAuthAccessConfig(environment);
 
+    expect(getMissingAuthEnvironmentVariables(environment)).toEqual([
+      missingVariable,
+    ]);
     expect(isAllowedEmail("jack@maverickexteriorskc.com", missingConfig)).toBe(
       false
     );
+    expect(
+      isRequestAuthorized(
+        "/homeowners",
+        session("jack@maverickexteriorskc.com"),
+        missingConfig
+      )
+    ).toBe(false);
   });
 
   it("denies unauthenticated requests to pages and APIs", () => {

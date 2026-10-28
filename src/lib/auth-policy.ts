@@ -1,6 +1,13 @@
 import type { Session } from "next-auth";
 
-const PUBLIC_PATHS = ["/login", "/api/auth"];
+const REQUIRED_AUTH_ENVIRONMENT_VARIABLES = [
+  "AUTH_SECRET",
+  "AUTH_GOOGLE_ID",
+  "AUTH_GOOGLE_SECRET",
+  "AUTH_ALLOWED_DOMAIN",
+] as const;
+
+const PUBLIC_PATHS = ["/login", "/configuration-error", "/api/auth"];
 const SERVICE_PATHS = [
   "/api/qbo/cron",
   "/api/qbo/sheet-sync",
@@ -12,6 +19,22 @@ export interface AuthAccessConfig {
   domain: string | null;
   allowedEmails: Set<string>;
   configured: boolean;
+}
+
+export function getMissingAuthEnvironmentVariables(
+  env: Record<string, string | undefined> = process.env
+): string[] {
+  return REQUIRED_AUTH_ENVIRONMENT_VARIABLES.filter(
+    (name) => !env[name]?.trim()
+  );
+}
+
+export function logMissingAuthConfiguration(
+  missing: string[] = getMissingAuthEnvironmentVariables()
+): void {
+  console.error(
+    `[Auth] Access denied: missing required runtime configuration: ${missing.join(", ")}`
+  );
 }
 
 function normalizeEmail(email: string): string {
@@ -32,12 +55,7 @@ export function getAuthAccessConfig(
   return {
     domain,
     allowedEmails,
-    configured: Boolean(
-      env.AUTH_SECRET &&
-        env.AUTH_GOOGLE_ID &&
-        env.AUTH_GOOGLE_SECRET &&
-        domain
-    ),
+    configured: getMissingAuthEnvironmentVariables(env).length === 0,
   };
 }
 
@@ -83,7 +101,17 @@ export function isAuthorizedSession(
 }
 
 export function isPublicOrServicePath(pathname: string): boolean {
-  return [...PUBLIC_PATHS, ...SERVICE_PATHS].some(
+  return isPublicPath(pathname) || isServicePath(pathname);
+}
+
+export function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`)
+  );
+}
+
+export function isServicePath(pathname: string): boolean {
+  return SERVICE_PATHS.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`)
   );
 }

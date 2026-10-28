@@ -1,8 +1,13 @@
 import { ShieldCheck } from "lucide-react";
+import { redirect } from "next/navigation";
 import { signIn } from "@/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getAuthAccessConfig } from "@/lib/auth-policy";
+import {
+  getAuthAccessConfig,
+  getMissingAuthEnvironmentVariables,
+  logMissingAuthConfiguration,
+} from "@/lib/auth-policy";
 
 export default async function LoginPage({
   searchParams,
@@ -41,6 +46,13 @@ export default async function LoginPage({
           <form
             action={async () => {
               "use server";
+              const runtimeConfig = getAuthAccessConfig();
+              if (!runtimeConfig.configured) {
+                logMissingAuthConfiguration(
+                  getMissingAuthEnvironmentVariables()
+                );
+                redirect("/configuration-error");
+              }
               await signIn("google", { redirectTo: "/homeowners" });
             }}
           >

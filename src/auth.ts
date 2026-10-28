@@ -9,17 +9,16 @@ import {
 const accessConfig = getAuthAccessConfig();
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  secret: process.env.AUTH_SECRET || "missing-auth-secret",
+  secret: process.env.AUTH_SECRET,
   trustHost: true,
   session: { strategy: "jwt" },
   providers: [
     Google({
-      clientId: process.env.AUTH_GOOGLE_ID || "missing-google-client-id",
-      clientSecret:
-        process.env.AUTH_GOOGLE_SECRET || "missing-google-client-secret",
+      clientId: process.env.AUTH_GOOGLE_ID,
+      clientSecret: process.env.AUTH_GOOGLE_SECRET,
       authorization: {
         params: {
-          hd: process.env.AUTH_ALLOWED_DOMAIN || "maverickexteriorskc.com",
+          hd: process.env.AUTH_ALLOWED_DOMAIN,
           prompt: "select_account",
         },
       },
