@@ -62,8 +62,9 @@ before production rollout.
 ## Replies rollout (v2b)
 
 Replies are fail-closed behind `REPLIES_ENABLED=true` and
-`REPLIES_ALLOWED_EMAILS`. Keep the flag false until Jack approves the first
-send to his test contact.
+`REPLIES_ALLOWED_EMAILS`. A second server gate,
+`REPLIES_SEND_CONFIRMED=true`, is required before any provider call or queued
+release; keep it false until Jack approves the first send to his test contact.
 
 Provider setup:
 

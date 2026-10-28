@@ -63,6 +63,7 @@ interface ReplyContext {
     {
       enabled: boolean;
       allowed: boolean;
+      sendConfirmed: boolean;
       canCompose: boolean;
       sendNow: boolean;
       queueFor: string | null;
@@ -320,12 +321,15 @@ export function ThreadPanel({
         : null;
   const canSend = Boolean(
     capability?.canCompose &&
+      capability.sendConfirmed &&
       body.trim() &&
       !channelBlockedReason &&
       !sendReply.isPending
   );
   const sendLabel =
-    channel !== "note" && capability && !capability.sendNow
+    capability?.sendConfirmed &&
+    channel !== "note" &&
+    !capability.sendNow
       ? "Queue for 8am"
       : "Send";
 
@@ -639,7 +643,9 @@ export function ThreadPanel({
           <div className="mt-1.5 text-[10px] text-[#6e7681]">
             {!replyContext?.capabilities[channel].enabled
               ? "Replies are disabled by REPLIES_ENABLED."
-              : channelBlockedReason ??
+              : !replyContext.capabilities[channel].sendConfirmed
+                ? replyContext.capabilities[channel].reason
+                : channelBlockedReason ??
                 (sendLabel === "Queue for 8am"
                   ? "Outside 8am–7pm CT. This reply will be queued."
                   : `${sendLabel} via ${

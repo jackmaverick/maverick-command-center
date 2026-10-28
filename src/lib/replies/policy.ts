@@ -11,6 +11,12 @@ export function repliesEnabled(
   return env.REPLIES_ENABLED?.trim().toLowerCase() === "true";
 }
 
+export function repliesSendConfirmed(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return env.REPLIES_SEND_CONFIRMED?.trim().toLowerCase() === "true";
+}
+
 export function repliesAllowedEmails(
   env: Record<string, string | undefined> = process.env
 ): Set<string> {
@@ -69,17 +75,21 @@ export function replyPolicy(
   const allowed = Boolean(
     email && repliesAllowedEmails(env).has(email.trim().toLowerCase())
   );
+  const sendConfirmed = repliesSendConfirmed(env);
   const withinHours = isWithinReplyHours(now, channel);
   return {
     enabled,
     allowed,
+    sendConfirmed,
     canCompose: enabled && allowed,
-    sendNow: enabled && allowed && withinHours,
+    sendNow: enabled && allowed && sendConfirmed && withinHours,
     queueFor: withinHours ? null : nextAllowedReplyTime(now).toISOString(),
     reason: !enabled
       ? "Replies are disabled"
       : !allowed
         ? "Your account is not allowed to send replies"
+        : !sendConfirmed
+          ? "Live send awaits Jack confirmation"
         : null,
   };
 }

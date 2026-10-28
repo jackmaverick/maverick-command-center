@@ -8,7 +8,7 @@ import {
   recordProviderAccepted,
   updateOutboundStatus,
 } from "./repository";
-import { replyPolicy } from "./policy";
+import { repliesSendConfirmed, replyPolicy } from "./policy";
 import { liveReplyProviders } from "./providers";
 import type {
   OutboundMessage,
@@ -187,6 +187,12 @@ export async function createReply(
       "REPLIES_NOT_ALLOWED"
     );
   }
+  if (!policy.sendConfirmed) {
+    throw new ReplySafetyError(
+      "Live send awaits Jack confirmation",
+      "LIVE_SEND_NOT_CONFIRMED"
+    );
+  }
   const resolved = await resolveRequest(request);
   const queueFor =
     resolved.channel === "note" || policy.sendNow ? null : policy.queueFor;
@@ -216,6 +222,12 @@ export async function retryReply(
     throw new ReplySafetyError(
       policy.reason ?? "Retry is not allowed",
       "REPLIES_NOT_ALLOWED"
+    );
+  }
+  if (!policy.sendConfirmed) {
+    throw new ReplySafetyError(
+      "Live send awaits Jack confirmation",
+      "LIVE_SEND_NOT_CONFIRMED"
     );
   }
   if (message.status !== "failed") {
@@ -260,7 +272,10 @@ export async function retryReply(
 export async function releaseDueReplies(
   providers: ReplyProviders = liveReplyProviders
 ) {
-  if (process.env.REPLIES_ENABLED?.trim().toLowerCase() !== "true") {
+  if (
+    process.env.REPLIES_ENABLED?.trim().toLowerCase() !== "true" ||
+    !repliesSendConfirmed()
+  ) {
     return { skipped: true, processed: 0, delivered: 0, failed: 0 };
   }
   const due = await claimDueMessages();

@@ -7,6 +7,7 @@ import {
 
 const env = {
   REPLIES_ENABLED: "true",
+  REPLIES_SEND_CONFIRMED: "true",
   REPLIES_ALLOWED_EMAILS:
     "jack@maverickexteriorskc.com,michael@maverickexteriorskc.com",
 };

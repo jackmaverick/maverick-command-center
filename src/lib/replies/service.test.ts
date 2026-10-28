@@ -82,6 +82,7 @@ describe("reply service safety", () => {
     vi.useRealTimers();
     vi.clearAllMocks();
     process.env.REPLIES_ENABLED = "true";
+    process.env.REPLIES_SEND_CONFIRMED = "true";
     process.env.REPLIES_ALLOWED_EMAILS =
       "jack@maverickexteriorskc.com,michael@maverickexteriorskc.com";
     mocks.resolveTextContext.mockResolvedValue({
@@ -101,6 +102,7 @@ describe("reply service safety", () => {
 
   afterEach(() => {
     delete process.env.REPLIES_ENABLED;
+    delete process.env.REPLIES_SEND_CONFIRMED;
     delete process.env.REPLIES_ALLOWED_EMAILS;
   });
 
@@ -114,6 +116,20 @@ describe("reply service safety", () => {
         providers
       )
     ).rejects.toBeInstanceOf(ReplySafetyError);
+    expect(mocks.createOutboundMessage).not.toHaveBeenCalled();
+    expect(providers.sendText).not.toHaveBeenCalled();
+  });
+
+  it("never creates or sends before Jack confirms the live test", async () => {
+    process.env.REPLIES_SEND_CONFIRMED = "false";
+    await expect(
+      createReply(
+        request,
+        "jack@maverickexteriorskc.com",
+        new Date("2026-10-28T15:00:00Z"),
+        providers
+      )
+    ).rejects.toMatchObject({ code: "LIVE_SEND_NOT_CONFIRMED" });
     expect(mocks.createOutboundMessage).not.toHaveBeenCalled();
     expect(providers.sendText).not.toHaveBeenCalled();
   });
