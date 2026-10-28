@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:auth-e2e": "node scripts/verify-auth-gate.mjs",
+    "test:layout-e2e": "node scripts/verify-inbox-layout.mjs",
     "loop-health:migrate": "node scripts/apply-loop-health-migration.mjs",
     "loop-health:publish": "tsx scripts/collect-and-publish-loop-health.ts",
     "loop-health:install-publisher": "bash scripts/install-loop-health-graph-publisher.sh",
@@ -35,6 +36,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/pg": "^8.16.0",
