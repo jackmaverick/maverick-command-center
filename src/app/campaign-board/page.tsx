@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  Suspense,
 } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -136,7 +137,7 @@ function ConversationRow({
   );
 }
 
-export default function CampaignBoardPage() {
+function CampaignBoardContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -160,9 +161,11 @@ export default function CampaignBoardPage() {
         unread?: boolean;
         unresponded?: boolean;
       };
-      setOpenFilter(filters.open ?? "open");
-      setUnread(Boolean(filters.unread));
-      setUnresponded(Boolean(filters.unresponded));
+      queueMicrotask(() => {
+        setOpenFilter(filters.open ?? "open");
+        setUnread(Boolean(filters.unread));
+        setUnresponded(Boolean(filters.unresponded));
+      });
     } catch {
       // Ignore malformed local preferences.
     }
@@ -493,5 +496,19 @@ export default function CampaignBoardPage() {
         </SheetContent>
       </Sheet>
     </div>
+  );
+}
+
+export default function CampaignBoardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="-m-4 h-[calc(100vh-4rem)] bg-[#0d1117] p-6 lg:-m-6">
+          <Skeleton className="h-full bg-[#161b22]" />
+        </div>
+      }
+    >
+      <CampaignBoardContent />
+    </Suspense>
   );
 }

@@ -141,7 +141,6 @@ export function ThreadPanel({
     );
   }
 
-  let previousDate = "";
   return (
     <div className="grid h-full min-w-0 flex-1 grid-cols-[minmax(0,1fr)_280px]">
       <section className="flex min-w-0 flex-col bg-[#0d1117]">
@@ -160,10 +159,11 @@ export function ThreadPanel({
               {warning.message}
             </div>
           ))}
-          {data.items.map((item) => {
+          {data.items.map((item, index) => {
             const currentDate = dateKey(item.occurredAt);
-            const showDate = currentDate !== previousDate;
-            previousDate = currentDate;
+            const previousItem = data.items[index - 1];
+            const showDate =
+              !previousItem || dateKey(previousItem.occurredAt) !== currentDate;
             return (
               <div key={item.id}>
                 {showDate && (
