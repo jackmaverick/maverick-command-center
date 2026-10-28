@@ -14,7 +14,7 @@ import type {
   WorkspaceSummary,
 } from "./types";
 
-interface InboxDatabaseRow {
+export interface InboxDatabaseRow {
   contact_jnid: string;
   job_jnid: string | null;
   name: string;
@@ -57,7 +57,7 @@ function workspaceRecordTypes(workspace: WorkspaceKey): string[] {
   return [];
 }
 
-function isUnresponded(row: InboxDatabaseRow): boolean {
+export function isUnresponded(row: InboxDatabaseRow): boolean {
   if (row.automated) return true;
   if (row.channel === "SMS" && row.direction === "incoming") return true;
   if (
@@ -562,11 +562,29 @@ export async function getInbox(
 
   const hasMore = databaseRows.length > limit;
   rows = rows.slice(0, limit);
-  const columns = statusesForWorkspace(workspace).map((status, order) => ({
-    status,
-    order,
-    count: rows.filter((row) => row.status === status).length,
-  }));
+  const observedColumns = new Map<
+    string,
+    { status: string; order: number; count: number }
+  >();
+  for (const row of rows) {
+    if (!row.status) continue;
+    const existing = observedColumns.get(row.status);
+    observedColumns.set(row.status, {
+      status: row.status,
+      order: Math.min(existing?.order ?? row.statusOrder, row.statusOrder),
+      count: (existing?.count ?? 0) + 1,
+    });
+  }
+  const columns =
+    observedColumns.size > 0
+      ? [...observedColumns.values()].sort(
+          (left, right) => left.order - right.order
+        )
+      : statusesForWorkspace(workspace).map((status, order) => ({
+          status,
+          order,
+          count: 0,
+        }));
   const summaries: WorkspaceSummary[] = (
     Object.keys(WORKSPACE_LABELS) as WorkspaceKey[]
   ).map((key) => ({
