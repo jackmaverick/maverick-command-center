@@ -1,4 +1,8 @@
-import type { NextFetchEvent, NextRequest } from "next/server";
+import type {
+  NextFetchEvent,
+  NextMiddleware,
+  NextRequest,
+} from "next/server";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import {
@@ -8,7 +12,9 @@ import {
   logMissingAuthConfiguration,
 } from "@/lib/auth-policy";
 
-const authenticatedProxy = auth(() => NextResponse.next());
+const authenticatedProxy = auth(
+  () => NextResponse.next()
+) as NextMiddleware;
 
 export function proxy(request: NextRequest, event: NextFetchEvent) {
   const accessConfig = getAuthAccessConfig();
