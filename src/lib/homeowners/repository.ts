@@ -527,8 +527,7 @@ export async function getHomeownerDetail(
   const jobJnids = jobs.map((job) => job.jobJnid);
   const identity = await loadIdentity(resolvedContactJnid);
 
-  const [sequenceRows, marketingRows, hatchRows, suppressions, exclusions, timeline] =
-    await Promise.all([
+  const sourceResults = await Promise.allSettled([
       query<CampaignEnrollment>(
         `SELECT
            enrollment.id::text AS id,
@@ -672,7 +671,40 @@ export async function getHomeownerDetail(
         before,
         limit
       ),
-    ]);
+  ]);
+  const sourceNames = [
+    "sequence_campaigns",
+    "marketing_campaigns",
+    "hatch",
+    "suppressions",
+    "exclusions",
+    "timeline",
+  ] as const;
+  const sourceWarnings: Array<{ source: string; message: string }> = [];
+  function sourceValue<T>(index: number, fallback: T): T {
+    const result = sourceResults[index];
+    if (result.status === "fulfilled") return result.value as T;
+    const source = sourceNames[index];
+    logServerError(`[Homeowner Detail] ${source} source failed`, result.reason);
+    sourceWarnings.push({
+      source,
+      message: `${source.replaceAll("_", " ")} is temporarily unavailable.`,
+    });
+    return fallback;
+  }
+  const sequenceRows = sourceValue<CampaignEnrollment[]>(0, []);
+  const marketingRows = sourceValue<CampaignEnrollment[]>(1, []);
+  const hatchRows = sourceValue<CampaignEnrollment[]>(2, []);
+  const suppressions = sourceValue<Suppression[]>(3, []);
+  const exclusions = sourceValue<Array<{ job_number: string; reason: string }>>(
+    4,
+    []
+  );
+  const timeline = sourceValue(5, {
+    events: [] as TimelineEntry[],
+    freshness: {} as Record<string, string>,
+    nextCursor: null as string | null,
+  });
 
   return {
     contact: {
@@ -702,6 +734,7 @@ export async function getHomeownerDetail(
       ambiguousEmails: identity.ambiguousEmails,
     },
     timeline,
+    sourceWarnings,
   };
 }
 

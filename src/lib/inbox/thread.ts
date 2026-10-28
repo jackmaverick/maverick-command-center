@@ -180,6 +180,6 @@ export async function getConversationThread(
     items,
     notes: items.filter((item) => item.type === "note"),
     primaryJob: detail.jobs[0] ?? null,
-    warnings,
+    warnings: [...detail.sourceWarnings, ...warnings],
   };
 }
