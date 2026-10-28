@@ -26,7 +26,16 @@ export default function HomeownersPage() {
     enabled: query.length >= 2,
     queryFn: async () => {
       const response = await fetch(`/api/homeowners?q=${encodeURIComponent(query)}`);
-      if (!response.ok) throw new Error("Search failed");
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        console.error("[Homeowners Search] API request failed", {
+          status: response.status,
+          message: payload?.error ?? "Search failed",
+        });
+        throw new Error(payload?.error ?? `Search failed (${response.status})`);
+      }
       return response.json();
     },
   });

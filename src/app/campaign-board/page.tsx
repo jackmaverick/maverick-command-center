@@ -23,6 +23,14 @@ interface Campaign {
   columns: Record<string, BoardCard[]>;
 }
 
+interface CampaignBoardData {
+  campaigns: Campaign[];
+  warnings: Array<{
+    source: "sequence" | "marketing";
+    message: string;
+  }>;
+}
+
 const columns = [
   { key: "in_progress", label: "In Progress", color: "text-[#58a6ff]" },
   { key: "needs_human", label: "Needs human", color: "text-yellow-300" },
@@ -31,12 +39,26 @@ const columns = [
 ];
 
 export default function CampaignBoardPage() {
-  const { data, isLoading, isError } = useQuery<{ campaigns: Campaign[] }>({
+  const { data, isLoading, isError, error } = useQuery<CampaignBoardData>({
     queryKey: ["campaign-board"],
     queryFn: async () => {
       const response = await fetch("/api/campaign-board");
-      if (!response.ok) throw new Error("Campaign board failed");
-      return response.json();
+      const payload = (await response.json().catch(() => null)) as
+        | CampaignBoardData
+        | { error?: string }
+        | null;
+      if (!response.ok) {
+        const message =
+          payload && "error" in payload && payload.error
+            ? payload.error
+            : "Campaign board request failed";
+        console.error("[Campaign Board] API request failed", {
+          status: response.status,
+          message,
+        });
+        throw new Error(`${message} (${response.status})`);
+      }
+      return payload as CampaignBoardData;
     },
   });
 
@@ -63,9 +85,19 @@ export default function CampaignBoardPage() {
 
       {isError && (
         <div className="rounded-md border border-red-500/30 bg-red-500/10 p-4 text-red-300">
-          The campaign board could not be loaded.
+          The campaign board could not be loaded
+          {error instanceof Error ? `: ${error.message}` : "."}
         </div>
       )}
+
+      {data?.warnings.map((warning) => (
+        <div
+          key={warning.source}
+          className="mb-3 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-200"
+        >
+          {warning.message}
+        </div>
+      ))}
 
       <div className="space-y-8">
         {data?.campaigns.map((campaign) => (

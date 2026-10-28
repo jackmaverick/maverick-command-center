@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchHomeowners } from "@/lib/homeowners/repository";
 import { hasAuthorizedSession } from "@/lib/require-auth";
+import { logServerError } from "@/lib/server-error";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
   if (!(await hasAuthorizedSession())) {
+    console.warn("[Homeowners Search] Request denied: no authorized session");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -18,7 +20,7 @@ export async function GET(request: NextRequest) {
     const results = await searchHomeowners(search);
     return NextResponse.json({ results });
   } catch (error) {
-    console.error("[Homeowners Search] Failed:", error);
+    logServerError("[Homeowners Search] Failed", error);
     return NextResponse.json(
       { error: "Unable to search homeowners" },
       { status: 500 }

@@ -111,7 +111,18 @@ export default function HomeownerDetailPage() {
       const response = await fetch(
         `/api/homeowners/${encodeURIComponent(contactJnid)}?${params}`
       );
-      if (!response.ok) throw new Error("Homeowner could not be loaded");
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        console.error("[Homeowner Detail] API request failed", {
+          status: response.status,
+          message: payload?.error ?? "Homeowner could not be loaded",
+        });
+        throw new Error(
+          payload?.error ?? `Homeowner could not be loaded (${response.status})`
+        );
+      }
       return response.json();
     },
     getNextPageParam: (lastPage) => lastPage.timeline.nextCursor ?? undefined,

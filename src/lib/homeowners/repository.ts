@@ -1,4 +1,5 @@
 import { query, queryOne } from "@/lib/db";
+import { logServerError } from "@/lib/server-error";
 import {
   resolveContactIdentity,
   type ContactIdentity,
@@ -677,52 +678,88 @@ interface BoardCardRow {
   updated_at: string;
 }
 
-export async function getCampaignBoard() {
-  const rows = await query<BoardCardRow>(
-    `WITH board_rows AS (
-       SELECT
-         enrollment.id::text AS id,
-         campaign.key AS campaign_id,
-         campaign.name AS campaign_name,
-         'sequence'::text AS engine,
-         COALESCE(enrollment.state, 'unknown') AS state,
-         false AS needs_human,
-         COALESCE(enrollment.contact_jnid, job.primary_contact_jnid) AS contact_jnid,
-         COALESCE(NULLIF(contact.display_name, ''), job.primary_contact_name, job.name, 'Unknown homeowner') AS homeowner_name,
-         job.status_name AS job_status,
-         COALESCE(enrollment.sales_rep_name, job.sales_rep_name) AS sales_rep,
-         COALESCE(enrollment.exited_at, enrollment.entered_at, enrollment.created_at) AS updated_at
-       FROM seq_enrollments enrollment
-       JOIN seq_campaigns campaign ON campaign.key = enrollment.campaign_key
-       LEFT JOIN contacts contact ON contact.jnid = enrollment.contact_jnid
-       LEFT JOIN jobs job ON job.jnid = enrollment.job_jnid
-       WHERE COALESCE(contact.display_name, job.primary_contact_name, job.name, '') !~* '\\mtest\\M'
-         AND (job.id IS NULL OR (${jobNotTestSql("job")}))
+export interface BoardSourceWarning {
+  source: "sequence" | "marketing";
+  message: string;
+}
 
-       UNION ALL
-
-       SELECT
-         member.id::text,
-         campaign.id::text,
-         campaign.name,
-         'marketing',
-         COALESCE(member.enrollment_state, member.status, 'unknown'),
-         COALESCE(member.needs_human, false),
-         COALESCE(member.contact_jnid, job.primary_contact_jnid),
-         COALESCE(NULLIF(contact.display_name, ''), job.primary_contact_name, job.name, 'Unknown homeowner'),
-         job.status_name,
-         job.sales_rep_name,
-         COALESCE(member.last_event_at, member.updated_at, member.created_at)
-       FROM marketing_automation_campaign_contacts member
-       JOIN marketing_automation_campaigns campaign ON campaign.id = member.campaign_id
-       LEFT JOIN contacts contact ON contact.jnid = member.contact_jnid
-       LEFT JOIN jobs job ON job.jnid = member.job_jnid
-       WHERE COALESCE(contact.display_name, job.primary_contact_name, job.name, '') !~* '\\mtest\\M'
-         AND (job.id IS NULL OR (${jobNotTestSql("job")}))
-     )
-     SELECT * FROM board_rows
-     ORDER BY campaign_name, updated_at DESC`,
+async function loadSequenceBoardRows(): Promise<BoardCardRow[]> {
+  return query<BoardCardRow>(
+    `SELECT
+       enrollment.id::text AS id,
+       campaign.key AS campaign_id,
+       campaign.name AS campaign_name,
+       'sequence'::text AS engine,
+       COALESCE(enrollment.state, 'unknown') AS state,
+       false AS needs_human,
+       COALESCE(enrollment.contact_jnid, job.primary_contact_jnid) AS contact_jnid,
+       COALESCE(NULLIF(contact.display_name, ''), job.primary_contact_name, job.name, 'Unknown homeowner') AS homeowner_name,
+       job.status_name AS job_status,
+       COALESCE(enrollment.sales_rep_name, job.sales_rep_name) AS sales_rep,
+       COALESCE(enrollment.exited_at, enrollment.entered_at, enrollment.created_at) AS updated_at
+     FROM seq_enrollments enrollment
+     JOIN seq_campaigns campaign ON campaign.key = enrollment.campaign_key
+     LEFT JOIN contacts contact ON contact.jnid = enrollment.contact_jnid
+     LEFT JOIN jobs job ON job.jnid = enrollment.job_jnid
+     WHERE COALESCE(contact.display_name, job.primary_contact_name, job.name, '') !~* '\\mtest\\M'
+       AND (job.id IS NULL OR (${jobNotTestSql("job")}))
+     ORDER BY campaign.name, updated_at DESC`,
     []
+  );
+}
+
+async function loadMarketingBoardRows(): Promise<BoardCardRow[]> {
+  return query<BoardCardRow>(
+    `SELECT
+       member.id::text AS id,
+       campaign.id::text AS campaign_id,
+       campaign.name AS campaign_name,
+       'marketing'::text AS engine,
+       COALESCE(member.enrollment_state, member.status, 'unknown') AS state,
+       COALESCE(member.needs_human, false) AS needs_human,
+       COALESCE(member.contact_jnid, job.primary_contact_jnid) AS contact_jnid,
+       COALESCE(NULLIF(contact.display_name, ''), job.primary_contact_name, job.name, 'Unknown homeowner') AS homeowner_name,
+       job.status_name AS job_status,
+       job.sales_rep_name AS sales_rep,
+       COALESCE(member.last_event_at, member.updated_at, member.created_at) AS updated_at
+     FROM marketing_automation_campaign_contacts member
+     JOIN marketing_automation_campaigns campaign ON campaign.id = member.campaign_id
+     LEFT JOIN contacts contact ON contact.jnid = member.contact_jnid
+     LEFT JOIN jobs job ON job.jnid = member.job_jnid
+     WHERE COALESCE(contact.display_name, job.primary_contact_name, job.name, '') !~* '\\mtest\\M'
+       AND (job.id IS NULL OR (${jobNotTestSql("job")}))
+     ORDER BY campaign.name, updated_at DESC`,
+    []
+  );
+}
+
+async function loadBoardSource(
+  source: BoardSourceWarning["source"],
+  loader: () => Promise<BoardCardRow[]>
+): Promise<{ rows: BoardCardRow[]; warning: BoardSourceWarning | null }> {
+  try {
+    return { rows: await loader(), warning: null };
+  } catch (error) {
+    logServerError(`[Campaign Board] ${source} source failed`, error);
+    return {
+      rows: [],
+      warning: {
+        source,
+        message: `${source === "sequence" ? "Sequence" : "Marketing"} campaigns are temporarily unavailable.`,
+      },
+    };
+  }
+}
+
+export async function getCampaignBoard() {
+  const [sequence, marketing] = await Promise.all([
+    loadBoardSource("sequence", loadSequenceBoardRows),
+    loadBoardSource("marketing", loadMarketingBoardRows),
+  ]);
+  const rows = [...sequence.rows, ...marketing.rows].sort(
+    (left, right) =>
+      left.campaign_name.localeCompare(right.campaign_name) ||
+      new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime()
   );
 
   const campaigns = new Map<
@@ -760,5 +797,10 @@ export async function getCampaignBoard() {
     campaigns.set(row.campaign_id, campaign);
   }
 
-  return { campaigns: [...campaigns.values()] };
+  return {
+    campaigns: [...campaigns.values()],
+    warnings: [sequence.warning, marketing.warning].filter(
+      (warning): warning is BoardSourceWarning => warning !== null
+    ),
+  };
 }

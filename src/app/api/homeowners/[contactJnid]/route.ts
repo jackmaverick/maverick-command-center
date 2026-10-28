@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getHomeownerDetail } from "@/lib/homeowners/repository";
 import { decodeTimelineCursor } from "@/lib/homeowners/timeline";
 import { hasAuthorizedSession } from "@/lib/require-auth";
+import { logServerError } from "@/lib/server-error";
 
 export const runtime = "nodejs";
 
@@ -10,6 +11,7 @@ export async function GET(
   context: { params: Promise<{ contactJnid: string }> }
 ) {
   if (!(await hasAuthorizedSession())) {
+    console.warn("[Homeowner Detail] Request denied: no authorized session");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -37,7 +39,7 @@ export async function GET(
     }
     return NextResponse.json(homeowner);
   } catch (error) {
-    console.error("[Homeowner Detail] Failed:", error);
+    logServerError("[Homeowner Detail] Failed", error);
     return NextResponse.json(
       { error: "Unable to load homeowner" },
       { status: 500 }
