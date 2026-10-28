@@ -3,6 +3,7 @@ import type { Session } from "next-auth";
 import {
   getAuthAccessConfig,
   isAllowedEmail,
+  isAllowedGoogleProfile,
   isAuthorizedSession,
   isRequestAuthorized,
 } from "./auth-policy";
@@ -57,6 +58,52 @@ describe("auth access policy", () => {
     expect(isAuthorizedSession(session("jack@example.com"), configured)).toBe(
       true
     );
+  });
+
+  it("requires a verified Google Workspace tenant for domain access", () => {
+    expect(
+      isAllowedGoogleProfile(
+        {
+          email: "jack@maverickexteriorskc.com",
+          email_verified: true,
+          hd: "maverickexteriorskc.com",
+        },
+        configured
+      )
+    ).toBe(true);
+    expect(
+      isAllowedGoogleProfile(
+        {
+          email: "jack@maverickexteriorskc.com",
+          email_verified: true,
+          hd: null,
+        },
+        configured
+      )
+    ).toBe(false);
+    expect(
+      isAllowedGoogleProfile(
+        {
+          email: "jack@maverickexteriorskc.com",
+          email_verified: false,
+          hd: "maverickexteriorskc.com",
+        },
+        configured
+      )
+    ).toBe(false);
+  });
+
+  it("allows verified explicit email exceptions without a Workspace tenant", () => {
+    expect(
+      isAllowedGoogleProfile(
+        {
+          email: "jack@example.com",
+          email_verified: true,
+          hd: null,
+        },
+        configured
+      )
+    ).toBe(true);
   });
 
   it("leaves OAuth and signed service endpoints reachable", () => {

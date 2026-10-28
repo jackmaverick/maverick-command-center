@@ -2,7 +2,7 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import {
   getAuthAccessConfig,
-  isAllowedEmail,
+  isAllowedGoogleProfile,
   isRequestAuthorized,
 } from "@/lib/auth-policy";
 
@@ -30,8 +30,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     error: "/login",
   },
   callbacks: {
-    signIn({ user }) {
-      return isAllowedEmail(user.email, accessConfig);
+    signIn({ user, profile }) {
+      if (!profile) return false;
+      return isAllowedGoogleProfile(
+        {
+          email: user.email,
+          email_verified:
+            typeof profile.email_verified === "boolean"
+              ? profile.email_verified
+              : false,
+          hd: typeof profile.hd === "string" ? profile.hd : null,
+        },
+        accessConfig
+      );
     },
     authorized({ auth: session, request }) {
       return isRequestAuthorized(

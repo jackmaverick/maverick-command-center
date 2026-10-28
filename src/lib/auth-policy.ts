@@ -54,6 +54,27 @@ export function isAllowedEmail(
   );
 }
 
+export function isAllowedGoogleProfile(
+  profile: {
+    email?: string | null;
+    email_verified?: boolean | null;
+    hd?: string | null;
+  },
+  config: AuthAccessConfig = getAuthAccessConfig()
+): boolean {
+  if (!config.configured || profile.email_verified !== true || !profile.email) {
+    return false;
+  }
+
+  const email = normalizeEmail(profile.email);
+  if (config.allowedEmails.has(email)) return true;
+
+  return (
+    email.endsWith(`@${config.domain}`) &&
+    profile.hd?.trim().toLowerCase() === config.domain
+  );
+}
+
 export function isAuthorizedSession(
   session: Session | null,
   config: AuthAccessConfig = getAuthAccessConfig()

@@ -12,6 +12,41 @@ export interface TimelineEntry {
   matchType: MatchType;
 }
 
+export interface TimelineCursor {
+  occurredAt: string;
+  source: string;
+  id: string;
+}
+
+export function encodeTimelineCursor(cursor: TimelineCursor): string {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+export function decodeTimelineCursor(value: string): TimelineCursor | null {
+  try {
+    const decoded = JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8")
+    ) as Partial<TimelineCursor>;
+    if (
+      typeof decoded.occurredAt !== "string" ||
+      !Number.isFinite(Date.parse(decoded.occurredAt)) ||
+      typeof decoded.source !== "string" ||
+      !decoded.source ||
+      typeof decoded.id !== "string" ||
+      !decoded.id
+    ) {
+      return null;
+    }
+    return {
+      occurredAt: new Date(decoded.occurredAt).toISOString(),
+      source: decoded.source,
+      id: decoded.id,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function mergeTimelineEntries(
   sources: TimelineEntry[][],
   limit = 100

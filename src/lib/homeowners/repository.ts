@@ -3,7 +3,12 @@ import {
   resolveContactIdentity,
   type ContactIdentity,
 } from "./identity";
-import type { MatchType, TimelineEntry } from "./timeline";
+import {
+  encodeTimelineCursor,
+  type MatchType,
+  type TimelineCursor,
+  type TimelineEntry,
+} from "./timeline";
 
 // Temporary Phase 1 test-data rule. Jack should confirm this definition:
 // exclude names containing the whole word "test", plus jobs whose explicit
@@ -15,15 +20,17 @@ const CONTACT_NOT_TEST_SQL = `
   COALESCE(c.display_name, c.first_name || ' ' || c.last_name, '') !~* '\\mtest\\M'
 `;
 
-const JOB_NOT_TEST_SQL = `
-  COALESCE(j.name, '') !~* '\\mtest\\M'
+function jobNotTestSql(alias: "j" | "job"): string {
+  return `
+  COALESCE(${alias}.name, '') !~* '\\mtest\\M'
   AND NOT EXISTS (
     SELECT 1
     FROM seq_job_exclusions exclusion
-    WHERE exclusion.job_number = j.number
+    WHERE exclusion.job_number = ${alias}.number
       AND COALESCE(exclusion.reason, '') ~* '\\mtest\\M'
   )
 `;
+}
 
 export interface HomeownerSearchResult {
   contactJnid: string;
@@ -115,7 +122,7 @@ export async function searchHomeowners(
      LEFT JOIN job_contacts jc ON jc.contact_id = c.id
      LEFT JOIN jobs j
        ON (j.id = jc.job_id OR j.primary_contact_jnid = c.jnid)
-      AND ${JOB_NOT_TEST_SQL}
+      AND ${jobNotTestSql("j")}
      WHERE c.deleted_at IS NULL
        AND ${CONTACT_NOT_TEST_SQL}
        AND (
@@ -187,7 +194,7 @@ async function loadTimeline(
   jobJnids: string[],
   phoneDigits: string[],
   emails: string[],
-  before: string | null,
+  before: TimelineCursor | null,
   limit: number
 ): Promise<{
   events: TimelineEntry[];
@@ -275,8 +282,17 @@ async function loadTimeline(
            AND (
              LOWER(COALESCE(e.from_email, '')) = ANY($4::text[])
              OR EXISTS (
-               SELECT 1 FROM unnest($4::text[]) identity_email
-               WHERE e.to_recipients::text ILIKE '%' || identity_email || '%'
+               SELECT 1
+               FROM jsonb_array_elements(
+                 CASE
+                   WHEN jsonb_typeof(e.to_recipients) = 'array'
+                     THEN e.to_recipients
+                   ELSE '[]'::jsonb
+                 END
+               ) recipient
+               WHERE LOWER(
+                 COALESCE(recipient->>'email', recipient->>'address', '')
+               ) = ANY($4::text[])
              )
            )
          )
@@ -352,16 +368,20 @@ async function loadTimeline(
        SELECT *
        FROM all_events
        WHERE "occurredAt" IS NOT NULL
-         AND ($5::timestamptz IS NULL OR "occurredAt" < $5::timestamptz)
+         AND (
+           $5::timestamptz IS NULL
+           OR ("occurredAt", source, id) <
+              ($5::timestamptz, $6::text, $7::text)
+         )
      ),
      page AS (
        SELECT *
        FROM eligible
-       ORDER BY "occurredAt" DESC, id DESC
-       LIMIT $6
+       ORDER BY "occurredAt" DESC, source DESC, id DESC
+       LIMIT $8
      )
      SELECT
-       COALESCE((SELECT jsonb_agg(page ORDER BY "occurredAt" DESC, id DESC) FROM page), '[]'::jsonb) AS events,
+       COALESCE((SELECT jsonb_agg(page ORDER BY "occurredAt" DESC, source DESC, id DESC) FROM page), '[]'::jsonb) AS events,
        COALESCE((
          SELECT jsonb_object_agg(source, newest)
          FROM (
@@ -375,7 +395,9 @@ async function loadTimeline(
       jobJnids,
       phoneDigits,
       emails,
-      before,
+      before?.occurredAt ?? null,
+      before?.source ?? null,
+      before?.id ?? null,
       Math.min(Math.max(limit, 1), 100) + 1,
     ]
   );
@@ -386,15 +408,19 @@ async function loadTimeline(
     events: events.slice(0, pageSize),
     freshness: result?.freshness ?? {},
     nextCursor:
-      events.length > pageSize
-        ? events[pageSize - 1]?.occurredAt ?? null
+      events.length > pageSize && events[pageSize - 1]
+        ? encodeTimelineCursor({
+            occurredAt: events[pageSize - 1].occurredAt,
+            source: events[pageSize - 1].source,
+            id: events[pageSize - 1].id,
+          })
         : null,
   };
 }
 
 export async function getHomeownerDetail(
   contactJnid: string,
-  before: string | null,
+  before: TimelineCursor | null,
   limit = 100
 ) {
   const contact = await queryOne<ContactRow>(
@@ -441,7 +467,7 @@ export async function getHomeownerDetail(
      LEFT JOIN jobnimbus_users rep ON rep.jnid = j.sales_rep_jnid
      WHERE (j.primary_contact_jnid = $1 OR jc.contact_jnid = $1)
        AND j.deleted_at IS NULL
-       AND ${JOB_NOT_TEST_SQL}
+       AND ${jobNotTestSql("j")}
      ORDER BY name`,
     [contactJnid]
   );
@@ -515,8 +541,8 @@ export async function getHomeownerDetail(
            COALESCE(intake.outcome_code, intake.payload->>'source') AS detail,
            intake.created_at::text AS "updatedAt",
            CASE
-             WHEN intake.payload->>'externalID' = $1
-               OR intake.payload->>'externalID' = ANY($2::text[]) THEN 'direct'
+             WHEN intake.payload->>'externalID' = $1 THEN 'direct'
+             WHEN intake.payload->>'externalID' = ANY($2::text[]) THEN 'job'
              WHEN LOWER(COALESCE(intake.payload->>'email', '')) = ANY($4::text[]) THEN 'email_fallback'
              ELSE 'phone_fallback'
            END::text AS "matchType"
@@ -545,8 +571,8 @@ export async function getHomeownerDetail(
            webhook.event_type,
            COALESCE(webhook.occurred_at, webhook.received_at)::text,
            CASE
-             WHEN webhook.body->'data'->'payload'->>'external_contact_id' = $1
-               OR webhook.body->'data'->'payload'->>'external_opportunity_id' = ANY($2::text[]) THEN 'direct'
+             WHEN webhook.body->'data'->'payload'->>'external_contact_id' = $1 THEN 'direct'
+             WHEN webhook.body->'data'->'payload'->>'external_opportunity_id' = ANY($2::text[]) THEN 'job'
              WHEN LOWER(COALESCE(webhook.body->'data'->'payload'->>'email', '')) = ANY($4::text[]) THEN 'email_fallback'
              ELSE 'phone_fallback'
            END
@@ -671,7 +697,7 @@ export async function getCampaignBoard() {
        LEFT JOIN contacts contact ON contact.jnid = enrollment.contact_jnid
        LEFT JOIN jobs job ON job.jnid = enrollment.job_jnid
        WHERE COALESCE(contact.display_name, job.primary_contact_name, job.name, '') !~* '\\mtest\\M'
-         AND (job.id IS NULL OR (${JOB_NOT_TEST_SQL}))
+         AND (job.id IS NULL OR (${jobNotTestSql("job")}))
 
        UNION ALL
 
@@ -692,7 +718,7 @@ export async function getCampaignBoard() {
        LEFT JOIN contacts contact ON contact.jnid = member.contact_jnid
        LEFT JOIN jobs job ON job.jnid = member.job_jnid
        WHERE COALESCE(contact.display_name, job.primary_contact_name, job.name, '') !~* '\\mtest\\M'
-         AND (job.id IS NULL OR (${JOB_NOT_TEST_SQL}))
+         AND (job.id IS NULL OR (${jobNotTestSql("job")}))
      )
      SELECT * FROM board_rows
      ORDER BY campaign_name, updated_at DESC`,

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { TimelineEntry } from "./timeline";
-import { mergeTimelineEntries } from "./timeline";
+import {
+  decodeTimelineCursor,
+  encodeTimelineCursor,
+  mergeTimelineEntries,
+} from "./timeline";
 
 function entry(
   id: string,
@@ -39,5 +43,25 @@ describe("timeline merge", () => {
   it("deduplicates repeated source rows", () => {
     const duplicate = entry("same", "email", "2026-01-01T12:00:00Z");
     expect(mergeTimelineEntries([[duplicate], [duplicate]])).toHaveLength(1);
+  });
+
+  it("round-trips a composite pagination cursor", () => {
+    const cursor = {
+      occurredAt: "2026-01-01T12:00:00.000Z",
+      source: "sms_messages",
+      id: "message-2",
+    };
+    expect(decodeTimelineCursor(encodeTimelineCursor(cursor))).toEqual(cursor);
+  });
+
+  it("rejects malformed cursors", () => {
+    expect(decodeTimelineCursor("not-a-cursor")).toBeNull();
+    expect(
+      decodeTimelineCursor(
+        Buffer.from(
+          JSON.stringify({ occurredAt: "not-a-date", source: "sms", id: "1" })
+        ).toString("base64url")
+      )
+    ).toBeNull();
   });
 });
