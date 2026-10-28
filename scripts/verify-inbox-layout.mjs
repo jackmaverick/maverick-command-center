@@ -212,7 +212,7 @@ async function mockApis(page) {
 }
 
 async function assertComposer(page, viewport, view) {
-  const textarea = page.locator('textarea[placeholder="Write a reply…"]');
+  const textarea = page.locator("textarea").last();
   await textarea.waitFor({ state: "visible" });
   const box = await textarea.boundingBox();
   assert.ok(box, `${view} textarea has no bounding box at ${viewport.width}x${viewport.height}`);
