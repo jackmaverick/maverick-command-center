@@ -263,6 +263,12 @@ try {
       `${baseUrl}/campaign-board?view=inbox&workspace=insurance&thread=contact-layout`
     );
     await page.getByText("Replies on").waitFor();
+    await page.getByText("Email sending not set up yet").waitFor();
+    assert.equal(
+      await page.getByRole("button", { name: "email", exact: true }).isDisabled(),
+      true,
+      "Email control must stay disabled without Gmail service-account credentials"
+    );
     await assertComposer(page, viewport, "inbox");
 
     await page.goto(

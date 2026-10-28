@@ -559,6 +559,12 @@ export function ThreadPanel({
                 {option === "note" ? "Internal note" : option}
               </button>
             ))}
+            {replyContext?.capabilities.email.reason ===
+              "Email sending not set up yet" && (
+              <span className="self-center pl-1 text-[10px] text-yellow-300">
+                Email sending not set up yet
+              </span>
+            )}
           </div>
           {channel === "text" &&
             replyContext &&
