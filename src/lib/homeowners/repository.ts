@@ -209,16 +209,20 @@ async function loadTimeline(
          'sms_messages'::text AS source,
          'SMS'::text AS channel,
          s.direction::text AS direction,
-         COALESCE(s.phone_number_id, s.from_number)::text AS line,
+         COALESCE(phone_line.name, phone_line.phone_number_formatted, s.phone_number_id, s.from_number)::text AS line,
          s.sent_at AS "occurredAt",
          LEFT(COALESCE(s.message_text, '(media message)'), 180) AS preview,
          s.message_text::text AS body,
+         s.status::text AS "deliveryStatus",
+         NULL::integer AS "durationSeconds",
          CASE
            WHEN s.contact_jnid = $1 THEN 'direct'
            WHEN s.job_jnid = ANY($2::text[]) THEN 'job'
            ELSE 'phone_fallback'
          END::text AS "matchType"
        FROM sms_messages s
+       LEFT JOIN openphone_phone_numbers phone_line
+         ON phone_line.phone_number_id = s.phone_number_id
        WHERE s.deleted_at IS NULL
          AND (
            s.contact_jnid = $1
@@ -239,16 +243,20 @@ async function loadTimeline(
 
        SELECT
          c.id::text, 'calls', 'Call', c.direction,
-         COALESCE(c.phone_number_id, c.from_number),
+         COALESCE(phone_line.name, phone_line.phone_number_formatted, c.phone_number_id, c.from_number),
          c.started_at,
          LEFT(COALESCE(NULLIF(c.voicemail_transcript, ''), NULLIF(c.transcript, ''), c.notes, c.status, 'Call'), 180),
          COALESCE(NULLIF(c.voicemail_transcript, ''), NULLIF(c.transcript, ''), c.notes),
+         c.status,
+         c.duration_seconds,
          CASE
            WHEN c.contact_jnid = $1 THEN 'direct'
            WHEN c.job_jnid = ANY($2::text[]) THEN 'job'
            ELSE 'phone_fallback'
          END
        FROM calls c
+       LEFT JOIN openphone_phone_numbers phone_line
+         ON phone_line.phone_number_id = c.phone_number_id
        WHERE c.deleted_at IS NULL
          AND (
            c.contact_jnid = $1
@@ -269,6 +277,8 @@ async function loadTimeline(
          COALESCE(e.sent_at, e.received_at, e.created_at),
          LEFT(COALESCE(NULLIF(e.snippet, ''), NULLIF(e.subject, ''), NULLIF(e.body_text, ''), 'Email'), 180),
          COALESCE(NULLIF(e.body_text, ''), e.snippet),
+         e.processing_status,
+         NULL::integer,
          CASE
            WHEN e.contact_jnid = $1 THEN 'direct'
            WHEN e.job_jnid = ANY($2::text[]) THEN 'job'
@@ -306,6 +316,8 @@ async function loadTimeline(
          NULL, a.performed_by_name, a.activity_date,
          LEFT(COALESCE(NULLIF(a.subject, ''), NULLIF(a.content, ''), NULLIF(a.to_status, ''), 'JobNimbus activity'), 180),
          COALESCE(NULLIF(a.content, ''), NULLIF(a.subject, ''), CONCAT_WS(' → ', a.from_status, a.to_status)),
+         NULL::text,
+         NULL::integer,
          CASE WHEN a.contact_jnid = $1 THEN 'direct' ELSE 'job' END
        FROM activities a
        WHERE a.deleted_at IS NULL
@@ -319,6 +331,8 @@ async function loadTimeline(
          COALESCE(outbound.sent_at, outbound.created_at),
          LEFT(COALESCE(NULLIF(outbound.subject, ''), NULLIF(outbound.body_text, ''), outbound.status, 'Campaign message'), 180),
          outbound.body_text,
+         outbound.status,
+         NULL::integer,
          CASE
            WHEN outbound.contact_jnid = $1 THEN 'direct'
            WHEN outbound.job_jnid = ANY($2::text[]) THEN 'job'
@@ -346,6 +360,8 @@ async function loadTimeline(
          'inbound', inbound.to_address, inbound.created_at,
          LEFT(COALESCE(NULLIF(inbound.subject, ''), NULLIF(inbound.body_text, ''), inbound.intent, 'Campaign reply'), 180),
          inbound.body_text,
+         inbound.intent,
+         NULL::integer,
          CASE
            WHEN inbound.contact_jnid = $1 THEN 'direct'
            WHEN inbound.job_jnid = ANY($2::text[]) THEN 'job'

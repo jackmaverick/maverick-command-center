@@ -9,6 +9,8 @@ export interface TimelineEntry {
   occurredAt: string;
   preview: string;
   body: string | null;
+  deliveryStatus: string | null;
+  durationSeconds: number | null;
   matchType: MatchType;
 }
 

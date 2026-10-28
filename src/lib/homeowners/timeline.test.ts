@@ -20,6 +20,8 @@ function entry(
     occurredAt,
     preview: id,
     body: null,
+    deliveryStatus: null,
+    durationSeconds: null,
     matchType: "direct",
   };
 }
