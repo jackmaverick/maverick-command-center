@@ -6,6 +6,7 @@ import {
   toUnixSeconds,
 } from "@/lib/dates";
 import { SEGMENT_SQL } from "@/lib/segment";
+import { isCronAuthorized } from "@/lib/cron-auth";
 import type { Segment } from "@/lib/constants";
 import type { WeeklySnapshot, SnapshotMetrics } from "@/types";
 import { formatInTimeZone } from "date-fns-tz";
@@ -43,20 +44,10 @@ function getPeriodBounds(type: SnapshotType): { start: Date; end: Date } {
 
 // ── POST handler ────────────────────────────────────────────────────────────
 
-function isAuthorized(request: NextRequest): boolean {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return true;
-
-  return (
-    request.headers.get("x-cron-secret") === cronSecret ||
-    request.headers.get("authorization") === `Bearer ${cronSecret}`
-  );
-}
-
 async function handleGenerate(request: NextRequest) {
   try {
     // Auth check
-    if (!isAuthorized(request)) {
+    if (!isCronAuthorized(request.headers)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

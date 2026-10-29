@@ -18,6 +18,71 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## Authentication and homeowner MVP
+
+The application is protected by Auth.js with Google sign-in. Access fails closed
+unless all required auth settings are present, and signed-in users must either
+belong to the configured Google Workspace domain or appear in the explicit
+exception list.
+
+Copy `.env.example` to `.env.local` and set:
+
+- `DATABASE_URL` — server-only Supabase Postgres connection string.
+- `AUTH_SECRET` — random secret of at least 32 bytes (`openssl rand -base64 32`).
+- `AUTH_GOOGLE_ID` — Google OAuth web client ID.
+- `AUTH_GOOGLE_SECRET` — Google OAuth client secret.
+- `AUTH_ALLOWED_DOMAIN` — allowed Workspace domain (normally
+  `maverickexteriorskc.com`).
+- `AUTH_ALLOWED_EMAILS` — optional comma-separated exception emails.
+- `CRON_SECRET` — existing Vercel Cron bearer secret.
+
+Configure this authorized redirect URI in the Google OAuth client:
+
+```text
+http://localhost:3000/api/auth/callback/google
+```
+
+Add the equivalent URI for each stable Vercel preview/production domain that
+should support sign-in. Do not use wildcard redirect URIs; Google does not
+support them.
+
+The Phase 1 read-only pages are:
+
+- `/homeowners` — contact search by name or street address.
+- `/homeowners/[contactJnid]` — JobNimbus jobs, campaign state,
+  communication restrictions, identity-match warnings, and a paginated merged
+  timeline.
+- `/campaign-board` — read-only enrollment board grouped by campaign.
+
+Homeowner queries are parameterized `SELECT` statements only. Phase 1 excludes
+contacts/jobs whose names contain the whole word `test`, plus jobs with a
+`seq_job_exclusions` reason containing `test`. Jack should confirm that rule
+before production rollout.
+
+## Replies rollout (v2b)
+
+Replies are fail-closed behind `REPLIES_ENABLED=true` and
+`REPLIES_ALLOWED_EMAILS`. A second server gate,
+`REPLIES_SEND_CONFIRMED=true`, is required before any provider call or queued
+release; keep it false until Jack approves the first send to his test contact.
+
+Provider setup:
+
+- OpenPhone: set `OPENPHONE_API_KEY`; reserve
+  `OPENPHONE_WEBHOOK_SECRET` for signed delivery/inbound webhooks.
+- Gmail: authorize the service account OAuth client ID in Google Admin domain-wide
+  delegation for:
+  - `https://www.googleapis.com/auth/gmail.send`
+  - `https://www.googleapis.com/auth/gmail.readonly`
+- JobNimbus: set `JOBNIMBUS_API_KEY` for internal-note creation.
+- Cron: keep `CRON_SECRET` configured. `/api/replies/queue` checks every five
+  minutes and releases due messages only while replies remain enabled and the
+  original sender remains allowlisted.
+
+The app writes only its own `cc_*` tables for queued messages, drafts, audit,
+and detected SMS opt-outs. JobNimbus notes are created through the JobNimbus
+API; synced mirror tables remain read-only.
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More

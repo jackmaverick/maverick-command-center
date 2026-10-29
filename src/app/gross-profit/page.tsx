@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PeriodSelector } from "@/components/layout/period-selector";
 import {
@@ -66,6 +66,30 @@ function formatFullCurrency(value: number): string {
   return `$${value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
+function SortHeader({
+  field,
+  children,
+  className = "",
+  onSort,
+}: {
+  field: SortField;
+  children: React.ReactNode;
+  className?: string;
+  onSort: (field: SortField) => void;
+}) {
+  return (
+    <TableHead
+      className={`text-[#8b949e] cursor-pointer hover:text-[#e6edf3] select-none ${className}`}
+      onClick={() => onSort(field)}
+    >
+      <span className="flex items-center gap-1">
+        {children}
+        <ArrowUpDown className="h-3 w-3" />
+      </span>
+    </TableHead>
+  );
+}
+
 export default function GrossProfitPage() {
   const [period, setPeriod] = useState("all");
   const [segment, setSegment] = useState<string>("all");
@@ -108,7 +132,7 @@ export default function GrossProfitPage() {
     enabled: !!expandedJob,
   });
 
-  const sortedJobs = useMemo(() => {
+  const sortedJobs = (() => {
     if (!data?.jobs) return [];
     const filtered =
       jobType === "all"
@@ -132,22 +156,19 @@ export default function GrossProfitPage() {
         ? (aVal as number) - (bVal as number)
         : (bVal as number) - (aVal as number);
     });
-  }, [data?.jobs, sortField, sortAsc, jobType]);
+  })();
 
-  const toggleSort = useCallback(
-    (field: SortField) => {
-      if (sortField === field) {
-        setSortAsc(!sortAsc);
-      } else {
-        setSortField(field);
-        setSortAsc(false);
-      }
-    },
-    [sortField, sortAsc]
-  );
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortField(field);
+      setSortAsc(false);
+    }
+  };
 
   // Recalculate summary from filtered/sorted jobs
-  const filteredSummary = useMemo(() => {
+  const filteredSummary = (() => {
     const totalRevenue = sortedJobs.reduce((s, j) => s + j.revenue, 0);
     const totalCosts = sortedJobs.reduce((s, j) => s + j.totalCost, 0);
     const totalGrossProfit = totalRevenue - totalCosts;
@@ -161,7 +182,7 @@ export default function GrossProfitPage() {
           : 0,
       jobCount: sortedJobs.length,
     };
-  }, [sortedJobs]);
+  })();
 
   const handleAddCost = async () => {
     if (!addCostJob || !costForm.amount) return;
@@ -187,26 +208,6 @@ export default function GrossProfitPage() {
     queryClient.invalidateQueries({ queryKey: ["gross-profit"] });
     queryClient.invalidateQueries({ queryKey: ["retail-costs"] });
   };
-
-  const SortHeader = ({
-    field,
-    children,
-    className = "",
-  }: {
-    field: SortField;
-    children: React.ReactNode;
-    className?: string;
-  }) => (
-    <TableHead
-      className={`text-[#8b949e] cursor-pointer hover:text-[#e6edf3] select-none ${className}`}
-      onClick={() => toggleSort(field)}
-    >
-      <span className="flex items-center gap-1">
-        {children}
-        <ArrowUpDown className="h-3 w-3" />
-      </span>
-    </TableHead>
-  );
 
   const summary = jobType === "all" ? data?.summary : filteredSummary;
 
@@ -341,29 +342,29 @@ export default function GrossProfitPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-[#30363d] hover:bg-transparent">
-                    <SortHeader field="dateCompleted">Closed</SortHeader>
-                    <SortHeader field="jobName">Job</SortHeader>
+                    <SortHeader field="dateCompleted" onSort={toggleSort}>Closed</SortHeader>
+                    <SortHeader field="jobName" onSort={toggleSort}>Job</SortHeader>
                     <TableHead className="text-[#8b949e]">Job Type</TableHead>
                     <TableHead className="text-[#8b949e]">Record Type</TableHead>
-                    <SortHeader field="revenue" className="text-right">
+                    <SortHeader field="revenue" className="text-right" onSort={toggleSort}>
                       Revenue
                     </SortHeader>
-                    <SortHeader field="supplierCost" className="text-right">
+                    <SortHeader field="supplierCost" className="text-right" onSort={toggleSort}>
                       Supplier
                     </SortHeader>
-                    <SortHeader field="laborCost" className="text-right">
+                    <SortHeader field="laborCost" className="text-right" onSort={toggleSort}>
                       Labor
                     </SortHeader>
-                    <SortHeader field="retailCost" className="text-right">
+                    <SortHeader field="retailCost" className="text-right" onSort={toggleSort}>
                       Retail
                     </SortHeader>
-                    <SortHeader field="totalCost" className="text-right">
+                    <SortHeader field="totalCost" className="text-right" onSort={toggleSort}>
                       Total Cost
                     </SortHeader>
-                    <SortHeader field="grossProfit" className="text-right">
+                    <SortHeader field="grossProfit" className="text-right" onSort={toggleSort}>
                       Profit
                     </SortHeader>
-                    <SortHeader field="marginPercent" className="text-right">
+                    <SortHeader field="marginPercent" className="text-right" onSort={toggleSort}>
                       Margin
                     </SortHeader>
                     <TableHead className="w-8" />

@@ -7,7 +7,7 @@ const JN_BASE_URL = "https://api.jobnimbus.com/api/v2";
 
 interface JNRequestOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE";
-  body?: Record<string, any>;
+  body?: Record<string, unknown>;
   query?: Record<string, string | number>;
 }
 
@@ -64,7 +64,7 @@ export async function jnGetJobs(options: {
     items: Array<{
       jnid: string;
       name: string;
-      [key: string]: any;
+      [key: string]: unknown;
     }>;
     total: number;
   }
@@ -91,7 +91,7 @@ export async function jnGetContacts(options: {
     items: Array<{
       jnid: string;
       name: string;
-      [key: string]: any;
+      [key: string]: unknown;
     }>;
     total: number;
   }

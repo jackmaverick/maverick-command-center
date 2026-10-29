@@ -15,6 +15,10 @@
     {
       "path": "/api/snapshots/generate?type=monthly",
       "schedule": "30 6 1 * *"
+    },
+    {
+      "path": "/api/replies/queue",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
