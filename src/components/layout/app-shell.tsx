@@ -13,6 +13,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <main>{children}</main>;
   }
 
+  if (pathname === "/campaign-board") {
+    return (
+      <div className="h-dvh min-h-0 overflow-hidden bg-[#0d1117]">
+        <Sidebar />
+        <div className="flex h-dvh min-h-0 flex-col overflow-hidden lg:pl-64">
+          <Header contained />
+          <main className="flex min-h-0 flex-1 overflow-hidden">
+            <div className="h-full min-h-0 w-full overflow-hidden px-3 py-3">
+              {children}
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <Sidebar />

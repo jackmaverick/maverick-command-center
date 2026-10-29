@@ -4,14 +4,20 @@ import { Menu } from "lucide-react";
 import { useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { MobileNav } from "./mobile-nav";
+import { cn } from "@/lib/utils";
 
-export function Header() {
+export function Header({ contained = false }: { contained?: boolean }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { data: session, status } = useSession();
 
   return (
     <>
-      <header className="sticky top-0 z-40 flex items-center h-16 px-4 lg:px-6 bg-[#0d1117]/80 backdrop-blur-sm border-b border-[#30363d] lg:pl-64">
+      <header
+        className={cn(
+          "sticky top-0 z-40 flex h-16 shrink-0 items-center border-b border-[#30363d] bg-[#0d1117]/80 px-4 backdrop-blur-sm lg:px-6",
+          contained ? "lg:pl-0" : "lg:pl-64"
+        )}
+      >
         <button
           onClick={() => setMobileNavOpen(true)}
           className="lg:hidden p-2 text-[#8b949e] hover:text-[#e6edf3]"

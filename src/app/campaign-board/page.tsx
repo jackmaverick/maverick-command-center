@@ -270,7 +270,7 @@ function CampaignBoardContent() {
   );
 
   return (
-    <div className="-m-4 flex h-[calc(100dvh-4rem)] max-h-[calc(100dvh-4rem)] min-h-0 flex-col overflow-hidden bg-[#0d1117] lg:-m-6">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-[#30363d] bg-[#0d1117]">
       <header className="flex flex-wrap items-center gap-3 border-b border-[#30363d] bg-[#161b22] px-4 py-3">
         <div>
           <h1 className="text-lg font-semibold text-[#e6edf3]">Homeowner Inbox</h1>
@@ -540,7 +540,7 @@ export default function CampaignBoardPage() {
   return (
     <Suspense
       fallback={
-        <div className="-m-4 h-[calc(100dvh-4rem)] min-h-0 bg-[#0d1117] p-6 lg:-m-6">
+        <div className="h-full min-h-0 rounded-lg bg-[#0d1117] p-3">
           <Skeleton className="h-full bg-[#161b22]" />
         </div>
       }
