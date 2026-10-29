@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import { encode } from "@auth/core/jwt";
 import { chromium } from "@playwright/test";
 
@@ -220,6 +221,14 @@ async function assertComposer(page, viewport, view) {
     box.y >= 0 && box.y + box.height <= viewport.height,
     `${view} textarea is clipped at ${viewport.width}x${viewport.height}: ${JSON.stringify(box)}`
   );
+  const documentMetrics = await page.evaluate(() => ({
+    innerHeight: window.innerHeight,
+    scrollHeight: document.scrollingElement?.scrollHeight ?? 0,
+  }));
+  assert.ok(
+    documentMetrics.scrollHeight <= documentMetrics.innerHeight + 1,
+    `${view} document scrolls at ${viewport.width}x${viewport.height}: ${JSON.stringify(documentMetrics)}`
+  );
   await textarea.focus();
   assert.equal(
     await textarea.evaluate((element) => document.activeElement === element),
@@ -247,11 +256,23 @@ try {
   });
 
   for (const viewport of [
-    { width: 1024, height: 500 },
-    { width: 1280, height: 720 },
-    { width: 1440, height: 900 },
+    { width: 1280, height: 650, deviceScaleFactor: 1, label: "1280x650" },
+    { width: 1366, height: 640, deviceScaleFactor: 1, label: "1366x640" },
+    { width: 1440, height: 760, deviceScaleFactor: 1, label: "1440x760" },
+    { width: 1512, height: 830, deviceScaleFactor: 1, label: "1512x830" },
+    { width: 1920, height: 960, deviceScaleFactor: 1, label: "1920x960" },
+    { width: 1440, height: 760, deviceScaleFactor: 2, label: "1440x760@2x" },
+    {
+      width: 1152,
+      height: 608,
+      deviceScaleFactor: 1,
+      label: "1152x608 (125% equivalent)",
+    },
   ]) {
-    const context = await browser.newContext({ viewport });
+    const context = await browser.newContext({
+      viewport: { width: viewport.width, height: viewport.height },
+      deviceScaleFactor: viewport.deviceScaleFactor,
+    });
     await context.addCookies([
       {
         name: "authjs.session-token",
@@ -274,6 +295,17 @@ try {
       "Email control must stay disabled without Gmail service-account credentials"
     );
     await assertComposer(page, viewport, "inbox");
+    if (
+      viewport.width === 1440 &&
+      viewport.height === 760 &&
+      viewport.deviceScaleFactor === 1
+    ) {
+      mkdirSync("/opt/cursor/artifacts", { recursive: true });
+      await page.screenshot({
+        path: "/opt/cursor/artifacts/campaign_inbox_composer_1440x760.png",
+        fullPage: false,
+      });
+    }
 
     await page.goto(
       `${baseUrl}/campaign-board?view=board&workspace=insurance&thread=contact-layout`
@@ -283,7 +315,7 @@ try {
   }
 
   console.log(
-    "Inbox composer verified in Inbox and Board slide-over at 1024x500, 1280x720, and 1440x900."
+    "Inbox composer verified with no document scroll in Inbox and Board slide-over at 1280x650, 1366x640, 1440x760, 1512x830, 1920x960, 1440x760@2x, and 1152x608."
   );
 } finally {
   await browser?.close();
