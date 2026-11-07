@@ -5,6 +5,7 @@ import {
   Home,
   Megaphone,
   Settings,
+  UsersRound,
   Wallet,
 } from "lucide-react";
 
@@ -42,6 +43,14 @@ export const navigationGroups: NavigationGroup[] = [
       { href: "/sales", label: "Sales" },
       { href: "/speed-to-lead", label: "Speed to Lead" },
       { href: "/leads", label: "Leads" },
+    ],
+  },
+  {
+    label: "Homeowners",
+    icon: UsersRound,
+    tabs: [
+      { href: "/homeowners", label: "Search" },
+      { href: "/campaign-board", label: "Campaign Board" },
     ],
   },
   {

@@ -74,20 +74,23 @@ function QuickBooksCard() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
-  const [oauthMessage, setOauthMessage] = useState<{ success: boolean; message: string } | null>(null);
+  const [now] = useState(() => Date.now());
+  const oauthError = searchParams.get("qbo_error");
+  const oauthConnected = searchParams.get("qbo_connected");
+  const oauthMessage = oauthError
+    ? {
+        success: false,
+        message: `OAuth error: ${decodeURIComponent(oauthError)}`,
+      }
+    : oauthConnected
+      ? { success: true, message: "QuickBooks connected successfully!" }
+      : null;
 
   useEffect(() => {
-    const error = searchParams.get("qbo_error");
-    const connected = searchParams.get("qbo_connected");
-    if (error) {
-      setOauthMessage({ success: false, message: `OAuth error: ${decodeURIComponent(error)}` });
-      // Clean URL
-      window.history.replaceState({}, "", "/settings");
-    } else if (connected) {
-      setOauthMessage({ success: true, message: "QuickBooks connected successfully!" });
+    if (oauthError || oauthConnected) {
       window.history.replaceState({}, "", "/settings");
     }
-  }, [searchParams]);
+  }, [oauthConnected, oauthError]);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -99,8 +102,19 @@ function QuickBooksCard() {
   }, []);
 
   useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+    let active = true;
+    fetch("/api/qbo/status")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((status: QBOStatus | null) => {
+        if (active && status) setQboStatus(status);
+      })
+      .catch(() => {
+        // Status is best-effort; controls remain disconnected on failure.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -135,7 +149,7 @@ function QuickBooksCard() {
     ? new Date(qboStatus.refreshTokenExpiresAt)
     : null;
   const daysUntilExpiry = refreshExpiresAt
-    ? Math.floor((refreshExpiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    ? Math.floor((refreshExpiresAt.getTime() - now) / (1000 * 60 * 60 * 24))
     : null;
   const showWarning = daysUntilExpiry !== null && daysUntilExpiry < 14;
 
